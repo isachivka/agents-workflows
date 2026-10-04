@@ -276,8 +276,12 @@ active entry. `--run ID --step ID` overrides for the user's terminal.
 | `flow install` | launchd plist (generated, machine paths), agterm hook lines, Claude `PostCompact` hook, skill symlink into `~/.claude/skills/flow` |
 | `flow agterm-hook`, `flow claude-hook compacted` | hook entry points, not for hand use |
 
-A refused command prints why (`no active step for this session`, `step gate is not active`)
-and exits 1. `flow` against a stopped daemon prints
+An agent can close a step only after its nudge line has actually been typed into its session
+(flowd records that as `entry.delivered`); otherwise a second `flow done` in the same turn would
+close the next step of the same role. Lines whose step moved on before they went out are dropped.
+
+A refused command prints why (`no active step for this session`, `step gate is not active`,
+`step c has not reached the agent yet`) and exits 1. `flow` against a stopped daemon prints
 `flowd is not running: launchctl kickstart gui/$UID/local.flows`.
 
 `skill/flow/SKILL.md` (half a page) tells agents: on a `▶ flow:` line run `flow show`, do
