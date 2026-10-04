@@ -118,6 +118,6 @@ export async function install(o: InstallOpts = {}): Promise<void> {
     say(`Claude PostCompact hook added to ${settingsPath} (backup: settings.json.bak-flows)`);
   }
 
-  link(join(repo, "skill", "flow"), join(home, ".claude", "skills", "flow"), say);
+  for (const skill of ["flow", "flow-author"]) link(join(repo, "skills", skill), join(home, ".claude", "skills", skill), say);
   say("done. UI: http://127.0.0.1:7420");
 }

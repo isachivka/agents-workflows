@@ -18,7 +18,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow check [name]                      validate FLOWS_HOME offline (all, or one process or step)
   flow done|failed --human --run ID --step ID
                                          close a step from your own terminal
-  flow install                           launchd agent, agterm and Claude hooks, skill, PATH link
+  flow install                           launchd agent, agterm and Claude hooks, skills, PATH link
   flow daemon                            run flowd in the foreground
 
 Inside a flow session the step is found from AGTERM_SESSION_ID; elsewhere pass --run and --step.
