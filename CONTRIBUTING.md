@@ -1,7 +1,7 @@
 # Contributing
 
 Changes to flows go through four stages — spec, plan, implementation, documentation — described in
-`CLAUDE.md`. The same rules apply to people and to agents.
+[CLAUDE.md](CLAUDE.md). The same rules apply to people and to agents.
 
 ## Setup
 

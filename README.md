@@ -138,7 +138,7 @@ agterm on 2026-10-04. Known gaps are listed one per file in [docs/backlog/](docs
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Agents working in this repo follow `CLAUDE.md`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Agents working in this repo follow [CLAUDE.md](CLAUDE.md).
 
 ## License
 
