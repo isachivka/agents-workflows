@@ -16,7 +16,7 @@
 - Runtime dependencies stay `yaml` and `croner`. No new dev dependency either.
 - Never touch the real agterm, `~/.config/flows`, `~/.local/state/flows`, `~/.claude` or launchd from a test or a task step. Screenshots come from a throwaway flowd on a temp `FLOWS_HOME`, `FLOWS_STATE` and port 7499, with processes that spawn no agents.
 - `npm test` and `npm run typecheck` green after every task; one commit per task, conventional message, ending `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Acceptance grep (from the spec), run in Task 9: `git grep -n -i -E "user|acme|monorepo|MIG-1|acme|migration-pm|/Users/me" -- . ':!LICENSE'` prints nothing. Write new text so it already passes: "the user" / "a human", never a person's name.
+- Acceptance grep (from the spec), run in Task 9: the personal/employer-name grep (the maintainer's name, the employer's product and ticket names, the old manager skill, the home-directory path), over every tracked file but `LICENSE`, prints nothing. Write new text so it already passes: "the user" / "a human", never a person's name.
 - The live install links `~/.claude/skills/flow` to `skill/flow`, which Task 4 moves: that link dangles until `flow install` is re-run. Re-running it needs the human's yes (Task 9).
 
 ## Review Focus
@@ -48,17 +48,17 @@ Expected: `docs` holds `plans` and `specs` only.
 
 - [ ] **Step 2: Neutralise the moved records**
 
-Run `git grep -n -i -E "user|acme|monorepo|MIG-1|acme|migration-pm|observability|/Users/me" -- docs/specs docs/plans` and edit every hit by hand, keeping the meaning:
+Run the personal/employer-name grep over `docs/specs docs/plans` and edit every hit by hand, keeping the meaning:
 - a person's name → "the user" (or "the maintainer" for design approval lines);
-- `monorepo` / `acme` → "a large monorepo"; `MIG-1` / typing waves → "a long JS→TS migration"; `obs-frontend`, `obs-backend` → "two observability programmes"; `/migration-pm`, `migration-pm` → "the migration's manager skill";
-- the ts-wave sample in the old plan's Task 14 stays as a historical code listing, but its `cwd: ~/code/monorepo` becomes `cwd: ~/code/monorepo` and its description loses the ticket id.
+- the employer's monorepo → "a large monorepo"; the migration ticket and its typing waves → "a long JS→TS migration"; the two observability projects → "two observability programmes"; the migration's manager skill → "the migration's manager skill";
+- the ts-wave sample in the old plan's Task 14 stays as a historical code listing, but its `cwd` becomes `~/code/monorepo` and its description loses the ticket id.
 Do not touch the new spec and plan (`*open-source-ready*`); they already pass.
 
 Run the grep again. Expected: no output.
 
 - [ ] **Step 3: Licence and package metadata**
 
-`LICENSE` — the standard MIT text with the line `Copyright (c) 2026 Igor Sachivka` (the git author; the acceptance grep excludes this file).
+`LICENSE` — the standard MIT text with a copyright line naming the git author (the acceptance grep excludes this file).
 
 `package.json` — remove `"private": true` and add, keeping the existing `bin`, `scripts`, `dependencies`, `devDependencies`:
 ```json
@@ -99,7 +99,7 @@ In `test/examples.test.ts` the last assertion becomes:
 ```ts
   assert.deepEqual(Object.keys(defs.processes).sort(), ["demo", "pr-loop"]);
 ```
-In `test/http.test.ts:141` the comment's "the user's browser" becomes "the user's browser".
+In `test/http.test.ts:141` the comment's personal name becomes "the user's browser".
 
 Run: `npm test`
 Expected: FAIL in the engine-core and examples tests.
@@ -199,7 +199,7 @@ A human reviews and merges {{vars.pr}}. The gh.merged event closes this step by 
 
 - [ ] **Step 4: Verify and commit**
 
-Run: `npm test && npm run typecheck && git grep -n -i -E "user|acme|monorepo|MIG-1|migration-pm" -- src test examples`
+Run: `npm test && npm run typecheck`, then the personal/employer-name grep over `src test examples`
 Expected: green; the grep prints nothing.
 
 ```bash
@@ -872,7 +872,7 @@ git commit -m "docs: backlog of findings deferred from the first implementation"
 
 ```bash
 npm test && npm run typecheck
-git grep -n -i -E "user|acme|monorepo|MIG-1|acme|migration-pm|/Users/me" -- . ':!LICENSE'
+# the personal/employer-name grep over every tracked file but LICENSE (pattern kept out of the repo)
 git status --short
 ```
 Expected: green; the grep prints nothing; the tree is clean.

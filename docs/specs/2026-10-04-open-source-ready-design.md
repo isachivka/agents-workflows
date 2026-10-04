@@ -56,15 +56,15 @@ examples/            demo + pr-loop (replaces ts-wave)
 
 ### Publication cleanup
 
-- Code and tests: the refusal `<step> is the human's step; the user closes it` becomes
+- Code and tests: the refusal that named the maintainer as the one who closes a human step becomes
   `<step> is the human's step; a human closes it`; comments name "the user", not a person.
 - Examples: `ts-wave` (an employer project) is replaced by `pr-loop`, a neutral two-role sample:
   a lead picks a task and reviews, a dev implements, the lead opens a PR, CI is awaited, a human
   merges, a detour fixes red CI. `demo-approve` speaks of "the human".
 - The moved design records keep their substance; employer project names in them are replaced by
   neutral descriptions ("a JS→TS migration", "an observability programme").
-- Acceptance check: `git grep -n -i -E "user|acme|monorepo|MIG-1|acme|migration-pm|/Users/me"`
-  returns nothing outside `LICENSE`.
+- Acceptance check: the personal/employer-name grep (the maintainer's name, the employer's product and ticket names, the old manager skill, the home-directory path)
+  returns nothing outside `LICENSE`. The pattern itself is kept out of the repo, since it would match itself.
 - `package.json`: drop `private`, add `description`, `license: MIT`, `engines.node: ">=24"`,
   `keywords`. `.gitignore` gains `.superpowers/`.
 
