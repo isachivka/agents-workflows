@@ -52,9 +52,10 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml` 
    `unwatch` an event, call a `plugin-action`, `emit` an event.
 5. One transaction saves the run, the outbox rows for `deliver`, and the emitted events. Then the
    watches and plugin actions run and the emitted events are queued behind the current one.
-6. `flush` walks the outbox: it drops lines of finished runs and lines whose step moved on, holds
-   lines of paused runs, spawns a role that has no session, waits while the session is `active`
-   or the 2 s gap has not passed, and types the line (`agterm.type`: text, pause, Enter).
+6. `flush` walks the outbox: it drops lines of stopped runs, step nudges of done runs, and lines
+   whose step moved on (a done run still types a last `type` or `clear` into a live session), holds
+   lines of paused and `needs-human` runs, spawns a role that has no session, waits while the
+   session is `active` or `blocked` or the 2 s gap has not passed, and types the line (`agterm.type`: text, pause, Enter).
 7. A line that carries a step is reported back as `entry.delivered`, which is what allows the
    agent to close that step.
 
@@ -74,10 +75,12 @@ flushed every second.
 
 Definitions are never stored: they are read from `$FLOWS_HOME` at start and on every change.
 
-**Restart.** flowd can be stopped at any point. On start it loads plugins and definitions, asks
-agterm for its live sessions (a bound session that no longer exists is treated as closed), starts
-the plugins, re-arms the watch of every waiting entry, processes any event that was stored but not
-processed, and delivers lines still in the outbox.
+**Restart.** flowd can be stopped at any point. On start it loads plugins and definitions
+(re-arming the watch of every waiting entry), asks agterm for its live sessions (each bound
+session's status goes to its run, so a turn that ended while flowd was down starts its reminder
+clock; a bound session that no longer exists is treated as closed), starts the plugins, fails a
+plugin action that was still running (`flowd restarted while the action ran`), processes any event
+that was stored but not processed, and delivers lines still in the outbox.
 
 ## Security model
 

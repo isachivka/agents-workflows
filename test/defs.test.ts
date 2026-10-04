@@ -72,6 +72,8 @@ steps:
   - {step: merge, role: pm, detour: true}
   - {step: pick, role: pm}
   - {}
+  - {wait_for: {on: signal.x, where: [{env: prod}], with: [1]}}
+  - {wait_for: signal.y, with: [1]}
 `, ctx));
   for (const want of [
     /description is required/, /cwd is required/, /unknown key bogus/, /role name human is reserved/,
@@ -79,6 +81,7 @@ steps:
     /steps\/missing\.md is missing or invalid/, /undeclared role ghost/, /do: compact needs a declared agent role/,
     /do: type needs text/, /unknown event type nope\.event/, /goto target nowhere does not exist/,
     /a detour needs after\.goto/, /duplicate entry id pick/, /needs step, do or wait_for/,
+    /wait_for\.where must be a mapping/, /wait_for\.with must be a mapping/, /steps\[\d+\]: with must be a mapping/,
   ]) assert.ok(errs.some((e) => want.test(e)), `missing error ${want}: ${errs.join(" | ")}`);
 });
 

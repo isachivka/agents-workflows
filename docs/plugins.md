@@ -53,8 +53,11 @@ export default {
   `launchctl kickstart -k gui/$UID/local.flows`.
 - **`start`** runs once, after the definitions are loaded.
 - **`watch`** runs only while an entry waits, so a polling plugin polls only what someone waits
-  for. After a restart every waiting entry's watch is started again.
-- **Failures.** A throw from `start` or an action is caught and reported. A `watch` that throws is
+  for. After a restart, or a definition reload, every waiting entry's watch is started again from
+  the current definition.
+- **Failures.** A throw from `start` or an action is caught and reported. An action still running
+  when flowd stops is not resumed: at the next start its entry fails with
+  `flowd restarted while the action ran`, and `on_fail` decides. A `watch` that throws is
   retried after 5 s, doubling each time, up to 5 minutes. A problem inside a running watch (a
   failed poll) should go to `ctx.error(e, w)`; keep polling.
 

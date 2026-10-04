@@ -237,3 +237,132 @@ test("a session already bound to an open run cannot be bound again", async () =>
     "session X1 is already bound to p#1");
   await f.close();
 });
+
+// --- repo-review round 1 ---
+
+test("a run that needs the human spawns nothing for its queued lines; a respawn spawns one agent", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(status("S1", "active"));
+  await f.submit(start("p", { pm: "S1" })); // b's nudge waits: S1 is mid-turn
+  await f.submit({ type: "agterm.closed", data: { session: "S1" }, source: "agterm" });
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.status, "needs-human");
+  assert.deepEqual(agterm.calls.filter((c) => c.startsWith("spawn")), []);
+  await f.submit({ type: "role.respawn", run: "p#1", data: { role: "pm" }, source: "ui" });
+  await settle(f);
+  assert.equal(agterm.calls.filter((c) => c.startsWith("spawn")).length, 1, agterm.calls.join("\n"));
+  await f.close();
+});
+
+test("a run that ends on a typed line still types it", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n  - {do: type, role: pm, text: bye}\n") }),
+    { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(start("p", { pm: "S1" }));
+  await f.submit(report({ run: "p#1", entry: "c", outcome: "done", by: "human" }));
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.status, "done");
+  assert.deepEqual(agterm.typed(), ["type S1 bye"]);
+  await f.close();
+});
+
+const SLOW_PLUGIN = `export default { name: "slow", actions: { wait() { return new Promise(() => {}); } } };\n`;
+
+test("a plugin action still running when flowd restarts fails instead of hanging", async () => {
+  const home = makeHome({ ...STEP_FILES, "plugins/slow.ts": SLOW_PLUGIN, ...proc("  - {do: slow.wait}\n  - {step: c, role: human}\n") });
+  const A = await startFlowd(home);
+  await A.f.submit(start("p"));
+  await settle(A.f);
+  assert.equal(A.f.store.getRun("p#1")!.entries["slow.wait"].status, "active");
+  await A.f.close();
+  const B = await startFlowd(home);
+  await settle(B.f);
+  const run = B.f.store.getRun("p#1")!;
+  assert.equal(run.entries["slow.wait"].status, "failed");
+  assert.match(run.reason ?? "", /flowd restarted while the action ran/);
+  await B.f.close();
+});
+
+test("a live edit of a waiting entry's wait_for moves its watch", async () => {
+  resetWatches();
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {id: w, wait_for: signal.go}\n  - {step: c, role: human}\n") });
+  const { f } = await startFlowd(home);
+  await f.submit(start("p"));
+  assert.deepEqual(watches(), []);
+  writeFileSync(join(home, "processes/p.yaml"), "description: d\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {id: w, wait_for: test.ping}\n  - {step: c, role: human}\n");
+  f.reloadDefs();
+  assert.deepEqual(watches(), ["p#1/w"]);
+  await f.submit({ type: "test.ping", data: {}, source: "test" });
+  assert.equal(f.store.getRun("p#1")!.current, "c");
+  await f.close();
+});
+
+test("a refused start of a process triggered by flow.trigger.skipped does not feed itself", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n", "triggers: [{on: flow.trigger.skipped}]\n", "n") }));
+  await f.submit(start("n"));
+  await f.submit({ type: "flow.trigger.skipped", data: { process: "x", trigger: "cron" }, source: "test" });
+  await settle(f);
+  const n = Number((f.store.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'flow.trigger.skipped'").get() as { n: number }).n);
+  assert.equal(n, 1, `${n} flow.trigger.skipped events`);
+  await f.close();
+});
+
+test("a turn that ended while flowd was down still gets its reminder", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const A = await startFlowd(home, { agterm: new FakeAgterm().addSession("S1") });
+  await A.f.submit(start("p", { pm: "S1" }));
+  await settle(A.f);
+  await A.f.submit(status("S1", "active"));
+  await A.f.close();
+  const agterm = new FakeAgterm();
+  agterm.sessions.push({ id: "S1", name: "S1", cwd: "/", workspace: "W", status: "idle" });
+  const B = await startFlowd(home, { agterm });
+  await settle(B.f);
+  B.clock.t += 30_000;
+  await B.f.tickNow();
+  await settle(B.f);
+  assert.ok(B.agterm.typed().some((t) => t.includes("step b is not closed")), B.agterm.typed().join("\n"));
+  await B.f.close();
+});
+
+test("a session blocked on a permission prompt gets no line until its turn ends", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(status("S1", "active"));
+  await f.submit(start("p", { pm: "S1" }));
+  await f.submit(status("S1", "blocked"));
+  await settle(f);
+  assert.deepEqual(agterm.typed(), []);
+  await f.submit(status("S1", "completed"));
+  await settle(f);
+  assert.equal(agterm.typed().length, 1);
+  await f.close();
+});
+
+test("a wait whose with no longer renders after a restart stops the run", async () => {
+  const yaml = (k: string) => `description: d\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: c, role: human}\n  - {id: w, wait_for: {on: test.ping, with: {k: "{{vars.${k}}}"}}}\n`;
+  const home = makeHome({ ...STEP_FILES, "processes/p.yaml": yaml("k") });
+  const A = await startFlowd(home);
+  await A.f.submit(start("p"));
+  await A.f.submit({ type: "run.set", run: "p#1", data: { vars: { k: "1" } }, source: "test" });
+  await A.f.submit(report({ run: "p#1", entry: "c", outcome: "done", by: "human" }));
+  assert.equal(A.f.store.getRun("p#1")!.entries.w.status, "waiting");
+  await A.f.close();
+  writeFileSync(join(home, "processes/p.yaml"), yaml("nope"));
+  const B = await startFlowd(home);
+  await settle(B.f);
+  const run = B.f.store.getRun("p#1")!;
+  assert.equal(run.status, "needs-human");
+  assert.match(run.reason ?? "", /vars\.nope/);
+  await B.f.close();
+});
+
+test("an on: trigger hands its event to the run's first entry", async () => {
+  const { f } = await startFlowd(makeHome({
+    ...STEP_FILES, "steps/greet.md": "---\nsummary: g\n---\nGot {{event.data.msg}} from {{event.type}}\n",
+    ...proc("  - {step: greet, role: pm}\n", "triggers: [{on: signal.go}]\n"),
+  }));
+  await f.submit({ type: "signal.go", data: { msg: "hi" }, source: "cli" });
+  await settle(f);
+  const shown = f.show({ run: "p#1", entry: "greet" });
+  assert.ok("text" in shown && shown.text.includes("Got hi from signal.go"), JSON.stringify(shown));
+  await f.close();
+});

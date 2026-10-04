@@ -41,7 +41,7 @@ export async function pollOnce(kind: "checks" | "merged" | "review", pr: string,
       if (empty < EMPTY_POLLS) return { baseline: String(empty) };
     }
     const result = checksOutcome(rows);
-    return result ? { emit: result } : {};
+    return result ? { emit: result } : { baseline: "0" }; // checks exist: empty polls must start over
   }
   if (kind === "merged") {
     const { state } = json(await exec(["pr", "view", pr, "--json", "state"]), "pr view") as { state: string };

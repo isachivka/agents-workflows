@@ -20,8 +20,9 @@ Symptom, what to check, what to do. flowd's log is `~/.local/state/flows/flowd.l
 ## An agent never got its line
 
 - Check `flow ls`: is the run `paused` or `needs-human`? The reason is at the end of the line.
-- Is the session busy? flowd types only into a session whose agterm status is not `active`, so a
-  line waits for the agent's turn to end. A session that stays `active` holds its lines.
+- Is the session busy? flowd types only into a session whose agterm status is neither `active`
+  nor `blocked`, so a line waits for the agent's turn to end, and for a permission prompt to be
+  answered. A session that stays `active` or `blocked` holds its lines.
 - Was the session just spawned? Nothing is typed into it for 15 s.
 - Is the role bound? The run page shows each role's session and its agterm status. A role whose
   session was closed gets a new one on its next line.

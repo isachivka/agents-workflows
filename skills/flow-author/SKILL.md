@@ -48,9 +48,11 @@ From the installed copy of this skill, the repo is
 ## Traps
 
 - Two entries with the same `step` or `do` need explicit ids: `{id: clear-lead, do: clear, role: lead}`.
-- `{{event.*}}` exists only in an entry an event woke: one with its own `wait_for`, or the first
-  entry of a run an `on:` trigger started, in its first iteration (not with `repeat: true`). A detour reached by `goto` has no event — have the
-  agent read the state (`gh pr checks {{vars.pr}}`) instead. `flow check` reports this.
+- `{{event.*}}` exists only in an entry an event woke: an agent step with its own `wait_for` (a
+  human step's event closes it, so its prompt has none), or the first entry of a run an `on:`
+  trigger started, in its first iteration (not with `repeat: true`). A detour reached by `goto`
+  has no event — have the agent read the state (`gh pr checks {{vars.pr}}`) instead.
+  `flow check` reports this.
 - A missing `{{vars.x}}` stops the run for the user rather than sending a broken prompt: an earlier
   step of the same iteration must `flow set` it.
 - Ad-hoc events need the `signal.` prefix in definitions (`wait_for: signal.deploy-done`);

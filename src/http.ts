@@ -221,7 +221,12 @@ export function makeServer(f: Flowd, uiDir: string): Server {
   ];
 
   return createServer(async (req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    let url: URL;
+    try {
+      url = new URL(req.url ?? "/", "http://localhost");
+    } catch {
+      return send(res, 400, { error: "bad request target" }); // e.g. //[ — must not crash flowd
+    }
     // No auth, so no browser page but flowd's own: a foreign Host is DNS rebinding, a foreign
     // Origin is a cross-site request, and JSON-only bodies force a preflight flowd never answers.
     const host = req.headers.host ?? "";

@@ -9,6 +9,7 @@ export interface Agterm {
   type(session: string, text: string): Promise<void>;
   focus(session: string): Promise<void>;
   tree(): Promise<SessionInfo[]>;
+  reloadHooks(): Promise<void>;
 }
 
 export const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -51,6 +52,9 @@ export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", sub
       await run(bin, typeArgs, text.replace(/\n$/, ""));
       await new Promise((r) => setTimeout(r, submitDelayMs));
       await run(bin, typeArgs, "\n");
+    },
+    async reloadHooks() {
+      await run(bin, ["hooks", "reload"]);
     },
     async focus(session) {
       await run(bin, ["session", "select", "--target", session]);

@@ -47,7 +47,9 @@ Placeholders, substituted when the step starts (`src/template.ts`, `renderData` 
 
 There is no logic, only substitution. An object renders as JSON. A missing value is an error: the
 step does not start and the run goes `needs-human` with `{{vars.x}} has no value`. Only an entry
-that an event woke has `{{event.*}}`: one with its own `wait_for`, or the first entry of a run that an `on:` trigger started, in its first iteration.
+that an event woke has `{{event.*}}`: an agent step or action with its own `wait_for`, or the first
+entry of a run that an `on:` trigger started, in its first iteration. A human step's event closes
+it, so its prompt never has one.
 The validator rejects `{{event.*}}` in any other step body or `text` (also on the first entry
 when the process repeats). It does not check `with`, where `{{event.*}}` never works. A manual or
 cron start of a triggered process, or a `goto` back to its first entry, has no event either: the
@@ -159,8 +161,8 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do or wait_for`, `steps[N]: step and do are exclusive` |
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
-| events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `X: step Y uses {{event.*}}, but only an entry with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
-| failure handling | `steps[N]: on_fail must be retry, human or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
+| events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `steps[N]: wait_for.where must be a mapping`, `steps[N]: wait_for.with must be a mapping`, `X: step Y uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
+| failure handling | `steps[N]: with must be a mapping`, `steps[N]: on_fail must be retry, human or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
 | detours and ids | `steps[N]: detour must be true or false`, `steps[N]: a detour needs after.goto`, `at least one entry must not be a detour`, `duplicate entry id X (give one an explicit id)`, `X: goto target Y does not exist` |
 
 An event type is known when a loaded plugin declares it (`gh.checks`), when it is a core
@@ -168,8 +170,9 @@ An event type is known when a loaded plugin declares it (`gh.checks`), when it i
 
 ## Editing live
 
-- Edits apply to open runs from their next entry. If the entry a run stands on was removed, the
-  run goes `needs-human` with `entry X no longer exists`.
+- Edits apply to open runs from their next entry. An entry that is waiting picks up an edited
+  `wait_for` at once. If the entry a run stands on was removed, the run goes `needs-human` with
+  `entry X no longer exists`.
 - A role added by an edit can be used by open runs.
 - The UI's process form re-serialises the YAML and loses comments. Its YAML tab saves the text
   as written. A save based on an older copy of the file is refused (`the file changed on disk`).

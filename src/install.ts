@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkS
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { shq } from "./agterm.ts";
+import { realAgterm, shq } from "./agterm.ts";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LABEL = "local.flows";
@@ -97,7 +97,11 @@ export async function install(o: InstallOpts = {}): Promise<void> {
   while (kept.length && kept[kept.length - 1] === "") kept.pop();
   const hookLines = ["status", "session.closed"].map((kind) => `on ${kind} ${flowCmd} agterm-hook`);
   writeFileSync(hooksPath, `${[...kept, ...hookLines].join("\n")}\n`);
-  run(o.agtermctl ?? process.env.FLOWS_AGTERMCTL ?? "agtermctl", ["hooks", "reload"], say);
+  try {
+    await realAgterm(o.agtermctl).reloadHooks();
+  } catch (e) {
+    say(e instanceof Error ? e.message.split("\n")[0] : String(e));
+  }
   say(`agterm hooks: ${hooksPath}`);
 
   const settingsPath = join(home, ".claude", "settings.json");

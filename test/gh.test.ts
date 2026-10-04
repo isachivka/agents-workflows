@@ -31,6 +31,9 @@ test("pollOnce checks parses stdout even on a non-zero exit; no checks turn gree
   assert.deepEqual(await pollOnce("checks", "7", none), { baseline: "1" });
   assert.deepEqual(await pollOnce("checks", "7", fake({ "pr checks": { stdout: "[]" } }), "1"), { baseline: "2" });
   assert.deepEqual(await pollOnce("checks", "7", none, String(EMPTY_POLLS - 1)), { emit: { outcome: "done", data: { failed: [], links: [] } } });
+  // checks seen pending restart the count: empty polls must be in a row
+  const pending = fake({ "pr checks": { code: 8, stdout: JSON.stringify([{ name: "ci", bucket: "pending" }]) } });
+  assert.deepEqual(await pollOnce("checks", "7", pending, String(EMPTY_POLLS - 1)), { baseline: "0" });
   const broken = fake({ "pr checks": { code: 4, stderr: "HTTP 401" } });
   await assert.rejects(pollOnce("checks", "7", broken), /HTTP 401/);
 });

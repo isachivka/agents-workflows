@@ -150,3 +150,16 @@ test("cross-site and rebinding requests are refused", async () => {
   assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "application/json", origin: s.base }, start), 200);
   await s.close();
 });
+
+test("a malformed request target gets 400 and flowd keeps answering", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const u = new URL(s.base);
+  const code = await new Promise<number>((resolve, reject) => {
+    const req = request({ host: u.hostname, port: u.port, path: "//[", method: "GET" }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+    req.on("error", reject);
+    req.end();
+  });
+  assert.equal(code, 400);
+  assert.equal((await s.call("GET", "/api/runs")).status, 200);
+  await s.close();
+});

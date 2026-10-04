@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
-import { matches, newRun, renderData, renderPrompt, step } from "./engine.ts";
+import { matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
 import { PluginHost, msg } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
@@ -93,7 +93,13 @@ export class Flowd {
     this.reloadDefs();
     await this.reconcileSessions();
     this.plugins.startAll();
-    for (const run of this.store.openRuns()) this.rearm(run);
+    for (const run of this.store.openRuns()) {
+      // a plugin action's promise died with the old process: fail the entry so on_fail decides
+      const cur = this.currentEntry(run);
+      if (cur?.kind === "action" && cur.do?.includes(".") && run.entries[cur.id]?.status === "active") {
+        void this.submit({ type: "entry.report", data: { run: run.id, entry: cur.id, outcome: "failed", note: "flowd restarted while the action ran", by: "system" }, source: "flowd" });
+      }
+    }
     for (const e of this.store.unprocessed()) void this.enqueue(() => this.process(e.id));
     const tickMs = this.o.tickMs ?? 5_000;
     const flushMs = this.o.flushMs ?? 1_000;
@@ -135,8 +141,18 @@ export class Flowd {
     return { steps: this.defs.steps, eventTypes: this.plugins.eventTypes(), actionNames: this.plugins.actionNames() };
   }
 
+  private currentEntry(run: RunState) {
+    return run.current ? this.defs.processes[run.process]?.entries.find((x) => x.id === run.current) : undefined;
+  }
+
   reloadDefs(): void {
     this.defs = loadDefs(this.home, this.plugins.eventTypes(), this.plugins.actionNames());
+    // a waiting entry's wait_for may have changed: arm its watch again from the new definition
+    for (const run of this.store.openRuns()) {
+      if (!run.current || run.entries[run.current]?.status !== "waiting") continue;
+      this.plugins.unwatch(run.id, run.current);
+      this.rearm(run);
+    }
     for (const c of this.crons) c.stop();
     this.crons = [];
     for (const p of Object.values(this.defs.processes)) {
@@ -165,7 +181,10 @@ export class Flowd {
     for (const s of live) this.store.setSessionStatus(s.id, s.status ?? "idle", this.now());
     for (const run of this.store.openRuns()) {
       for (const session of new Set(Object.values(run.roles))) {
-        if (session && !ids.has(session)) void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
+        if (!session) continue;
+        // a turn that ended while flowd was down must still start its reminder clock
+        if (ids.has(session)) void this.submit({ type: "agterm.status", data: { session, status: this.store.sessionStatus(session) }, source: "flowd" });
+        else void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
       }
     }
   }
@@ -173,11 +192,12 @@ export class Flowd {
   private rearm(run: RunState): void {
     const cur = run.current ? this.defs.processes[run.process]?.entries.find((x) => x.id === run.current) : undefined;
     if (!cur?.waitFor || run.entries[cur.id]?.status !== "waiting") return;
-    let w: Dict = {};
+    let w: Dict;
     try {
-      w = Object.fromEntries(Object.entries(cur.waitFor.with).map(([k, v]) => [k, typeof v === "string" ? renderTemplate(v, renderData(run)) : v]));
+      w = renderWith(cur.waitFor.with, run);
     } catch (e) {
-      this.log(`re-arm ${run.id} ${cur.id}: ${msg(e)}`);
+      void this.submit({ type: "run.halt", run: run.id, data: { reason: `${cur.id}: ${msg(e)}` }, source: "flowd" });
+      return;
     }
     this.plugins.watch({ run: run.id, entry: cur.id, type: cur.waitFor.on, with: w, vars: run.vars });
   }
@@ -273,6 +293,7 @@ export class Flowd {
       case "role.respawn":
         return this.apply(run, { kind: "respawn", role: String(d.role ?? "") });
       case "role.failed":
+      case "run.halt":
         return this.apply(run, { kind: "halt", reason: String(d.reason ?? "role failed") });
     }
     return this.route(e);
@@ -316,7 +337,7 @@ export class Flowd {
     }
     const open = this.store.openRuns().filter((r) => r.process === name).length;
     if (open >= p.maxRuns) {
-      if (trigger) void this.submit({ type: "flow.trigger.skipped", data: { process: name, trigger }, source: "flow" });
+      if (trigger && trigger !== "flow.trigger.skipped") void this.submit({ type: "flow.trigger.skipped", data: { process: name, trigger }, source: "flow" });
       return { error: `${name} already has ${open} open run(s) (max_runs ${p.maxRuns})` };
     }
     for (const [role, session] of Object.entries(bind)) {
@@ -348,7 +369,7 @@ export class Flowd {
         if (a.kind === "deliver") this.store.enqueue(runId, a.role, a.text, a.entry ?? null, this.now());
         if (a.kind === "emit") emitted.push(this.store.addEvent(a.event, this.now()));
       }
-      if (TERMINAL.includes(res.run.status)) this.store.dropOutbox(runId);
+      if (res.run.status === "stopped") this.store.dropOutbox(runId);
     });
     for (const a of res.actions) {
       if (a.kind === "watch") this.plugins.watch({ run: runId, entry: a.entry, type: a.waitFor.on, with: a.waitFor.with, vars: res.run.vars });
@@ -393,15 +414,18 @@ export class Flowd {
   private async doFlush(): Promise<void> {
     for (const row of this.store.pendingOutbox()) {
       const run = this.store.getRun(row.run_id);
-      if (!run || TERMINAL.includes(run.status)) { this.store.markSent(row.id, this.now()); continue; }
+      // a done run still types its last session action (a final type or clear) into a live session
+      const finished = run && TERMINAL.includes(run.status) && (run.status === "stopped" || row.entry_id || !run.roles[row.role]);
+      if (!run || finished) { this.store.markSent(row.id, this.now()); continue; }
       if (row.entry_id && (run.current !== row.entry_id || run.entries[row.entry_id]?.status !== "active")) {
         this.store.markSent(row.id, this.now()); // stale: the step moved on before its line went out
         continue;
       }
-      if (run.status === "paused") continue;
+      if (run.status === "paused" || run.status === "needs-human") continue; // held, never spawned for
       const session = run.roles[row.role];
       if (!session) { await this.spawnFor(run, row); continue; }
-      if (this.store.sessionStatus(session) === "active") continue;
+      const busy = this.store.sessionStatus(session);
+      if (busy === "active" || busy === "blocked") continue; // mid-turn, or at a permission prompt
       if (this.now() - (this.lastTyped.get(session) ?? -Infinity) < (this.o.gapMs ?? 2_000)) continue;
       try {
         await this.agterm.type(session, row.text);

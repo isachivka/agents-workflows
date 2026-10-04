@@ -142,6 +142,10 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       waitFor = { on: r.wait_for.on, where: isObj(r.wait_for.where) ? r.wait_for.where : {}, with: isObj(r.wait_for.with) ? r.wait_for.with : {} };
     else if (r.wait_for !== undefined) err(`${at}: wait_for must be an event type or {on, where, with}`);
     if (waitFor && !knownEvent(waitFor.on, ctx)) err(`${at}: unknown event type ${waitFor.on}`);
+    if (r.with !== undefined && !isObj(r.with)) err(`${at}: with must be a mapping`);
+    if (isObj(r.wait_for)) {
+      for (const k of ["where", "with"]) if (r.wait_for[k] !== undefined && !isObj(r.wait_for[k])) err(`${at}: wait_for.${k} must be a mapping`);
+    }
 
     const role = typeof r.role === "string" ? r.role : undefined;
     let kind: Entry["kind"] = "wait";
@@ -211,14 +215,16 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     }
   }
   if (entries.length && entries.every((e) => e.detour)) err("at least one entry must not be a detour");
-  // the engine hands an entry an event only when it waits for one, or as the first entry of a run an
-  // on: trigger started; a repeating run's later iterations start with fresh entries and no event
+  // the engine hands an entry an event only when it waits for one (and an agent or action then starts;
+  // a human step is closed by it), or as the first entry of a run an on: trigger started; a repeating
+  // run's later iterations start with fresh entries and no event
   const first = entries.find((e) => !e.detour);
   const triggered = triggers.some((t) => t.on) && repeat !== true;
   for (const e of entries) {
     const text = e.step ? ctx.steps[e.step]?.body : e.text;
-    if (!e.waitFor && !(triggered && e === first) && /\{\{\s*event\./.test(text ?? "")) {
-      err(`${e.id}: ${e.step ? `step ${e.step}` : "text"} uses {{event.*}}, but only an entry with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event`);
+    const woken = e.waitFor && e.kind !== "human";
+    if (!woken && !(triggered && e === first) && /\{\{\s*event\./.test(text ?? "")) {
+      err(`${e.id}: ${e.step ? `step ${e.step}` : "text"} uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event`);
     }
   }
   if (errors.length) throw new DefError(errors);

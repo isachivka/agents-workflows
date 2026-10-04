@@ -25,7 +25,7 @@ Run statuses (`src/types.ts`):
 |---|---|
 | `running` | The engine moves it forward. |
 | `paused` | Nothing is delivered or spawned; events are still recorded and applied, lines queue until resume. |
-| `needs-human` | Stopped with a reason (a failed step, a closed session, a template error, exhausted retries). A human override moves it on. |
+| `needs-human` | Stopped with a reason (a failed step, a closed session, a template error, exhausted retries). Like `paused`, nothing is delivered or spawned until a human override moves it on. |
 | `done` | The last entry finished and the process does not repeat. |
 | `stopped` | Stopped by a human. Sessions are left alone. |
 
@@ -60,8 +60,8 @@ session gets one line:
 and `flow show` prints the rendered prompt, the event that woke the step, the vars and how to
 report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 
-- Each role has an outbox. A line goes out only when the session's agterm status is not
-  `active`, so nothing lands mid-turn.
+- Each role has an outbox. A line goes out only when the session's agterm status is neither
+  `active` nor `blocked` (at a permission prompt), so nothing lands mid-turn or answers a dialog.
 - The text and the Enter are two `agtermctl session type --stdin` calls with a 500 ms pause
   between them. Claude's composer treats a newline typed together with the text as text.
 - Lines to one session are at least 2 s apart. Nothing is typed into a freshly spawned session
