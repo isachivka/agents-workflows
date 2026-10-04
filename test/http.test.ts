@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { request } from "node:http";
 import { STEP_FILES, proc, settle } from "./daemon-helpers.ts";
 import { serve } from "./http-helpers.ts";
 
@@ -125,5 +126,27 @@ test("the SSE stream announces run changes", async () => {
   let text = "";
   while (!text.includes("data: runs")) text += new TextDecoder().decode((await reader.read()).value);
   ac.abort();
+  await s.close();
+});
+
+function rawRequest(base: string, path: string, headers: Record<string, string>, body = ""): Promise<number> {
+  const u = new URL(base);
+  return new Promise((resolve, reject) => {
+    const req = request({ host: u.hostname, port: u.port, path, method: "POST", headers }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+// A page in the user's browser can POST text/plain to localhost without a preflight, and a
+// DNS-rebinding page reaches flowd under its own Host name; neither may drive flowd.
+test("cross-site and rebinding requests are refused", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const start = JSON.stringify({ process: "p" });
+  assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "text/plain" }, start), 415);
+  assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "application/json", host: "evil.example:7420" }, start), 403);
+  assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "application/json", origin: "http://evil.example" }, start), 403);
+  assert.deepEqual((await s.call("GET", "/api/runs")).body, []);
+  assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "application/json", origin: s.base }, start), 200);
   await s.close();
 });

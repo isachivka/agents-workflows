@@ -222,11 +222,21 @@ export function makeServer(f: Flowd, uiDir: string): Server {
 
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    // No auth, so no browser page but flowd's own: a foreign Host is DNS rebinding, a foreign
+    // Origin is a cross-site request, and JSON-only bodies force a preflight flowd never answers.
+    const host = req.headers.host ?? "";
+    const origin = req.headers.origin;
+    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host) || (origin && origin !== `http://${host}`)) {
+      return send(res, 403, { error: "flowd only answers its own pages and local clients" });
+    }
     try {
       if (req.method === "GET" && url.pathname === "/api/stream") return stream(f, req, res);
       for (const [method, re, handler] of routes) {
         const m = re.exec(url.pathname);
         if (!m || method !== req.method) continue;
+        if (method !== "GET" && method !== "DELETE" && !/^application\/json\b/.test(req.headers["content-type"] ?? "")) {
+          throw new HttpError(415, { error: "send the body as application/json" });
+        }
         const body = method === "GET" || method === "DELETE" ? {} : await readBody(req);
         const out = await handler(m.slice(1).map(decodeURIComponent), body, url.searchParams, res);
         return send(res, 200, out ?? {});

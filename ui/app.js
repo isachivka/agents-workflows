@@ -150,7 +150,7 @@ function EntryPanel({ run, id, post, ask, open }) {
   return html`<section class="panel">
     <h3>${id} <span class="muted">${e.kind}${e.role ? ` · ${e.role}` : ""} · ${s.status || "pending"} · attempts ${s.attempts || 0} · failures ${s.failures || 0}</span></h3>
     ${s.note && html`<p>note: ${s.note}</p>`}
-    ${s.evidence && html`<p>evidence: <a href=${s.evidence} target="_blank" rel="noreferrer">${s.evidence}</a></p>`}
+    ${s.evidence && html`<p>evidence: ${isUrl(s.evidence) ? html`<a href=${s.evidence} target="_blank" rel="noreferrer">${s.evidence}</a>` : s.evidence}</p>`}
     ${s.event && html`<p class="muted">woken by ${s.event.type} ${s.event.outcome || ""}</p><pre>${JSON.stringify(s.event.data, null, 2)}</pre>`}
     ${prompt && html`<pre>${prompt.text}</pre>`}
     ${error && html`<p class="err">${error.message}</p>`}
