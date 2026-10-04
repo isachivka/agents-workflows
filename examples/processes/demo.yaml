@@ -1,0 +1,10 @@
+description: Smoke test — spawn, an agent step, compact, clear, a signal wait, a human step
+cwd: /tmp
+roles:
+  agent: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: demo-hello, role: agent}
+  - {do: compact, role: agent}
+  - {do: clear, role: agent}
+  - {step: demo-wake, role: agent, wait_for: signal.demo}
+  - {step: demo-approve, role: human}
