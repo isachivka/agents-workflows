@@ -127,7 +127,7 @@ test("only the human closes a human step", () => {
   assert.deepEqual(s.delivered(), []);
   assert.equal(s.status("c"), "active");
   s.send(rep("c"));
-  assert.equal(s.error, "c is the human's step; the user closes it");
+  assert.equal(s.error, "c is the human's step; a human closes it");
   s.send(rep("c", "done", "human"));
   assert.equal(s.run.status, "done");
 });

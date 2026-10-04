@@ -12,5 +12,5 @@ test("the shipped examples are valid against the built-in plugins", async () => 
   await host.load();
   const defs = loadDefs(join(ROOT, "examples"), host.eventTypes(), host.actionNames());
   assert.deepEqual(defs.invalid, {});
-  assert.deepEqual(Object.keys(defs.processes).sort(), ["demo", "ts-wave"]);
+  assert.deepEqual(Object.keys(defs.processes).sort(), ["demo", "pr-loop"]);
 });

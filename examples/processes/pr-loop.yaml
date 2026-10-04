@@ -1,0 +1,17 @@
+description: "Sample — one task per iteration: a lead picks and reviews, a dev implements, CI is awaited, a human merges"
+cwd: ~/code/my-repo
+repeat: true
+max_runs: 1
+roles:
+  lead: {spawn: "claude --dangerously-skip-permissions"}
+  dev:  {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {id: lead-fresh, do: clear, role: lead}
+  - {step: task-pick, role: lead}
+  - {id: dev-fresh, do: clear, role: dev}
+  - {step: task-implement, role: dev}
+  - {step: task-review, role: lead, on_fail: {goto: task-implement}}
+  - {step: task-pr, role: lead}
+  - {id: ci, wait_for: gh.checks, on_fail: {goto: ci-fix}}
+  - {step: task-merge, role: human, wait_for: gh.merged}
+  - {step: ci-fix, role: dev, detour: true, after: {goto: ci}}
