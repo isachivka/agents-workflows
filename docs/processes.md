@@ -1,0 +1,236 @@
+# Steps and processes reference
+
+Every key of a step file and a process file, how a run moves through them, and what the
+validator checks. The ideas behind them are in [concepts.md](concepts.md).
+
+## Files
+
+Definitions live in `$FLOWS_HOME` (default `~/.config/flows`; the `FLOWS_HOME` environment
+variable overrides it). It may be a git repository.
+
+```
+$FLOWS_HOME/
+  steps/<id>.md            a reusable step
+  processes/<name>.yaml    a process
+  plugins/<name>.ts        your plugins (see plugins.md)
+  plugins.yaml             plugin configuration, one mapping per plugin name
+```
+
+Step ids and process names match `^[a-z0-9][a-z0-9-]*$`: lowercase letters, digits and dashes,
+not starting with a dash. flowd notices saved files by itself (within about 300 ms) and the UI
+updates.
+
+## Step files
+
+```markdown
+---
+summary: The lead reviews the dev's commits
+---
+Review the new commits in {{vars.worktree}} against "{{vars.task}}". Run the tests yourself.
+Something to fix: `flow failed --note "<what to fix>"`. Good: `flow done --note "<verdict>"`.
+```
+
+- `summary` (required, the only frontmatter key): one line shown in the UI and the run's strip.
+- The body is the prompt an agent reads with `flow show`. It must not be empty.
+
+Placeholders, substituted when the step starts (`src/template.ts`, `renderData` in `src/engine.ts`):
+
+| Placeholder | Value |
+|---|---|
+| `{{run.id}}` | `pr-loop#3` |
+| `{{run.process}}` | `pr-loop` |
+| `{{run.iteration}}` | `2` |
+| `{{vars.<key>}}` | a run variable set with `flow set key=value` |
+| `{{event.type}}` | the type of the event that woke this entry |
+| `{{event.outcome}}` | `done` or `failed`, if the event had one |
+| `{{event.data.<key>}}` | a field of that event's data |
+
+There is no logic, only substitution. An object renders as JSON. A missing value is an error: the
+step does not start and the run goes `needs-human` with `{{vars.x}} has no value`. Only an entry
+that an event woke has `{{event.*}}`: one with its own `wait_for`, or the first entry of a run that
+an event trigger started. The validator rejects `{{event.*}}` anywhere else.
+
+## Process keys
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `description` | string | required | One line, shown in the UI. |
+| `cwd` | string | required | Working directory of spawned agents. `~` is expanded. |
+| `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
+| `max_runs` | integer ≥ 1 | `1` | Open runs allowed at once. Further starts are refused. |
+| `triggers` | list | none | Automatic starts, see below. Manual starts always work. |
+| `roles` | mapping | none | Agent roles, see below. |
+| `steps` | list | required | The entries, in order. Must not be empty. |
+
+## Roles
+
+```yaml
+roles:
+  lead: {spawn: "claude --dangerously-skip-permissions"}
+  dev:  {spawn: "claude --model sonnet", cwd: "{{vars.worktree}}"}
+```
+
+| Key | Meaning |
+|---|---|
+| `spawn` | Required. The command that starts the agent. It runs as `/bin/zsh -lc '<spawn> <first line>'`: a login shell, so `claude` is on `PATH`, but your `.zshrc` aliases are not loaded. Write `--dangerously-skip-permissions` yourself if you want it. |
+| `cwd` | Optional template, rendered when the role is spawned. Defaults to the process `cwd`. |
+
+`human` is reserved: entries with `role: human` need no declaration.
+
+## Triggers
+
+```yaml
+triggers:
+  - {cron: "0 9 * * 1-5"}
+  - {on: flow.run.done, where: {process: ci-loop}}
+```
+
+| Key | Meaning |
+|---|---|
+| `cron` | A cron expression in [croner](https://github.com/hexagon/croner) syntax (5 fields; a leading seconds field is accepted). |
+| `on` | An event type. The run's first entry gets the event as `{{event.*}}`. |
+| `where` | With `on`: a mapping that must be a subset of the event's data. |
+
+## Entries
+
+Each item of `steps:` is one of these kinds:
+
+| Kind | Write | What happens |
+|---|---|---|
+| agent step | `{step: <id>, role: <role>}` | The role's session gets the nudge line; the agent reports with `flow done` / `flow failed`. |
+| human step | `{step: <id>, role: human}` | Shown in the UI under "Needs you"; closed there or with `flow done --human`. |
+| session action | `{do: clear, role: <role>}`, `{do: compact, role: <role>}` | flowd types `/clear` or `/compact` into the role's session. |
+| typed line | `{do: type, role: <role>, text: "..."}` | flowd types a literal line (a template) into the role's session. |
+| plugin action | `{do: <plugin>.<action>, with: {...}}` | flowd calls the plugin; a throw fails the entry. No action ships with flows yet. |
+| pure wait | `{wait_for: <type>}` | Waits for an event; its `outcome` closes the entry (`failed` fails it). |
+
+Keys on any entry:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `id` | string | the `step`, else the `do`, else the `wait_for` type | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
+| `step` | string | | A step id (a file in `steps/`). |
+| `role` | string | | A declared role, or `human`. |
+| `do` | string | | `clear`, `compact`, `type`, or `<plugin>.<action>`. |
+| `text` | string | | The line for `do: type`. |
+| `with` | mapping | `{}` | Arguments for a plugin action. String values are templates over `run` and `vars` (no `{{event.*}}`). |
+| `wait_for` | string or mapping | | An event type, or `{on: <type>, where: {...}, with: {...}}`. On an agent or human step it waits before the step starts; alone it is the entry's whole job. `with` (templates over `run` and `vars`) goes to the plugin's watch, for example `{pr: "{{vars.pr}}"}`. |
+| `on_fail` | `human`, `retry` or `{goto: <id>}` | `human` | What a failure does: stop for a human, run the entry again, or jump. |
+| `retries` | integer ≥ 0 | `3` | Failures of this entry allowed per iteration. One more stops the run for a human, whatever `on_fail` says. |
+| `after` | `{goto: <id>}` | | When the entry is done, jump there instead of advancing. |
+| `detour` | boolean | `false` | Normal advancing skips this entry; only a `goto` reaches it. A detour needs `after`. |
+| `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. |
+
+## How a run moves
+
+From `src/engine.ts`:
+
+- **Advance.** When an entry is done, the run goes to the next entry that is not a detour, or to
+  `after.goto`. Past the last entry the iteration ends.
+- **Fail.** `on_fail` applies. `retry` enters the entry again. `{goto: X}` resets X and every
+  entry from X through the failed one to `pending` (for a forward goto, X only), keeping their
+  attempt and failure counts, then enters X. More than `retries` failures of one entry in an
+  iteration stops the run.
+- **Iteration end.** Without `repeat` the run is `done` and emits `flow.run.done`. With
+  `repeat: true` it emits `flow.iteration.done`, bumps the iteration, resets every entry and
+  clears the vars. What a process must remember between iterations belongs in its project's
+  files. A repeating iteration that finishes without waiting for anything (for example only a
+  `clear` on a role with no session) stops the run instead of looping.
+- **Human overrides** (UI or CLI): mark the current entry done, failed or skipped (a skip needs a
+  reason), retry it, or go to any entry.
+
+## Validation
+
+`flow check`, flowd and the UI's save all use the same loader (`src/defs.ts`). An invalid
+process is listed with its errors and cannot start; other processes are unaffected. Messages
+name the entry as `steps[N]` (counting from 1) or by id:
+
+| Rule | Message |
+|---|---|
+| step id, process name | `step id X must match …`, `process name X must match …` |
+| step frontmatter | `missing --- frontmatter --- block`, `frontmatter must be a mapping`, `unknown key X`, `summary is required`, `body is empty` |
+| YAML | `yaml: …`, `a process file must be a YAML mapping` |
+| process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1` |
+| roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
+| triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping` |
+| entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do or wait_for`, `steps[N]: step and do are exclusive` |
+| steps and roles | `steps[N]: no step file steps/X.md`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
+| actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
+| events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `X: step Y uses {{event.*}}, but only an entry with wait_for (or the first entry of an event-triggered run) gets an event` |
+| failure handling | `steps[N]: on_fail must be retry, human or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
+| detours and ids | `steps[N]: detour must be true or false`, `steps[N]: a detour needs after.goto`, `at least one entry must not be a detour`, `duplicate entry id X (give one an explicit id)`, `X: goto target Y does not exist` |
+
+An event type is known when a loaded plugin declares it (`gh.checks`), when it is a core
+`flow.*` event, or when it starts with `signal.`.
+
+## Editing live
+
+- Edits apply to open runs from their next entry. If the entry a run stands on was removed, the
+  run goes `needs-human` with `entry X no longer exists`.
+- A role added by an edit can be used by open runs.
+- The UI's process form re-serialises the YAML and loses comments. Its YAML tab saves the text
+  as written. A save based on an older copy of the file is refused (`the file changed on disk`).
+
+## Recipes
+
+Each of these passes `flow check` (with step files of the same names).
+
+**CI loop with a fix-up detour.** The agent sets `vars.pr` in `open-pr`; red CI goes to the
+detour, which jumps back to the wait.
+
+```yaml
+description: Open a PR, wait for CI, fix it until green
+cwd: ~/code/my-repo
+roles:
+  dev: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: implement, role: dev}
+  - {step: open-pr, role: dev}          # the agent runs `flow set pr=<url>`
+  - {id: ci, wait_for: gh.checks, on_fail: {goto: fix-ci}}
+  - {step: fix-ci, role: dev, detour: true, after: {goto: ci}}
+```
+
+**Review loop.** The reviewer's `flow failed` sends the work back to the writer, up to five times.
+
+```yaml
+description: A writer and a reviewer, back and forth until the review passes
+cwd: ~/code/my-repo
+roles:
+  writer: {spawn: "claude --dangerously-skip-permissions"}
+  reviewer: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: write-code, role: writer}
+  - {step: review-code, role: reviewer, on_fail: {goto: write-code}, retries: 5}
+```
+
+**Every weekday morning.**
+
+```yaml
+description: A report every weekday morning
+cwd: ~/code/my-repo
+triggers:
+  - {cron: "0 9 * * 1-5"}
+roles:
+  reporter: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {do: clear, role: reporter}
+  - {step: morning-report, role: reporter, timeout: 30m}
+```
+
+**Chaining processes, with a human gate.** Starts when a `ci-loop` run finishes; a human approves
+before the agent acts.
+
+```yaml
+description: Cut a release after ci-loop finishes, once a human approves
+cwd: ~/code/my-repo
+triggers:
+  - {on: flow.run.done, where: {process: ci-loop}}
+roles:
+  dev: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: approve-release, role: human}
+  - {step: cut-release, role: dev}
+```
+
+The shipped examples are in [`examples/`](../examples/): `demo` (every entry kind, for a first
+run) and `pr-loop` (two roles, CI, a human merge, a detour).
