@@ -160,7 +160,8 @@ listed in the UI with its errors and cannot start; other processes are unaffecte
 ### Runs
 
 A run is one instance of a process: id `<process>#<n>`, iteration number, status, `vars`,
-role bindings. Statuses: `running`, `paused`, `needs-human`, `failed`, `done`, `stopped`.
+role bindings. Statuses: `running`, `paused`, `needs-human`, `done`, `stopped`. Exhausted
+retries and every other dead end land in `needs-human`, never in a separate failed state.
 
 Entry statuses per iteration: `pending → waiting | active → done | failed | skipped`.
 
@@ -327,14 +328,17 @@ Slack later: `plugins/slack.ts` whose `start` holds Socket Mode and emits `slack
 `~/.local/state/flows/flows.db` (`FLOWS_STATE` overrides), WAL.
 
 ```
-runs     (id, process, n, iteration, status, vars JSON, created, updated)
-roles    (run_id, role, session_id, spawned BOOL)
-entries  (run_id, iteration, entry_id, status, attempts, failures, note, evidence,
-          event_id, delivered_at, reminded INT, updated)
+runs     (id, process, n, status, state JSON, created, updated)
 events   (id, ts, type, run_id, entry_id, outcome, data JSON, source, processed BOOL)
-outbox   (id, session_id, run_id, text, created, sent)
+outbox   (id, run_id, role, text, created, sent)
 sessions (session_id, status, status_at)          -- last agterm status seen
 ```
+
+`runs.state` is the engine's whole run state (iteration, vars, role bindings, per-entry
+status, attempts, failures, notes, evidence, the waking event, delivery and reminder marks);
+`status` is copied out of it for queries. Past iterations are read back from `events`.
+Outbox rows name a role, not a session: the session is resolved when the row is sent, so a
+row for an unspawned role spawns it.
 
 ## HTTP API
 
