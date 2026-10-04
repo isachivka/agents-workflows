@@ -103,6 +103,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     return done();
   }
   for (const e of p.entries) run.entries[e.id] ??= blankEntry();
+  for (const r of Object.keys(p.roles)) if (!(r in run.roles)) run.roles[r] = null;
   const byId = (id: string) => p.entries.find((e) => e.id === id);
   const st = (id: string) => run.entries[id];
   const deliver = (role: string, text: string, entry?: string) => {
@@ -224,8 +225,10 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
   }
 
   function recover(role: string): void {
-    resume();
-    if (!cur || cur.role !== role || cur.kind !== "agent" || st(cur.id).status !== "active") return;
+    const redeliver = cur?.role === role && cur.kind === "agent" && st(cur.id).status === "active";
+    // only a halt this role caused is lifted; a failed step of another role stays with the human
+    if (redeliver || run.reason?.startsWith(`role ${role} `)) resume();
+    if (!redeliver) return;
     const s = st(cur.id);
     s.deliveredAt = undefined;
     s.sawActive = false;

@@ -149,6 +149,25 @@ test("a human rebind recovers the run; a spawn bind is silent", () => {
   assert.match(s.send({ kind: "bind", role: "nope", session: "S4", by: "human" }).error!, /no role nope/);
 });
 
+test("rebinding a role that did not cause the halt leaves the run with the human", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1", ex: "S2" }).send({ kind: "start" });
+  s.send(rep("b", "failed", "agent", "red"));
+  assert.equal(s.run.status, "needs-human");
+  s.send({ kind: "bind", role: "ex", session: "S3", by: "human" });
+  assert.equal(s.run.roles.ex, "S3");
+  assert.deepEqual([s.run.status, s.run.reason], ["needs-human", "b failed: red"]);
+  s.send({ kind: "respawn", role: "pm" });
+  assert.equal(s.run.status, "needs-human");
+});
+
+test("a role added by a definition edit can be bound in an open run", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.process = mkDefs(LINEAR.replace("ex: {spawn: claude}}", "ex: {spawn: claude}, qa: {spawn: claude}}"), STEPS).process;
+  s.send({ kind: "bind", role: "qa", session: "S7", by: "spawn" });
+  assert.equal(s.error, undefined);
+  assert.equal(s.run.roles.qa, "S7");
+});
+
 test("timeouts fail waiting entries and drop their watch", () => {
   const s = new Sim(ONE_ROLE("  - {id: ci, wait_for: gh.checks, timeout: 1m}\n"), STEPS).send({ kind: "start" });
   s.now += 60_000;
