@@ -11,7 +11,9 @@ function fakeAgtermctl() {
   const log = join(dir, "calls.log");
   const bin = join(dir, "agtermctl");
   writeFileSync(bin, `#!/bin/sh
-for a in "$@"; do printf '[%s]' "$a" >> '${log}'; done; echo >> '${log}'
+for a in "$@"; do printf '[%s]' "$a" >> '${log}'; done
+case " $* " in *" --stdin "*) printf '<' >> '${log}'; cat >> '${log}'; printf '>' >> '${log}' ;; esac
+echo >> '${log}'
 if [ -n "$FAKE_FAIL" ]; then echo boom >&2; exit 3; fi
 case "$1 $2" in
   "session new") echo '{"ok":true,"result":{"id":"S-NEW"}}' ;;
@@ -29,16 +31,16 @@ test("spawn passes every flag and returns the new session id", async () => {
   assert.equal(f.calls(), "[session][new][--cwd][/w][--command][cmd][--workspace-name][ts-wave][--create-workspace][--no-select][--name][ts-wave#1 pm][--json]\n");
 });
 
-// A long line typed together with its newline lands in Claude's composer unsubmitted
-// (seen live on 2026-10-04), so the text and the Enter are separate calls.
-test("type sends the text, then Enter on its own; focus selects", async () => {
+// Live on 2026-10-04: a line typed together with its newline landed in Claude's composer
+// unsubmitted, and a newline passed as an argument did not submit either; Enter on stdin did.
+test("type sends the text, then Enter on its own, both on stdin; focus selects", async () => {
   const f = fakeAgtermctl();
   const a = realAgterm(f.bin, 0);
-  await a.type("S1", "hi");
+  await a.type("S1", "it's `x` $HOME");
   await a.type("S1", "/clear\n");
   await a.focus("S1");
-  assert.equal(f.calls(), "[session][type][--target][S1][hi]\n[session][type][--target][S1][\n]\n"
-    + "[session][type][--target][S1][/clear]\n[session][type][--target][S1][\n]\n[session][select][--target][S1]\n");
+  const T = "[session][type][--stdin][--target][S1]";
+  assert.equal(f.calls(), `${T}<it's \`x\` $HOME>\n${T}<\n>\n${T}</clear>\n${T}<\n>\n[session][select][--target][S1]\n`);
 });
 
 test("tree flattens workspaces into sessions", async () => {

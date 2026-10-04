@@ -23,12 +23,13 @@ export function expandHome(path: string, home = homedir()): string {
   return path.startsWith("~/") ? join(home, path.slice(2)) : path;
 }
 
-function run(bin: string, args: string[]): Promise<string> {
+function run(bin: string, args: string[], stdin?: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout: 15_000 }, (err, stdout, stderr) => {
+    const child = execFile(bin, args, { timeout: 15_000 }, (err, stdout, stderr) => {
       if (err) reject(new Error(`agtermctl ${args.slice(0, 2).join(" ")}: ${String(stderr).trim() || err.message}`));
       else resolve(String(stdout));
     });
+    child.stdin?.end(stdin ?? "");
   });
 }
 
@@ -43,11 +44,13 @@ export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", sub
       return id;
     },
     async type(session, text) {
-      // Typed in one call with the text, the newline can land in Claude's composer without submitting it.
+      // Claude's composer takes a newline typed with the text, or passed as an argument, as text, not Enter.
+      // Like peer-chat.py: the text, a pause, then Enter alone on stdin.
       // ponytail: fixed pause, no read-back; verify via `session text` (as peer-chat.py does) if it still misses.
-      await run(bin, ["session", "type", "--target", session, text.replace(/\n$/, "")]);
+      const typeArgs = ["session", "type", "--stdin", "--target", session];
+      await run(bin, typeArgs, text.replace(/\n$/, ""));
       await new Promise((r) => setTimeout(r, submitDelayMs));
-      await run(bin, ["session", "type", "--target", session, "\n"]);
+      await run(bin, typeArgs, "\n");
     },
     async focus(session) {
       await run(bin, ["session", "select", "--target", session]);
