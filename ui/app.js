@@ -143,7 +143,7 @@ function Run({ arg: id }) {
 function EntryPanel({ run, id, post, ask, open }) {
   const e = run.plan.find((x) => x.id === id);
   const s = run.entries[id] || {};
-  const { data: prompt, error } = useData(e && e.kind === "agent" ? `/api/runs/${enc(run.id)}/entries/${enc(id)}/prompt` : null);
+  const { data: prompt, error } = useData(e && (e.kind === "agent" || e.kind === "human") ? `/api/runs/${enc(run.id)}/entries/${enc(id)}/prompt` : null);
   if (!e) return null;
   const path = `/entries/${enc(id)}`;
   const current = id === run.current;

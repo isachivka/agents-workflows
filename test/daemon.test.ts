@@ -204,6 +204,15 @@ test("show renders the step for its session; preview renders against a run", asy
   await f.close();
 });
 
+test("show renders a human step's instructions with how to close it", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n") }));
+  await f.submit(start("p"));
+  await settle(f);
+  const shown = f.show({ run: "p#1", entry: "c" });
+  assert.ok("text" in shown && shown.text.includes("Do C") && shown.text.includes("flow done --human --run 'p#1' --step c"), JSON.stringify(shown));
+  await f.close();
+});
+
 test("a paused run holds its lines until resumed", async () => {
   const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
   await f.submit(status("S1", "active"));

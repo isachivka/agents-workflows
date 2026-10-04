@@ -4,7 +4,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { matches, newRun, renderData, renderPrompt, step } from "./engine.ts";
-import { expandHome, spawnCommand, type Agterm } from "./agterm.ts";
+import { expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
 import { PluginHost, msg } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -453,7 +453,7 @@ export class Flowd {
     const run = this.store.getRun(t.run);
     const entry = run ? this.defs.processes[run.process]?.entries.find((x) => x.id === t.entry) : undefined;
     if (!run || !entry) return { error: `no step ${t.entry} in ${t.run}` };
-    if (entry.kind !== "agent") return { error: `${entry.id} is a ${entry.kind} step; it has no prompt` };
+    if (entry.kind !== "agent" && entry.kind !== "human") return { error: `${entry.id} is a ${entry.kind} step; it has no prompt` };
     let prompt: string;
     try {
       prompt = renderPrompt(run, entry, this.defs);
@@ -465,7 +465,9 @@ export class Flowd {
     if (s?.event) lines.push(`woken by: ${s.event.type}${s.event.outcome ? ` ${s.event.outcome}` : ""} ${JSON.stringify(s.event.data)}`);
     const vars = Object.entries(run.vars);
     if (vars.length) lines.push(`vars: ${vars.map(([k, v]) => `${k}=${v}`).join("  ")}`);
-    lines.push("", prompt, "", "Report: `flow done [--note …] [--evidence URL]` · `flow failed --note …` · `flow set key=value`");
+    lines.push("", prompt, "", entry.kind === "human"
+      ? `Close it in the UI or with \`flow done --human --run ${shq(run.id)} --step ${entry.id}\``
+      : "Report: `flow done [--note …] [--evidence URL]` · `flow failed --note …` · `flow set key=value`");
     return { text: lines.join("\n") };
   }
 
