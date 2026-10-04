@@ -60,7 +60,7 @@ function run(bin: string, args: string[], say: (s: string) => void): void {
 function defaultNode(): string {
   try {
     const found = execFileSync("/bin/sh", ["-lc", "command -v node"], { encoding: "utf8" }).trim();
-    if (found) return found; // e.g. /opt/homebrew/bin/node — survives node upgrades, unlike the Cellar path
+    if (found) return found; // may carry a version (nvm): install replaces its own hooks on every run
   } catch {
     // fall back below
   }
@@ -91,12 +91,12 @@ export async function install(o: InstallOpts = {}): Promise<void> {
 
   const hooksPath = join(home, ".config", "agterm", "hooks.conf");
   mkdirSync(dirname(hooksPath), { recursive: true });
-  let hooks = existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : "";
-  for (const kind of ["status", "session.closed"]) {
-    const line = `on ${kind} ${flowCmd} agterm-hook`;
-    if (!hooks.split("\n").includes(line)) hooks += `${hooks && !hooks.endsWith("\n") ? "\n" : ""}${line}\n`;
-  }
-  writeFileSync(hooksPath, hooks);
+  // flows' own lines from an earlier install (possibly another node or repo path) are replaced
+  const ours = (line: string) => /^on (status|session\.closed) .*cli\.ts' agterm-hook$/.test(line);
+  const kept = (existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : "").split("\n").filter((l) => !ours(l));
+  while (kept.length && kept[kept.length - 1] === "") kept.pop();
+  const hookLines = ["status", "session.closed"].map((kind) => `on ${kind} ${flowCmd} agterm-hook`);
+  writeFileSync(hooksPath, `${[...kept, ...hookLines].join("\n")}\n`);
   run(o.agtermctl ?? process.env.FLOWS_AGTERMCTL ?? "agtermctl", ["hooks", "reload"], say);
   say(`agterm hooks: ${hooksPath}`);
 
@@ -104,11 +104,15 @@ export async function install(o: InstallOpts = {}): Promise<void> {
   const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, "utf8")) : {};
   const command = `${flowCmd} claude-hook compacted`;
   settings.hooks ??= {};
-  settings.hooks.PostCompact ??= [];
-  const present = JSON.stringify(settings.hooks.PostCompact).includes("claude-hook compacted");
-  if (!present) {
+  const before = JSON.stringify(settings.hooks.PostCompact ?? []);
+  // drop flows' entry from an earlier install, keep everyone else's
+  const groups = (settings.hooks.PostCompact ?? [])
+    .map((g: { hooks?: { command?: string }[] }) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !/cli\.ts' claude-hook compacted$/.test(h.command ?? "")) }))
+    .filter((g: { hooks: unknown[] }) => g.hooks.length > 0);
+  groups.push({ hooks: [{ type: "command", command }] });
+  if (JSON.stringify(groups) !== before) {
     if (existsSync(settingsPath)) copyFileSync(settingsPath, `${settingsPath}.bak-flows`);
-    settings.hooks.PostCompact.push({ hooks: [{ type: "command", command }] });
+    settings.hooks.PostCompact = groups;
     mkdirSync(dirname(settingsPath), { recursive: true });
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
     say(`Claude PostCompact hook added to ${settingsPath} (backup: settings.json.bak-flows)`);

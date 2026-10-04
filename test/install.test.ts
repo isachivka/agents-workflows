@@ -45,3 +45,18 @@ test("install wires launchd, agterm and Claude hooks, the skill and the PATH lin
   assert.equal(readlinkSync(join(home, ".claude", "skills", "flow")), "/repo/skill/flow");
   assert.equal(readlinkSync(join(home, ".local", "bin", "flow")), "/repo/bin/flow");
 });
+
+// nvm puts the node version in its path; after an upgrade a re-install must replace flows'
+// hook lines, not add a second set next to dead ones.
+test("a re-install with another node replaces flows' hooks instead of adding to them", async () => {
+  const home = mkdtempSync(join(tmpdir(), "flows-install-"));
+  mkdirSync(join(home, ".config", "agterm"), { recursive: true });
+  writeFileSync(join(home, ".config", "agterm", "hooks.conf"), "# mine\non status echo hi\n");
+  const opts = { home, repo: "/repo", launchctl: fakeBin(home, "launchctl").path, agtermctl: fakeBin(home, "agtermctl").path, uid: 501, log: () => {} };
+  await install({ ...opts, node: "/a/node" });
+  await install({ ...opts, node: "/b/node" });
+  assert.equal(readFileSync(join(home, ".config", "agterm", "hooks.conf"), "utf8"),
+    "# mine\non status echo hi\non status '/b/node' '/repo/src/cli.ts' agterm-hook\non session.closed '/b/node' '/repo/src/cli.ts' agterm-hook\n");
+  const settings = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
+  assert.deepEqual(settings.hooks.PostCompact, [{ hooks: [{ type: "command", command: "'/b/node' '/repo/src/cli.ts' claude-hook compacted" }] }]);
+});
