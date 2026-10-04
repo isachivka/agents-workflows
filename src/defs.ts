@@ -70,8 +70,8 @@ export function splitStep(text: string): { summary: string; body: string } {
   return { summary, body: m[2].trim() };
 }
 
-const PROCESS_KEYS = new Set(["description", "cwd", "repeat", "max_runs", "triggers", "roles", "steps"]);
-const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "on_fail", "retries", "after", "detour", "timeout"]);
+export const PROCESS_KEYS = new Set(["description", "cwd", "repeat", "max_runs", "triggers", "roles", "steps"]);
+export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "on_fail", "retries", "after", "detour", "timeout"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
 const knownEvent = (type: string, ctx: DefCtx) => ctx.eventTypes.has(type) || /^signal\.[a-z0-9.-]+$/.test(type);
@@ -211,6 +211,15 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     }
   }
   if (entries.length && entries.every((e) => e.detour)) err("at least one entry must not be a detour");
+  // the engine hands an entry an event only when it waits for one, or as the first entry of a triggered run
+  const first = entries.find((e) => !e.detour);
+  const triggered = triggers.some((t) => t.on);
+  for (const e of entries) {
+    const text = e.step ? ctx.steps[e.step]?.body : e.text;
+    if (!e.waitFor && !(triggered && e === first) && /\{\{\s*event\./.test(text ?? "")) {
+      err(`${e.id}: ${e.step ? `step ${e.step}` : "text"} uses {{event.*}}, but only an entry with wait_for (or the first entry of an event-triggered run) gets an event`);
+    }
+  }
   if (errors.length) throw new DefError(errors);
   return { name, description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number, triggers, roles, entries, source };
 }

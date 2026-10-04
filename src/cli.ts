@@ -15,6 +15,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …]
   flow ls [--all]                        open runs (--all: finished ones too)
+  flow check [name]                      validate FLOWS_HOME offline (all, or one process or step)
   flow done|failed --human --run ID --step ID
                                          close a step from your own terminal
   flow install                           launchd agent, agterm and Claude hooks, skill, PATH link
@@ -147,6 +148,13 @@ export async function main(argv: string[]): Promise<number> {
             r.waitingOn ? `waits ${r.waitingOn}` : "", r.reason ?? ""].filter(Boolean).join("  "));
         }
         return 0;
+      }
+      case "check": {
+        const { checkDefs } = await import("./check.ts");
+        const { flowsHome } = await import("./defs.ts");
+        const r = await checkDefs(flowsHome(), a._[0]);
+        for (const line of r.lines) out(line);
+        return r.ok ? 0 : 1;
       }
       case "install": {
         const { install } = await import("./install.ts");
