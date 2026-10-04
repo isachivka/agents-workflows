@@ -1,0 +1,230 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches } from "./daemon-helpers.ts";
+
+const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
+const start = (process: string, bind?: Record<string, string>) => ({ type: "run.start", data: { process, bind }, source: "test" });
+const status = (session: string, s: string) => ({ type: "agterm.status", data: { session, status: s }, source: "agterm" });
+const report = (data: Record<string, unknown>) => ({ type: "entry.report", data, source: "cli" });
+
+test("a start spawns the role with the nudge as its first prompt, binds it and marks it delivered", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  assert.deepEqual(await f.submit(start("p")), { run: "p#1" });
+  await settle(f);
+  assert.equal(agterm.calls.length, 1);
+  assert.ok(agterm.calls[0].startsWith("spawn S1 p | p#1 pm | /tmp | /bin/zsh -lc 'claude '\\''▶ flow: step b · p#1 it.1"), agterm.calls[0]);
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.roles.pm, "S1");
+  assert.ok(run.entries.b.deliveredAt);
+  await f.close();
+});
+
+test("a report from the session advances; the next line waits for an idle session and the spawn grace", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  await f.submit(start("p"));
+  await settle(f);
+  await f.submit(status("S1", "active"));
+  assert.deepEqual(await f.submit(report({ session: "S1", outcome: "done", note: "ok" })), { run: "p#1" });
+  await settle(f);
+  assert.deepEqual(agterm.typed(), []);
+  await f.submit(status("S1", "completed"));
+  await settle(f);
+  assert.deepEqual(agterm.typed(), []);
+  clock.t += 17_000; // 15 s spawn grace + 2 s gap
+  await settle(f);
+  assert.deepEqual(agterm.typed(), ["type S1 ▶ flow: step c · p#1 it.1 — run `flow show` for the instructions"]);
+  assert.ok(f.store.getRun("p#1")!.entries.c.deliveredAt);
+  await f.close();
+});
+
+test("a second flow done from the same session cannot close the next step before it arrives", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  await f.submit(start("p"));
+  await settle(f);
+  await f.submit(status("S1", "active"));
+  await f.submit(report({ session: "S1", outcome: "done" }));
+  const second = await f.submit(report({ session: "S1", outcome: "done" }));
+  assert.equal(second.error, "step c has not reached the agent yet");
+  assert.equal(f.store.getRun("p#1")!.entries.c.status, "active");
+  await f.close();
+});
+
+test("reports that cannot be placed are refused with a reason", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  await f.submit(start("p"));
+  await settle(f);
+  assert.equal((await f.submit(report({ session: "S9", outcome: "done" }))).error, "no open run is bound to this session");
+  assert.match((await f.submit(report({ outcome: "done" }))).error!, /no session/);
+  assert.equal((await f.submit(report({ session: "S1", outcome: "maybe" }))).error, "outcome must be done or failed");
+  await f.close();
+});
+
+test("broadcast events wake matching waits and start triggered processes; max_runs skips the rest", async () => {
+  resetWatches();
+  const home = makeHome({
+    ...STEP_FILES,
+    ...proc("  - {id: w, wait_for: {on: test.ping, where: {k: \"1\"}}}\n  - {step: c, role: human}\n"),
+    ...proc("  - {step: b, role: pm}\n", "triggers:\n  - {on: flow.run.done, where: {process: p}}\n", "q"),
+  });
+  const { f } = await startFlowd(home);
+  await f.submit(start("p"));
+  assert.deepEqual(watches(), ["p#1/w"]);
+  await f.submit({ type: "test.ping", data: { k: "2" }, source: "test" });
+  assert.equal(f.store.getRun("p#1")!.entries.w.status, "waiting");
+  await f.submit({ type: "test.ping", data: { k: "1" }, source: "test" });
+  assert.equal(f.store.getRun("p#1")!.current, "c");
+  await f.submit(report({ run: "p#1", entry: "c", outcome: "done", by: "human" }));
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.status, "done");
+  assert.ok(f.store.getRun("q#1"), "q was started by p's flow.run.done");
+  await f.submit({ type: "flow.run.done", data: { process: "p", run: "p#x" }, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("q#2"), null);
+  const skipped = f.store.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'flow.trigger.skipped'").get() as { n: number };
+  assert.equal(Number(skipped.n), 1);
+  await f.close();
+});
+
+test("after a restart, waits are re-armed and queued lines are delivered; stale nudges are dropped", async () => {
+  resetWatches();
+  const home = makeHome({
+    ...STEP_FILES,
+    ...proc("  - {step: b, role: pm}\n  - {id: w, wait_for: test.ping}\n"),
+    ...proc("  - {step: c, role: pm}\n", "", "q"),
+  });
+  const A = await startFlowd(home, { agterm: new FakeAgterm().addSession("S1", "S2") });
+  await A.f.submit(status("S1", "active"));
+  await A.f.submit(status("S2", "active"));
+  await A.f.submit(start("p", { pm: "S1" }));
+  await A.f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
+  await A.f.submit(start("q", { pm: "S2" }));
+  await settle(A.f);
+  assert.deepEqual(A.agterm.typed(), [], "b's nudge went stale, c's waits for S2");
+  await A.f.close();
+
+  resetWatches();
+  const B = await startFlowd(home, { agterm: new FakeAgterm().addSession("S1", "S2") });
+  await settle(B.f);
+  assert.deepEqual(watches(), ["p#1/w"]);
+  assert.deepEqual(B.agterm.typed(), ["type S2 ▶ flow: step c · q#1 it.1 — run `flow show` for the instructions"]);
+  await B.f.close();
+});
+
+test("a bound session missing from agterm at startup is treated as closed", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const A = await startFlowd(home, { agterm: new FakeAgterm().addSession("S1") });
+  await A.f.submit(start("p", { pm: "S1" }));
+  await A.f.close();
+  const B = await startFlowd(home, { agterm: new FakeAgterm() });
+  await settle(B.f);
+  const run = B.f.store.getRun("p#1")!;
+  assert.equal(run.roles.pm, null);
+  await B.f.close();
+});
+
+test("a definition edit that removes the current entry stops the run at the next tick", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const { f } = await startFlowd(home);
+  await f.submit(start("p"));
+  await settle(f);
+  writeFileSync(join(home, "processes/p.yaml"), "description: d\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: c, role: pm}\n");
+  f.reloadDefs();
+  await f.tickNow();
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.status, "needs-human");
+  assert.equal(run.reason, "entry b no longer exists");
+  writeFileSync(join(home, "processes/p.yaml"), "description: [");
+  f.reloadDefs();
+  assert.match((await f.submit(start("p"))).error!, /no valid process p: yaml/);
+  await f.close();
+});
+
+test("three failed spawns stop the run with the reason", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  agterm.failSpawn = 3;
+  await f.submit(start("p"));
+  await settle(f);
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.status, "needs-human");
+  assert.equal(run.reason, "spawn failed: no agterm");
+  await f.close();
+});
+
+test("three failed typings treat the session as closed", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  agterm.failType = 3;
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.roles.pm, null);
+  assert.equal(run.status, "needs-human");
+  assert.equal(run.reason, "role pm session closed");
+  await f.close();
+});
+
+test("compact finishes on Claude's PostCompact report from the bound session", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {do: compact, role: pm}\n  - {step: c, role: pm}\n") }),
+    { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  assert.deepEqual(agterm.typed(), ["type S1 /compact"]);
+  await f.submit({ type: "claude.compacted", data: { session: "S2" }, source: "claude" });
+  assert.equal(f.store.getRun("p#1")!.entries.compact.status, "active");
+  await f.submit({ type: "claude.compacted", data: { session: "S1" }, source: "claude" });
+  clock.t += 2_000;
+  await settle(f);
+  assert.equal(agterm.typed()[1], "type S1 ▶ flow: step c · p#1 it.1 — run `flow show` for the instructions");
+  await f.close();
+});
+
+test("plugin actions are run and reported", async () => {
+  const ok = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {do: test.post, with: {m: hi}}\n  - {step: c, role: human}\n") }));
+  await ok.f.submit(start("p"));
+  await settle(ok.f);
+  assert.equal(ok.f.store.getRun("p#1")!.current, "c");
+  await ok.f.close();
+  const bad = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {do: test.post, with: {fail: yes}}\n") }));
+  await bad.f.submit(start("p"));
+  await settle(bad.f);
+  assert.equal(bad.f.store.getRun("p#1")!.reason, "test.post failed: post failed");
+  await bad.f.close();
+});
+
+test("show renders the step for its session; preview renders against a run", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  await f.submit(start("p"));
+  await settle(f);
+  const shown = f.show({ session: "S1" });
+  assert.ok("text" in shown && shown.text.includes("Do B for p#1") && shown.text.includes("step b (role pm)"), JSON.stringify(shown));
+  assert.deepEqual(f.show({ session: "S9" }), { error: "no open run is bound to this session" });
+  assert.deepEqual(f.preview("run {{run.id}}", "p#1"), { text: "run p#1" });
+  assert.deepEqual(f.preview("{{vars.x}}"), { error: "{{vars.x}} has no value" });
+  await f.close();
+});
+
+test("a paused run holds its lines until resumed", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(status("S1", "active"));
+  await f.submit(start("p", { pm: "S1" }));
+  await f.submit({ type: "run.pause", run: "p#1", data: {}, source: "ui" });
+  await f.submit(status("S1", "completed"));
+  await settle(f);
+  assert.deepEqual(agterm.typed(), []);
+  await f.submit({ type: "run.resume", run: "p#1", data: {}, source: "ui" });
+  await settle(f);
+  assert.equal(agterm.typed().length, 1);
+  await f.close();
+});
+
+test("a session already bound to an open run cannot be bound again", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...proc("  - {step: c, role: pm}\n", "", "q") }),
+    { agterm: new FakeAgterm().addSession("X1") });
+  await f.submit(start("p", { pm: "X1" }));
+  assert.equal((await f.submit(start("q", { pm: "X1" }))).error, "session X1 is already bound to p#1");
+  await f.submit(start("q"));
+  assert.equal((await f.submit({ type: "role.bind", run: "q#1", data: { role: "pm", session: "X1", by: "human" }, source: "ui" })).error,
+    "session X1 is already bound to p#1");
+  await f.close();
+});
