@@ -45,8 +45,8 @@ export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", sub
     },
     async type(session, text) {
       // Claude's composer takes a newline typed with the text, or passed as an argument, as text, not Enter.
-      // Like peer-chat.py: the text, a pause, then Enter alone on stdin.
-      // ponytail: fixed pause, no read-back; verify via `session text` (as peer-chat.py does) if it still misses.
+      // So: the text, a pause, then Enter alone on stdin.
+      // ponytail: fixed pause, no read-back; read the screen back with `session text` and retry if it still misses.
       const typeArgs = ["session", "type", "--stdin", "--target", session];
       await run(bin, typeArgs, text.replace(/\n$/, ""));
       await new Promise((r) => setTimeout(r, submitDelayMs));

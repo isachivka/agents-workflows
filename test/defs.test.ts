@@ -35,7 +35,7 @@ steps:
 `;
 
 test("parses a valid process into entries", () => {
-  const p = parseProcess("ts-wave", GOOD, ctx);
+  const p = parseProcess("pr-loop", GOOD, ctx);
   assert.equal(p.repeat, true);
   assert.equal(p.maxRuns, 1);
   assert.deepEqual(p.entries.map((e) => [e.id, e.kind]), [

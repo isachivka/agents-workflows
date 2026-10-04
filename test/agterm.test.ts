@@ -26,9 +26,9 @@ esac
 
 test("spawn passes every flag and returns the new session id", async () => {
   const f = fakeAgtermctl();
-  const id = await realAgterm(f.bin).spawn({ cwd: "/w", command: "cmd", workspace: "ts-wave", name: "ts-wave#1 pm" });
+  const id = await realAgterm(f.bin).spawn({ cwd: "/w", command: "cmd", workspace: "pr-loop", name: "pr-loop#1 pm" });
   assert.equal(id, "S-NEW");
-  assert.equal(f.calls(), "[session][new][--cwd][/w][--command][cmd][--workspace-name][ts-wave][--create-workspace][--no-select][--name][ts-wave#1 pm][--json]\n");
+  assert.equal(f.calls(), "[session][new][--cwd][/w][--command][cmd][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n");
 });
 
 // Live on 2026-10-04: a line typed together with its newline landed in Claude's composer

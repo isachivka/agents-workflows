@@ -51,11 +51,13 @@ mkdir -p ~/.config/flows && cp -Rn examples/* ~/.config/flows/
 - the skills `flow` and `flow-author` in `~/.claude/skills/`;
 - `~/.local/bin/flow`.
 
-Then open http://127.0.0.1:7420.
+`flow` is now at `~/.local/bin/flow`; make sure `~/.local/bin` is on your `PATH`, or call
+`bin/flow` from the checkout. Then open http://127.0.0.1:7420.
 
 ## Quickstart: the demo
 
-The `demo` process touches every kind of entry once. It runs in `/tmp`.
+The `demo` process has an agent step, a compact, a clear, a wait for a signal and a human step.
+It runs in `/tmp`.
 
 ```bash
 flow start demo

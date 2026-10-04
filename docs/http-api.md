@@ -14,8 +14,8 @@ reachable only from this machine, and the checks below keep web pages out. The w
 - Path ids are URI-encoded: run `pr-loop#3` is `/api/runs/pr-loop%233`.
 - Errors: `{"error": "…"}` with **409** (the engine refused, for example `step c is not the
   current step`), **404** (no such run, process or step, or no route), **400** (bad JSON, missing
-  `type`); `{"errors": ["…"]}` with **409** (the definition changed on disk since `mtime`) or
-  **422** (the definition is invalid). An unexpected error gives **500** `{"error": "…"}`.
+  `type`); `{"errors": ["…"]}` with **409** (the definition changed on disk since `mtime`),
+  **422** (the definition is invalid) or **404** (deleting a definition that does not exist). An unexpected error gives **500** `{"error": "…"}`.
 
 ## Definitions
 

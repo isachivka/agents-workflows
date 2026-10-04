@@ -132,6 +132,6 @@ triggered by them.
 
 - `{cron: "0 10 * * 1-5"}` starts a run on a schedule (croner syntax).
 - `{on: <type>, where: {...}}` starts a run when a matching event arrives. The run's first
-  entry gets that event as `{{event.*}}`.
+  entry gets that event as `{{event.*}}`, in the first iteration only.
 - A start is refused when the process already has `max_runs` open runs. A refused trigger records
   `flow.trigger.skipped`. You can always start a process by hand.

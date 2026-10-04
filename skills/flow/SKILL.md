@@ -7,7 +7,7 @@ description: Use when a line starting with "▶ flow:" appears in the session, o
 
 This session is one role in a process that flowd runs. flowd types a line like
 
-    ▶ flow: step gate · ts-wave#12 it.3 — run `flow show` for the instructions
+    ▶ flow: step task-review · pr-loop#3 it.2 — run `flow show` for the instructions
 
 when a step is yours. Then:
 

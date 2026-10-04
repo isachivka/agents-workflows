@@ -47,8 +47,11 @@ Placeholders, substituted when the step starts (`src/template.ts`, `renderData` 
 
 There is no logic, only substitution. An object renders as JSON. A missing value is an error: the
 step does not start and the run goes `needs-human` with `{{vars.x}} has no value`. Only an entry
-that an event woke has `{{event.*}}`: one with its own `wait_for`, or the first entry of a run that
-an event trigger started. The validator rejects `{{event.*}}` anywhere else.
+that an event woke has `{{event.*}}`: one with its own `wait_for`, or the first entry of a run that an `on:` trigger started, in its first iteration.
+The validator rejects `{{event.*}}` in any other step body or `text` (also on the first entry
+when the process repeats). It does not check `with`, where `{{event.*}}` never works. A manual or
+cron start of a triggered process, or a `goto` back to its first entry, has no event either: the
+step then stops the run with a render error.
 
 ## Process keys
 
@@ -88,7 +91,7 @@ triggers:
 | Key | Meaning |
 |---|---|
 | `cron` | A cron expression in [croner](https://github.com/hexagon/croner) syntax (5 fields; a leading seconds field is accepted). |
-| `on` | An event type. The run's first entry gets the event as `{{event.*}}`. |
+| `on` | An event type. The run's first entry gets the event as `{{event.*}}` (first iteration only). |
 | `where` | With `on`: a mapping that must be a subset of the event's data. |
 
 ## Entries
@@ -114,7 +117,7 @@ Keys on any entry:
 | `do` | string | | `clear`, `compact`, `type`, or `<plugin>.<action>`. |
 | `text` | string | | The line for `do: type`. |
 | `with` | mapping | `{}` | Arguments for a plugin action. String values are templates over `run` and `vars` (no `{{event.*}}`). |
-| `wait_for` | string or mapping | | An event type, or `{on: <type>, where: {...}, with: {...}}`. On an agent or human step it waits before the step starts; alone it is the entry's whole job. `with` (templates over `run` and `vars`) goes to the plugin's watch, for example `{pr: "{{vars.pr}}"}`. |
+| `wait_for` | string or mapping | | An event type, or `{on: <type>, where: {...}, with: {...}}`. On an agent step or an action it waits, then the step starts. On a human step the event closes it (`failed` fails it), and a human can close it first. Alone it is the entry's whole job. `with` (templates over `run` and `vars`) goes to the plugin's watch, for example `{pr: "{{vars.pr}}"}`. |
 | `on_fail` | `human`, `retry` or `{goto: <id>}` | `human` | What a failure does: stop for a human, run the entry again, or jump. |
 | `retries` | integer ≥ 0 | `3` | Failures of this entry allowed per iteration. One more stops the run for a human, whatever `on_fail` says. |
 | `after` | `{goto: <id>}` | | When the entry is done, jump there instead of advancing. |
@@ -136,8 +139,8 @@ From `src/engine.ts`:
   clears the vars. What a process must remember between iterations belongs in its project's
   files. A repeating iteration that finishes without waiting for anything (for example only a
   `clear` on a role with no session) stops the run instead of looping.
-- **Human overrides** (UI or CLI): mark the current entry done, failed or skipped (a skip needs a
-  reason), retry it, or go to any entry.
+- **Human overrides**: mark the current entry done or failed (UI, or `flow done|failed --human`),
+  skip it (a skip needs a reason), retry it, or go to any entry (UI or HTTP API).
 
 ## Validation
 
@@ -154,9 +157,9 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
 | triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping` |
 | entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do or wait_for`, `steps[N]: step and do are exclusive` |
-| steps and roles | `steps[N]: no step file steps/X.md`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
+| steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
-| events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `X: step Y uses {{event.*}}, but only an entry with wait_for (or the first entry of an event-triggered run) gets an event` |
+| events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `X: step Y uses {{event.*}}, but only an entry with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
 | failure handling | `steps[N]: on_fail must be retry, human or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
 | detours and ids | `steps[N]: detour must be true or false`, `steps[N]: a detour needs after.goto`, `at least one entry must not be a detour`, `duplicate entry id X (give one an explicit id)`, `X: goto target Y does not exist` |
 
@@ -232,5 +235,5 @@ steps:
   - {step: cut-release, role: dev}
 ```
 
-The shipped examples are in [`examples/`](../examples/): `demo` (every entry kind, for a first
-run) and `pr-loop` (two roles, CI, a human merge, a detour).
+The shipped examples are in [`examples/`](../examples/): `demo` (an agent step, compact, clear, a signal wait
+and a human step, for a first run) and `pr-loop` (two roles, CI, a human merge, a detour).
