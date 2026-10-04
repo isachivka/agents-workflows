@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checksOutcome, pollOnce, makeGhPlugin, type Exec } from "../plugins/gh.ts";
+import { EMPTY_POLLS, checksOutcome, pollOnce, makeGhPlugin, type Exec } from "../plugins/gh.ts";
 import type { PluginCtx, PluginEvent } from "../src/plugins.ts";
 
 const fake = (answers: Record<string, { code?: number; stdout?: string; stderr?: string }>): Exec & { calls: string[][] } => {
@@ -22,12 +22,15 @@ test("checksOutcome: pending → null, green → done, red/cancelled → failed 
   assert.deepEqual(checksOutcome([]), { outcome: "done", data: { failed: [], links: [] } });
 });
 
-test("pollOnce checks parses stdout even on a non-zero exit, and treats no required checks as green", async () => {
+test("pollOnce checks parses stdout even on a non-zero exit; no checks turn green only once they stay absent", async () => {
   const red = fake({ "pr checks": { code: 1, stdout: JSON.stringify([{ name: "lint", bucket: "fail", link: "L" }]) } });
   assert.deepEqual(await pollOnce("checks", "https://x/pull/7", red), { emit: { outcome: "failed", data: { failed: ["lint"], links: ["L"] } } });
   assert.deepEqual(red.calls[0], ["pr", "checks", "https://x/pull/7", "--required", "--json", "name,bucket,link"]);
   const none = fake({ "pr checks": { code: 1, stderr: "no required checks reported on the 'x' branch" } });
-  assert.deepEqual(await pollOnce("checks", "7", none), { emit: { outcome: "done", data: { failed: [], links: [] } } });
+  // right after the PR opens CI has not registered its checks yet: that is pending, not green
+  assert.deepEqual(await pollOnce("checks", "7", none), { baseline: "1" });
+  assert.deepEqual(await pollOnce("checks", "7", fake({ "pr checks": { stdout: "[]" } }), "1"), { baseline: "2" });
+  assert.deepEqual(await pollOnce("checks", "7", none, String(EMPTY_POLLS - 1)), { emit: { outcome: "done", data: { failed: [], links: [] } } });
   const broken = fake({ "pr checks": { code: 4, stderr: "HTTP 401" } });
   await assert.rejects(pollOnce("checks", "7", broken), /HTTP 401/);
 });

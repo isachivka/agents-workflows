@@ -26,12 +26,21 @@ function json(out: { code: number; stdout: string; stderr: string }, what: strin
   }
 }
 
+/** Polls in a row with no checks at all before a PR counts as having none (a fresh PR has not registered them yet). */
+export const EMPTY_POLLS = 5;
+
 export async function pollOnce(kind: "checks" | "merged" | "review", pr: string, exec: Exec, baseline?: string):
   Promise<{ emit?: { outcome?: "done" | "failed"; data: Dict }; baseline?: string }> {
   if (kind === "checks") {
     const out = await exec(["pr", "checks", pr, "--required", "--json", "name,bucket,link"]);
-    if (!out.stdout.trim() && /no required checks/i.test(out.stderr)) return { emit: { outcome: "done", data: { failed: [], links: [] } } };
-    const result = checksOutcome(json(out, "pr checks") as { name: string; bucket: string; link?: string }[]);
+    const none = !out.stdout.trim() && /no required checks/i.test(out.stderr);
+    const rows = none ? [] : json(out, "pr checks") as { name: string; bucket: string; link?: string }[];
+    if (rows.length === 0) {
+      // baseline counts the empty polls in a row
+      const empty = Number(baseline ?? 0) + 1;
+      if (empty < EMPTY_POLLS) return { baseline: String(empty) };
+    }
+    const result = checksOutcome(rows);
     return result ? { emit: result } : {};
   }
   if (kind === "merged") {
