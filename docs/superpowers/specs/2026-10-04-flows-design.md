@@ -50,7 +50,6 @@ src/      daemon.ts engine.ts store.ts defs.ts agterm.ts plugins.ts cron.ts http
 plugins/  gh.ts
 ui/       index.html app.js vendor/preact-htm.js
 skill/flow/SKILL.md
-launchd/local.flows.plist
 examples/ demo.yaml ts-wave.yaml steps/*.md
 test/
 ```
@@ -254,8 +253,9 @@ environment and posts them to `/agterm`; the hook never depends on the payload's
   `completed`/`idle` without `flow done`/`failed` gets a reminder line 30 s later
   ("step X is not closed: `flow done` or `flow failed`"); after two reminders the run goes
   `needs-human`.
-- `session.closed` of a bound session puts the run `needs-human` with "role X session
-  closed"; the UI offers respawn or rebind.
+- `session.closed` of a bound session unbinds the role, so its next delivery spawns a new
+  session. If the role's agent entry was active at that moment, the run also goes
+  `needs-human` with "role X session closed"; the UI offers respawn or rebind.
 - On start flowd reconciles statuses from `agtermctl tree --json`.
 
 ### Agent CLI
@@ -273,7 +273,7 @@ active entry. `--run ID --step ID` overrides for the user's terminal.
 | `flow start <process> [--bind role=SESSION …]` | start a run |
 | `flow ls` | open runs, one line each |
 | `flow done --human --run ID --step ID` | the user closes a human entry from a terminal |
-| `flow install` | launchd plist, agterm hook lines, Claude `PostCompact` hook, skill symlink into `~/.claude/skills/flow` |
+| `flow install` | launchd plist (generated, machine paths), agterm hook lines, Claude `PostCompact` hook, skill symlink into `~/.claude/skills/flow` |
 | `flow agterm-hook`, `flow claude-hook compacted` | hook entry points, not for hand use |
 
 A refused command prints why (`no active step for this session`, `step gate is not active`)
