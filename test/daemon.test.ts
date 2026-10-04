@@ -366,3 +366,54 @@ test("an on: trigger hands its event to the run's first entry", async () => {
   assert.ok("text" in shown && shown.text.includes("Got hi from signal.go"), JSON.stringify(shown));
   await f.close();
 });
+
+// --- repo-review round 2 ---
+
+test("a reload that leaves a wait_for unchanged keeps its watch", async () => {
+  resetWatches();
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {id: w, wait_for: test.ping}\n  - {step: c, role: human}\n") });
+  const { f } = await startFlowd(home);
+  await f.submit(start("p"));
+  assert.deepEqual(watches(), ["p#1/w"]);
+  f.reloadDefs();
+  assert.deepEqual(watches(), ["p#1/w"], "re-armed although nothing changed");
+  await f.close();
+});
+
+test("a report stored before a crash wins over the restart's failure of the cut-off action", async () => {
+  const home = makeHome({ ...STEP_FILES, "plugins/slow.ts": SLOW_PLUGIN, ...proc("  - {do: slow.wait}\n  - {step: c, role: human}\n") });
+  const A = await startFlowd(home);
+  await A.f.submit(start("p"));
+  await settle(A.f);
+  A.f.store.addEvent({ type: "entry.report", data: { run: "p#1", entry: "slow.wait", outcome: "done", by: "system" }, source: "flowd" });
+  await A.f.close(); // the report is stored, never processed: as after a crash
+  const B = await startFlowd(home);
+  await settle(B.f);
+  const run = B.f.store.getRun("p#1")!;
+  assert.equal(run.entries["slow.wait"].status, "done");
+  assert.equal(run.entries["slow.wait"].failures, 0, "a synthetic failure was processed first");
+  assert.equal(run.current, "c");
+  await B.f.close();
+});
+
+const QUICK_PLUGIN = `const g = globalThis as any;
+export default { name: "quick", events: ["now"], watch(w: any, ctx: any) { if (g.__quickFire) ctx.emit({ type: "now", run: w.run, entry: w.entry }); return () => {}; } };
+`;
+
+test("an action started by a wait that fires right after a restart is not failed as cut off", async () => {
+  (globalThis as any).__quickFire = false;
+  const home = makeHome({ ...STEP_FILES, "plugins/slow.ts": SLOW_PLUGIN, "plugins/quick.ts": QUICK_PLUGIN,
+    ...proc("  - {id: w, wait_for: quick.now}\n  - {do: slow.wait}\n  - {step: c, role: human}\n") });
+  const A = await startFlowd(home);
+  await A.f.submit(start("p"));
+  assert.equal(A.f.store.getRun("p#1")!.entries.w.status, "waiting");
+  await A.f.close();
+  (globalThis as any).__quickFire = true;
+  const B = await startFlowd(home);
+  await settle(B.f);
+  (globalThis as any).__quickFire = false;
+  const run = B.f.store.getRun("p#1")!;
+  assert.equal(run.entries["slow.wait"].status, "active", run.reason ?? "");
+  assert.equal(run.status, "running");
+  await B.f.close();
+});

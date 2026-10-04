@@ -70,6 +70,7 @@ export class Flowd {
   private crons: Cron[] = [];
   private watcher: FSWatcher | undefined;
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  private loaded = false;
 
   constructor(o: FlowdOptions) {
     this.o = o;
@@ -93,14 +94,19 @@ export class Flowd {
     this.reloadDefs();
     await this.reconcileSessions();
     this.plugins.startAll();
-    for (const run of this.store.openRuns()) {
-      // a plugin action's promise died with the old process: fail the entry so on_fail decides
-      const cur = this.currentEntry(run);
-      if (cur?.kind === "action" && cur.do?.includes(".") && run.entries[cur.id]?.status === "active") {
-        void this.submit({ type: "entry.report", data: { run: run.id, entry: cur.id, outcome: "failed", note: "flowd restarted while the action ran", by: "system" }, source: "flowd" });
-      }
-    }
     for (const e of this.store.unprocessed()) void this.enqueue(() => this.process(e.id));
+    // Behind the replayed events, so a report stored before a crash wins, and before any watch is
+    // armed, so an action a fresh event starts is not mistaken for one the restart cut off.
+    void this.enqueue(async () => {
+      for (const run of this.store.openRuns()) {
+        const cur = this.currentEntry(run);
+        if (cur?.kind === "action" && cur.do?.includes(".") && run.entries[cur.id]?.status === "active") {
+          // its promise died with the old process: fail the entry so on_fail decides
+          await this.process(this.store.addEvent({ type: "entry.report", data: { run: run.id, entry: cur.id, outcome: "failed", note: "flowd restarted while the action ran", by: "system" }, source: "flowd" }, this.now()));
+        }
+      }
+      for (const run of this.store.openRuns()) this.rearm(run);
+    });
     const tickMs = this.o.tickMs ?? 5_000;
     const flushMs = this.o.flushMs ?? 1_000;
     if (tickMs > 0) this.timers.push(setInterval(() => { void this.tickNow(); }, tickMs));
@@ -146,13 +152,21 @@ export class Flowd {
   }
 
   reloadDefs(): void {
+    const before = this.defs;
     this.defs = loadDefs(this.home, this.plugins.eventTypes(), this.plugins.actionNames());
-    // a waiting entry's wait_for may have changed: arm its watch again from the new definition
-    for (const run of this.store.openRuns()) {
-      if (!run.current || run.entries[run.current]?.status !== "waiting") continue;
-      this.plugins.unwatch(run.id, run.current);
-      this.rearm(run);
+    // A waiting entry whose wait_for was edited gets its watch armed again from the new definition.
+    // Unchanged ones keep theirs: a fresh watch can miss what happened since the last poll (gh.review
+    // takes its baseline at start). The first load arms nothing; init does that once events replayed.
+    if (this.loaded) {
+      for (const run of this.store.openRuns()) {
+        if (!run.current || run.entries[run.current]?.status !== "waiting") continue;
+        const was = before.processes[run.process]?.entries.find((x) => x.id === run.current)?.waitFor;
+        if (JSON.stringify(was) === JSON.stringify(this.currentEntry(run)?.waitFor)) continue;
+        this.plugins.unwatch(run.id, run.current);
+        this.rearm(run);
+      }
     }
+    this.loaded = true;
     for (const c of this.crons) c.stop();
     this.crons = [];
     for (const p of Object.values(this.defs.processes)) {

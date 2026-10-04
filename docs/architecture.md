@@ -75,12 +75,14 @@ flushed every second.
 
 Definitions are never stored: they are read from `$FLOWS_HOME` at start and on every change.
 
-**Restart.** flowd can be stopped at any point. On start it loads plugins and definitions
-(re-arming the watch of every waiting entry), asks agterm for its live sessions (each bound
-session's status goes to its run, so a turn that ended while flowd was down starts its reminder
-clock; a bound session that no longer exists is treated as closed), starts the plugins, fails a
-plugin action that was still running (`flowd restarted while the action ran`), processes any event
-that was stored but not processed, and delivers lines still in the outbox.
+**Restart.** flowd can be stopped at any point. On start it loads plugins and definitions,
+asks agterm for its live sessions (each bound session's status goes to its run, so a turn that
+ended while flowd was down starts its reminder clock; a bound session that no longer exists is
+treated as closed), starts the plugins, and processes any event that was stored but not processed.
+Only then does it fail a plugin action that was still running (`flowd restarted while the action
+ran`) and re-arm the watch of every waiting entry, so a report saved before a crash wins and an
+event that arrives at once cannot start an action that is then taken for a cut-off one. Lines still
+in the outbox are delivered by the next flush.
 
 ## Security model
 
