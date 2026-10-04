@@ -32,7 +32,8 @@ function run(bin: string, args: string[]): Promise<string> {
   });
 }
 
-export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl"): Agterm {
+/** `submitDelayMs`: pause between the text and its Enter, so the TUI has taken the text in. */
+export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", submitDelayMs = 500): Agterm {
   return {
     async spawn(o) {
       const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", o.command, "--workspace-name", o.workspace,
@@ -42,7 +43,11 @@ export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl"): Ag
       return id;
     },
     async type(session, text) {
-      await run(bin, ["session", "type", "--target", session, text.endsWith("\n") ? text : `${text}\n`]);
+      // Typed in one call with the text, the newline can land in Claude's composer without submitting it.
+      // ponytail: fixed pause, no read-back; verify via `session text` (as peer-chat.py does) if it still misses.
+      await run(bin, ["session", "type", "--target", session, text.replace(/\n$/, "")]);
+      await new Promise((r) => setTimeout(r, submitDelayMs));
+      await run(bin, ["session", "type", "--target", session, "\n"]);
     },
     async focus(session) {
       await run(bin, ["session", "select", "--target", session]);

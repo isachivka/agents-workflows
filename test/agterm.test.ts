@@ -29,13 +29,16 @@ test("spawn passes every flag and returns the new session id", async () => {
   assert.equal(f.calls(), "[session][new][--cwd][/w][--command][cmd][--workspace-name][ts-wave][--create-workspace][--no-select][--name][ts-wave#1 pm][--json]\n");
 });
 
-test("type appends exactly one newline; focus selects", async () => {
+// A long line typed together with its newline lands in Claude's composer unsubmitted
+// (seen live on 2026-10-04), so the text and the Enter are separate calls.
+test("type sends the text, then Enter on its own; focus selects", async () => {
   const f = fakeAgtermctl();
-  const a = realAgterm(f.bin);
+  const a = realAgterm(f.bin, 0);
   await a.type("S1", "hi");
   await a.type("S1", "/clear\n");
   await a.focus("S1");
-  assert.equal(f.calls(), "[session][type][--target][S1][hi\n]\n[session][type][--target][S1][/clear\n]\n[session][select][--target][S1]\n");
+  assert.equal(f.calls(), "[session][type][--target][S1][hi]\n[session][type][--target][S1][\n]\n"
+    + "[session][type][--target][S1][/clear]\n[session][type][--target][S1][\n]\n[session][select][--target][S1]\n");
 });
 
 test("tree flattens workspaces into sessions", async () => {
