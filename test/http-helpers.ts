@@ -2,9 +2,14 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
+import { after } from "node:test";
 import { makeServer } from "../src/http.ts";
 import { makeHome, startFlowd } from "./daemon-helpers.ts";
 import type { FlowdOptions } from "../src/daemon.ts";
+
+// A test that fails before its own close() would leave the server listening and hang the file.
+const open = new Set<() => Promise<void>>();
+after(() => Promise.all([...open].map((c) => c())));
 
 export async function serve(files: Record<string, string>, opts: Partial<FlowdOptions> = {}) {
   const home = makeHome(files);
@@ -26,9 +31,11 @@ export async function serve(files: Record<string, string>, opts: Partial<FlowdOp
     return { status: res.status, body: json, type: res.headers.get("content-type") ?? "" };
   };
   const close = async () => {
+    if (!open.delete(close)) return;
     server.closeAllConnections();
     server.close();
     await f.close();
   };
+  open.add(close);
   return { f, agterm, clock, home, base, call, close };
 }
