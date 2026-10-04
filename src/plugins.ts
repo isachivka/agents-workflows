@@ -1,0 +1,191 @@
+import { existsSync, readdirSync } from "node:fs";
+import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { CORE_EVENTS } from "./defs.ts";
+import type { Dict, FlowEvent, Outcome } from "./types.ts";
+
+export interface PluginEvent { type: string; data?: Dict; outcome?: Outcome; run?: string; entry?: string }
+export interface Watch { run: string; entry: string; type: string; with: Dict; vars: Record<string, string> }
+export interface PluginCtx {
+  emit(e: PluginEvent): void;
+  log(msg: string): void;
+  error(err: unknown, w?: Watch): void;
+  config: Dict;
+}
+export interface Plugin {
+  name: string;
+  events?: string[];
+  start?(ctx: PluginCtx): unknown;
+  watch?(w: Watch, ctx: PluginCtx): (() => void) | void;
+  actions?: Record<string, (args: Dict, ctx: PluginCtx) => unknown>;
+}
+export interface PluginStatus {
+  name: string;
+  source: string;
+  events: string[];
+  actions: string[];
+  lastError: string | null;
+  watches: { run: string; entry: string; type: string; error: string | null }[];
+}
+
+interface Loaded { plugin: Plugin; ctx: PluginCtx; source: string; lastError?: string }
+interface Active { w: Watch; stop?: () => void; error?: string; attempt: number; retry?: ReturnType<typeof setTimeout> }
+
+export const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const key = (run: string, entry: string) => `${run}\u0000${entry}`;
+const RESERVED = new Set(["flow", "signal"]);
+
+export class PluginHost {
+  loaded = new Map<string, Loaded>();
+  loadErrors: Record<string, string> = {};
+  active = new Map<string, Active>();
+  dirs: string[];
+  config: Record<string, Dict>;
+  sink: (e: FlowEvent) => void;
+  log: (m: string) => void;
+  retryBaseMs: number;
+
+  constructor(o: { dirs: string[]; config: Record<string, Dict>; sink: (e: FlowEvent) => void; log?: (m: string) => void; retryBaseMs?: number }) {
+    this.dirs = o.dirs;
+    this.config = o.config;
+    this.sink = o.sink;
+    this.log = o.log ?? ((m) => console.error(m));
+    this.retryBaseMs = o.retryBaseMs ?? 5_000;
+  }
+
+  async load(): Promise<void> {
+    for (const dir of this.dirs) {
+      if (!existsSync(dir)) continue;
+      for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts")).sort()) {
+        const file = join(dir, f);
+        try {
+          const mod = await import(pathToFileURL(file).href);
+          const plugin = mod.default as Plugin;
+          if (!plugin || typeof plugin !== "object" || typeof plugin.name !== "string" || !/^[a-z][a-z0-9-]*$/.test(plugin.name)) {
+            throw new Error("the default export must be a plugin object with a lowercase name");
+          }
+          if (RESERVED.has(plugin.name)) throw new Error(`plugin name ${plugin.name} is reserved`);
+          this.add(plugin, file);
+          delete this.loadErrors[plugin.name];
+        } catch (e) {
+          this.loadErrors[basename(f, ".ts")] = msg(e);
+          this.log(`plugin ${file}: ${msg(e)}`);
+        }
+      }
+    }
+  }
+
+  add(plugin: Plugin, source = "inline"): void {
+    const name = plugin.name;
+    const ctx: PluginCtx = {
+      config: this.config[name] ?? {},
+      log: (m) => this.log(`[${name}] ${m}`),
+      error: (err, w) => {
+        const l = this.loaded.get(name);
+        if (l) l.lastError = msg(err);
+        if (w) {
+          const a = this.active.get(key(w.run, w.entry));
+          if (a) a.error = msg(err);
+        }
+        this.log(`[${name}] ${msg(err)}`);
+      },
+      emit: (e) => {
+        const type = e.type.startsWith(`${name}.`) ? e.type : `${name}.${e.type}`;
+        this.sink({ type, data: e.data ?? {}, outcome: e.outcome, run: e.run, entry: e.entry, source: name });
+      },
+    };
+    this.loaded.set(name, { plugin, ctx, source });
+  }
+
+  eventTypes(): Set<string> {
+    const types = new Set(CORE_EVENTS);
+    for (const { plugin } of this.loaded.values()) for (const e of plugin.events ?? []) types.add(`${plugin.name}.${e}`);
+    return types;
+  }
+
+  actionNames(): Set<string> {
+    const names = new Set<string>();
+    for (const { plugin } of this.loaded.values()) for (const a of Object.keys(plugin.actions ?? {})) names.add(`${plugin.name}.${a}`);
+    return names;
+  }
+
+  startAll(): void {
+    for (const l of this.loaded.values()) {
+      if (!l.plugin.start) continue;
+      try {
+        Promise.resolve(l.plugin.start(l.ctx)).catch((e) => l.ctx.error(e));
+      } catch (e) {
+        l.ctx.error(e);
+      }
+    }
+  }
+
+  watch(w: Watch): void {
+    this.unwatch(w.run, w.entry);
+    const a: Active = { w, attempt: 0 };
+    this.active.set(key(w.run, w.entry), a);
+    this.arm(a);
+  }
+
+  private arm(a: Active): void {
+    const l = this.loaded.get(a.w.type.split(".")[0]);
+    if (!l?.plugin.watch) return; // flow.* and signal.* arrive without a watcher
+    try {
+      a.stop = l.plugin.watch(a.w, l.ctx) || undefined;
+      a.error = undefined;
+      a.attempt = 0;
+    } catch (e) {
+      l.ctx.error(e, a.w);
+      const delay = Math.min(this.retryBaseMs * 2 ** a.attempt++, 300_000);
+      a.retry = setTimeout(() => {
+        if (this.active.get(key(a.w.run, a.w.entry)) === a) this.arm(a);
+      }, delay);
+    }
+  }
+
+  unwatch(run: string, entry: string): void {
+    const k = key(run, entry);
+    const a = this.active.get(k);
+    if (!a) return;
+    clearTimeout(a.retry);
+    try {
+      a.stop?.();
+    } catch (e) {
+      this.log(`unwatch ${a.w.type}: ${msg(e)}`);
+    }
+    this.active.delete(k);
+  }
+
+  async runAction(name: string, args: Dict): Promise<unknown> {
+    const [plugin, ...rest] = name.split(".");
+    const l = this.loaded.get(plugin);
+    const fn = l?.plugin.actions?.[rest.join(".")];
+    if (!l || !fn) throw new Error(`no action ${name}`);
+    try {
+      return await fn(args, l.ctx);
+    } catch (e) {
+      l.lastError = msg(e);
+      throw e;
+    }
+  }
+
+  status(): PluginStatus[] {
+    const watches = [...this.active.values()];
+    const loaded = [...this.loaded.values()].map((l) => ({
+      name: l.plugin.name,
+      source: l.source,
+      events: l.plugin.events ?? [],
+      actions: Object.keys(l.plugin.actions ?? {}),
+      lastError: l.lastError ?? null,
+      watches: watches
+        .filter((a) => a.w.type.startsWith(`${l.plugin.name}.`))
+        .map((a) => ({ run: a.w.run, entry: a.w.entry, type: a.w.type, error: a.error ?? null })),
+    }));
+    const failed = Object.entries(this.loadErrors).map(([name, err]) => ({ name, source: "", events: [], actions: [], lastError: err, watches: [] }));
+    return [...loaded, ...failed];
+  }
+
+  stopAll(): void {
+    for (const a of [...this.active.values()]) this.unwatch(a.w.run, a.w.entry);
+  }
+}
