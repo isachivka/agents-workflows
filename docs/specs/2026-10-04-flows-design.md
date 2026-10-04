@@ -1,15 +1,15 @@
 # flows: local agent processes built from steps
 
-Status: design agreed 2026-10-04 (the user, Claude). Not implemented yet.
+Status: design agreed 2026-10-04 (the maintainer, Claude). Not implemented yet.
 
 ## Problem
 
-the user runs several long agent programmes on his Mac, each in agterm sessions:
-the monorepo JS→TS typing waves, obs-frontend and obs-backend. Each needs to be
+The user runs several long agent programmes on a Mac, each in agterm sessions: a long
+JS→TS migration in a large monorepo and two observability programmes. Each needs to be
 started, run in iterations, restarted, and woken by things that happen outside the session
 (an iteration ended, CI finished, later a Slack message). Today every programme carries its
-own manager skill (migration-pm, obs-pm) and a human or a PM agent drives the sessions
-by hand.
+own manager skill (the migration's manager skill, one per observability programme), and a
+human or a PM agent drives the sessions by hand.
 
 own-pr proved that agents follow a process kept as small step files without trouble, but it
 is tied to one pull request per run, the agent pulls every step itself, and nothing outside
@@ -32,7 +32,7 @@ the session can push work into it.
 
 Slack plugin; parallel branches and child processes; Codex roles (they need different
 `/clear`/`/compact` commands — later a role field `agent:`); authentication; remote machines;
-compatibility with own-pr or its journal. Real processes for ts-wave and observability are
+compatibility with own-pr or its journal. Real processes for the migration and the observability programmes are
 not shipped — only `examples/ts-wave.yaml` as a sample; the user builds the real ones in the UI.
 
 ## Architecture
@@ -95,7 +95,7 @@ render error: the step does not start and the run goes `needs-human` with the er
 ### Process (`processes/<name>.yaml`)
 
 ```yaml
-description: MIG-1 JS→TS, one wave per iteration
+description: a long JS→TS migration, one wave per iteration
 cwd: ~/code/monorepo
 repeat: true
 max_runs: 1
