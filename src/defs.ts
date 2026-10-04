@@ -147,7 +147,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     let kind: Entry["kind"] = "wait";
     if (r.step !== undefined && r.do !== undefined) err(`${at}: step and do are exclusive`);
     if (typeof r.step === "string") {
-      if (!ctx.steps[r.step]) err(`${at}: no step file steps/${r.step}.md`);
+      if (!ctx.steps[r.step]) err(`${at}: steps/${r.step}.md is missing or invalid`);
       if (!role) err(`${at}: step needs a role`);
       else if (role !== "human" && !roles[role]) err(`${at}: undeclared role ${role}`);
       kind = role === "human" ? "human" : "agent";
@@ -211,13 +211,14 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     }
   }
   if (entries.length && entries.every((e) => e.detour)) err("at least one entry must not be a detour");
-  // the engine hands an entry an event only when it waits for one, or as the first entry of a triggered run
+  // the engine hands an entry an event only when it waits for one, or as the first entry of a run an
+  // on: trigger started; a repeating run's later iterations start with fresh entries and no event
   const first = entries.find((e) => !e.detour);
-  const triggered = triggers.some((t) => t.on);
+  const triggered = triggers.some((t) => t.on) && repeat !== true;
   for (const e of entries) {
     const text = e.step ? ctx.steps[e.step]?.body : e.text;
     if (!e.waitFor && !(triggered && e === first) && /\{\{\s*event\./.test(text ?? "")) {
-      err(`${e.id}: ${e.step ? `step ${e.step}` : "text"} uses {{event.*}}, but only an entry with wait_for (or the first entry of an event-triggered run) gets an event`);
+      err(`${e.id}: ${e.step ? `step ${e.step}` : "text"} uses {{event.*}}, but only an entry with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event`);
     }
   }
   if (errors.length) throw new DefError(errors);

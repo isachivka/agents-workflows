@@ -75,9 +75,12 @@ test("{{event.*}} in a step no event reaches is reported", async () => {
   };
   const proc = (steps: string, extra = "") => `description: d\ncwd: /tmp\n${extra}roles: {dev: {spawn: claude}}\nsteps:\n${steps}`;
   const bad = await checkDefs(home({ ...files, "processes/p.yaml": proc("  - {id: ci, wait_for: gh.checks, on_fail: {goto: fix}}\n  - {step: fix, role: dev, detour: true, after: {goto: ci}}\n") }));
-  assert.deepEqual(bad.lines, ["process p: fix: step fix uses {{event.*}}, but only an entry with wait_for (or the first entry of an event-triggered run) gets an event"]);
+  assert.deepEqual(bad.lines, ["process p: fix: step fix uses {{event.*}}, but only an entry with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event"]);
   const woken = await checkDefs(home({ ...files, "processes/p.yaml": proc("  - {step: fix, role: dev, wait_for: gh.checks}\n") }));
   assert.equal(woken.ok, true, woken.lines.join("\n"));
   const triggered = await checkDefs(home({ ...files, "processes/p.yaml": proc("  - {step: fix, role: dev}\n", "triggers: [{on: gh.checks}]\n") }));
   assert.equal(triggered.ok, true, triggered.lines.join("\n"));
+  // a repeating run starts iteration 2 with fresh entries: the trigger's event is gone
+  const repeating = await checkDefs(home({ ...files, "processes/p.yaml": proc("  - {step: fix, role: dev}\n", "repeat: true\ntriggers: [{on: gh.checks}]\n") }));
+  assert.equal(repeating.ok, false);
 });

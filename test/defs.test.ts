@@ -76,7 +76,7 @@ steps:
   for (const want of [
     /description is required/, /cwd is required/, /unknown key bogus/, /role name human is reserved/,
     /role pm: spawn is required/, /cron not a cron/, /unknown event type nope\.thing/,
-    /no step file steps\/missing\.md/, /undeclared role ghost/, /do: compact needs a declared agent role/,
+    /steps\/missing\.md is missing or invalid/, /undeclared role ghost/, /do: compact needs a declared agent role/,
     /do: type needs text/, /unknown event type nope\.event/, /goto target nowhere does not exist/,
     /a detour needs after\.goto/, /duplicate entry id pick/, /needs step, do or wait_for/,
   ]) assert.ok(errs.some((e) => want.test(e)), `missing error ${want}: ${errs.join(" | ")}`);
@@ -118,7 +118,7 @@ test("loadDefs keeps invalid files out and reports them", () => {
   assert.deepEqual(Object.keys(defs.steps), ["pick"]);
   assert.deepEqual(Object.keys(defs.processes), ["ok"]);
   assert.ok(defs.invalid["step:broken"]);
-  assert.ok(defs.invalid["process:bad"].some((e) => /no step file steps\/broken\.md/.test(e)));
+  assert.ok(defs.invalid["process:bad"].some((e) => /steps\/broken\.md is missing or invalid/.test(e)));
 });
 
 test("writeDef validates, checks mtime and writes atomically", () => {
