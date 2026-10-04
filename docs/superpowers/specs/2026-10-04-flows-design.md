@@ -230,19 +230,23 @@ returned session id is stored as the role's binding.
 
 Session actions:
 - `clear`: type `/clear`, mark `done`; the next delivery waits for the session to be idle.
-- `compact`: type `/compact`, mark `done` on the session's next `completed`/`idle` status.
-  **Open risk:** whether Claude Code fires the agterm status hook after `/compact` is
-  unverified; the first implementation task checks it. Fallback: poll `agtermctl session
-  text` for the input prompt, with a 10-minute timeout that fails the entry.
+- `compact`: type `/compact`, hold the session's outbox, mark `done` when Claude Code's
+  `PostCompact` hook reports for that session (`flow claude-hook compacted`, installed by
+  `flow install` into `~/.claude/settings.json`). The agterm status cannot be used: it is
+  driven by `UserPromptSubmit`/`Stop`, which a slash command does not fire. No report within
+  10 minutes fails the entry.
 
 ### Turn tracking
 
-agterm's hook line, installed by `flow install` into `~/.config/agterm/hooks.conf`:
+agterm's hook lines, installed by `flow install` into `~/.config/agterm/hooks.conf`:
 
 ```
-on status curl -s -X POST 127.0.0.1:7420/agterm --data-binary @-
-on session.closed curl -s -X POST 127.0.0.1:7420/agterm --data-binary @-
+on status flow agterm-hook
+on session.closed flow agterm-hook
 ```
+
+`flow agterm-hook` reads `AGT_EVENT_KIND`, `AGT_EVENT_STATUS` and `AGT_SESSION_ID` from its
+environment and posts them to `/agterm`; the hook never depends on the payload's shape.
 
 - A status leaving `active` frees the session's outbox.
 - An entry delivered to a session that then went `active` and came back to
@@ -268,7 +272,8 @@ active entry. `--run ID --step ID` overrides for the user's terminal.
 | `flow start <process> [--bind role=SESSION …]` | start a run |
 | `flow ls` | open runs, one line each |
 | `flow done --human --run ID --step ID` | the user closes a human entry from a terminal |
-| `flow install` | launchd plist, agterm hook lines, skill symlink into `~/.claude/skills/flow` |
+| `flow install` | launchd plist, agterm hook lines, Claude `PostCompact` hook, skill symlink into `~/.claude/skills/flow` |
+| `flow agterm-hook`, `flow claude-hook compacted` | hook entry points, not for hand use |
 
 A refused command prints why (`no active step for this session`, `step gate is not active`)
 and exits 1. `flow` against a stopped daemon prints
@@ -401,5 +406,5 @@ not written and the errors are shown next to the fields. Edits made on disk are 
   PATH that logs its calls. Scenario: start → spawn role → nudge line → `flow show` →
   `flow done` → `clear` → `flow signal` closes a pure wait → human entry closed via API →
   iteration 2 starts.
-- **Manual smoke** on live agterm with `examples/demo.yaml`; it settles the `/compact` hook
-  risk first.
+- **Manual smoke** on live agterm with `examples/demo.yaml`, covering spawn, clear, compact
+  and the jump from the UI.
