@@ -65,3 +65,8 @@ the Plugins page; a failing `watch` is retried with backoff. Restart flowd after
 
 Built in: `gh` — `gh.checks` (required checks finished; done = green), `gh.merged`,
 `gh.review`, for `vars.pr` or `wait_for.with.pr`.
+
+Verified on 2026-10-04 on live agterm with `examples/processes/demo.yaml`: spawn with the nudge as
+Claude's first prompt, `flow show`/`set`/`done` from the agent, `/compact` closed by the
+PostCompact hook, `/clear`, `flow signal` waking an agent step, the human step on the Runs page
+under "Needs you", the `↗` jump selecting the session, and `flow ls --all` showing the run done.
