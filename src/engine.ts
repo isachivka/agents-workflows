@@ -223,6 +223,17 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     enter(p!.entries.find((x) => !x.detour)!.id);
   }
 
+  function recover(role: string): void {
+    resume();
+    if (!cur || cur.role !== role || cur.kind !== "agent" || st(cur.id).status !== "active") return;
+    const s = st(cur.id);
+    s.deliveredAt = undefined;
+    s.sawActive = false;
+    s.reminded = 0;
+    s.remindAt = undefined;
+    deliver(role, nudgeText(run, cur.id), cur.id);
+  }
+
   const curId = run.current;
   const cur = curId ? byId(curId) : undefined;
   if (curId && !cur && input.kind !== "goto" && input.kind !== "bind" && input.kind !== "respawn") {
@@ -284,7 +295,78 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       if (input.entry === curId && st(curId).status === "active") st(curId).deliveredAt = now;
       return done();
     }
-    // REMAINING-INPUTS (Task 4 replaces this line)
+    case "event": {
+      if (!cur || !cur.waitFor || st(cur.id).status !== "waiting") return done();
+      const ev = input.event;
+      if (ev.type !== cur.waitFor.on || (ev.entry && ev.entry !== cur.id) || !matches(cur.waitFor.where, ev.data)) return done();
+      st(cur.id).event = ev;
+      if (cur.kind === "agent" || cur.kind === "action") {
+        actions.push({ kind: "unwatch", entry: cur.id });
+        begin(cur.id);
+      } else {
+        finish(cur.id, ev.outcome === "failed" ? "failed" : "done", { note: `${ev.type}${ev.outcome ? ` ${ev.outcome}` : ""}`, by: "system" });
+      }
+      return done();
+    }
+    case "session": {
+      const roles = Object.keys(run.roles).filter((r) => run.roles[r] === input.session);
+      if (!roles.length) return done();
+      const busy = cur && roles.includes(cur.role ?? "") && cur.kind !== "human" && st(cur.id).status === "active";
+      if (input.status === "closed") {
+        for (const r of roles) run.roles[r] = null;
+        if (busy) halt(`role ${cur!.role} session closed`);
+        return done();
+      }
+      if (!busy || cur!.kind !== "agent") return done();
+      const s = st(cur!.id);
+      if (!s.deliveredAt) return done();
+      if (input.status === "active") {
+        s.sawActive = true;
+        s.remindAt = undefined;
+      } else if ((input.status === "completed" || input.status === "idle") && s.sawActive) {
+        s.remindAt = now + REMIND_AFTER_MS;
+      }
+      return done();
+    }
+    case "compacted": {
+      if (cur?.do === "compact" && st(cur.id).status === "active" && run.roles[cur.role!] === input.session) {
+        finish(cur.id, "done", { by: "system" });
+      }
+      return done();
+    }
+    case "tick": {
+      if (run.status !== "running" || !cur) return done();
+      const s = st(cur.id);
+      if (s.status !== "active" && s.status !== "waiting") return done();
+      const timeout = cur.timeoutMs ?? (cur.do === "compact" ? COMPACT_TIMEOUT_MS : undefined);
+      if (timeout !== undefined && s.startedAt !== undefined && now - s.startedAt >= timeout) {
+        finish(cur.id, "failed", { note: `timed out after ${timeout / 1000}s`, by: "system" });
+        return done();
+      }
+      if (s.remindAt !== undefined && now >= s.remindAt) {
+        s.remindAt = undefined;
+        if (s.reminded >= MAX_REMINDERS) {
+          halt(`${cur.id}: the agent ended its turn ${s.reminded + 1} times without flow done/failed`);
+        } else {
+          s.reminded++;
+          s.sawActive = false;
+          deliver(cur.role!, reminderText(cur.id), cur.id);
+        }
+      }
+      return done();
+    }
+    case "bind": {
+      if (!(input.role in run.roles)) return fail(`${p.name} has no role ${input.role}`);
+      run.roles[input.role] = input.session;
+      if (input.by === "human") recover(input.role);
+      return done();
+    }
+    case "respawn": {
+      if (!(input.role in run.roles)) return fail(`${p.name} has no role ${input.role}`);
+      run.roles[input.role] = null;
+      recover(input.role);
+      return done();
+    }
   }
   return done();
 }
