@@ -53,6 +53,8 @@ export interface FlowEvent {
   run?: string;
   entry?: string;
   source: string;
+  /** Set when a trigger subscription emitted it: only that subscription's processes may start. */
+  subscription?: string;
 }
 
 export type EntryStatus = "pending" | "waiting" | "active" | "done" | "failed" | "skipped";

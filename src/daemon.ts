@@ -71,6 +71,7 @@ export class Flowd {
   private watcher: FSWatcher | undefined;
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
   private loaded = false;
+  private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
 
   constructor(o: FlowdOptions) {
     this.o = o;
@@ -106,6 +107,8 @@ export class Flowd {
         }
       }
       for (const run of this.store.openRuns()) this.rearm(run);
+      this.subscribing = true;
+      this.syncSubscriptions();
     });
     const tickMs = this.o.tickMs ?? 5_000;
     const flushMs = this.o.flushMs ?? 1_000;
@@ -180,7 +183,7 @@ export class Flowd {
         this.crons.push(new Cron(t.cron, () => { void this.submit({ type: "run.start", data: { process: p.name, trigger: "cron" }, source: "cron" }); }));
       }
     }
-    this.syncSubscriptions();
+    if (this.subscribing) this.syncSubscriptions();
     this.changed("defs");
   }
 
@@ -353,6 +356,19 @@ export class Flowd {
   private async route(e: StoredEvent): Promise<Result> {
     const ev: FlowEvent = { id: e.id, type: e.type, outcome: e.outcome, data: e.data, run: e.run, entry: e.entry, source: e.source };
     if (e.run) return this.apply(e.run, { kind: "event", event: ev });
+    if (e.subscription) {
+      // From a trigger subscription: it starts only the processes whose trigger it serves (same type,
+      // cwd and with, and a matching where), and wakes no wait, since waits have their own watches.
+      for (const name of this.plugins.subscription(e.subscription)?.processes ?? []) {
+        const p = this.defs.processes[name];
+        for (const t of p?.triggers ?? []) {
+          if (t.on !== e.type || !matches(t.where, e.data)) continue;
+          if (subscriptionKey({ type: t.on, cwd: expandHome(p!.cwd), with: t.with }) !== e.subscription) continue;
+          await this.startRun(name, {}, e.type, ev);
+        }
+      }
+      return {};
+    }
     for (const run of this.store.openRuns()) {
       const cur = run.current ? this.defs.processes[run.process]?.entries.find((x) => x.id === run.current) : undefined;
       if (cur?.waitFor?.on === e.type && run.entries[cur.id]?.status === "waiting" && matches(cur.waitFor.where, e.data)) {

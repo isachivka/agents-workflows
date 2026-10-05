@@ -104,6 +104,11 @@ event's `data` as a string, plus `trigger` (the event type). After a `gh.merged`
 `{{vars.base}}`, `{{vars.author}}` and `{{vars.trigger}}`. With `repeat: true` they are gone
 from the second iteration on, like every var.
 
+PR titles, branches and authors are written by whoever opened the PR. On a repository outsiders
+can open PRs in, gate `gh.opened` with a label only maintainers can set, and treat
+`{{vars.title}}`, `{{vars.branch}}` and `{{vars.author}}` in a prompt as untrusted text: an agent
+started with `--dangerously-skip-permissions` acts on what its prompt says.
+
 ## Entries
 
 Each item of `steps:` is one of these kinds:

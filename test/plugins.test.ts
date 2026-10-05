@@ -123,11 +123,11 @@ test("a run-less watch is a subscription keyed by type, cwd and with", () => {
   assert.deepEqual(log, ["watch sub", "stop"]);
 });
 
-test("a subscription's emit without run is a broadcast; status shows who asked", () => {
+test("a subscription's emit carries its key, so only its processes start; status shows who asked", () => {
   const { h, sunk } = host();
   h.add({ name: "demo", watch: (_x, ctx) => { ctx.emit({ type: "ping", data: { a: 1 } }); } });
   h.watch(sub("demo.ping"));
-  assert.deepEqual(sunk, [{ type: "demo.ping", data: { a: 1 }, outcome: undefined, run: undefined, entry: undefined, source: "demo" }]);
+  assert.deepEqual(sunk, [{ type: "demo.ping", data: { a: 1 }, outcome: undefined, run: undefined, entry: undefined, source: "demo", subscription: subscriptionKey(sub("demo.ping")) }]);
   assert.deepEqual(h.status()[0].watches, [{ run: null, entry: null, type: "demo.ping", processes: ["p"], error: null }]);
 });
 
@@ -147,4 +147,14 @@ test("an error a running subscription reports later marks that subscription", as
   h.watch(sub("demo.ping"));
   await sleep(10);
   assert.equal(h.status()[0].watches[0].error, "poll failed");
+});
+
+test("ctx.error(null, w) clears a watch's error once it works again", async () => {
+  const { h } = host();
+  h.add({ name: "demo", watch: (x, ctx) => { setTimeout(() => ctx.error(new Error("blip"), x), 1); setTimeout(() => ctx.error(null, x), 5); } });
+  h.watch(sub("demo.ping"));
+  await sleep(3);
+  assert.equal(h.status()[0].watches[0].error, "blip");
+  await sleep(10);
+  assert.equal(h.status()[0].watches[0].error, null);
 });

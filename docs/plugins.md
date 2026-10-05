@@ -37,17 +37,18 @@ export default {
 | `processes` | A trigger subscription: the processes that asked for it (it is shared by identical triggers). |
 
 **Wait or trigger.** Tell them apart by `w.run`. For a wait, emit with `run` and `entry`, once, and
-stop. For a trigger subscription, emit without `run`, as a broadcast, and keep emitting for as
-long as the subscription lives: routing starts every process whose trigger (with its `where`)
-matches, and wakes any entry waiting on that type.
+stop. For a trigger subscription, emit without `run` and keep emitting for as long as the
+subscription lives. The `ctx` a subscription gets marks what it emits as coming from that
+subscription, so the event starts only the processes that asked for it (each through its
+trigger's `where`) and wakes no waiting entry.
 
 `ctx` (a `PluginCtx`):
 
 | Field | Meaning |
 |---|---|
-| `emit({type, data?, outcome?, run?, entry?})` | Sends an event. The plugin name is prefixed if missing (`checks` → `gh.checks`); `source` is set to the plugin name. With `run` and `entry` it goes to that entry only; without, it is a broadcast that wakes every matching wait and trigger. `outcome: "failed"` fails a pure wait or a human step; an agent step sees it as `{{event.outcome}}`. |
+| `emit({type, data?, outcome?, run?, entry?})` | Sends an event. The plugin name is prefixed if missing (`checks` → `gh.checks`); `source` is set to the plugin name. With `run` and `entry` it goes to that entry only. Without them, from a trigger subscription's `ctx` it starts only that subscription's processes; from `start` it is a broadcast that wakes every matching wait and trigger. `outcome: "failed"` fails a pure wait or a human step; an agent step sees it as `{{event.outcome}}`. |
 | `log(msg)` | A line in flowd's log, prefixed with the plugin name. |
-| `error(err, w?)` | Reports a problem: shown on the Plugins page (and on the watch, with `w`). The waiting entry is not failed. |
+| `error(err, w?)` | Reports a problem: shown on the Plugins page (and on the watch, with `w`). The waiting entry is not failed. `error(null, w)` clears the watch's error once it works again. |
 | `config` | This plugin's section of `$FLOWS_HOME/plugins.yaml`, or `{}`. |
 
 ## Lifecycle
@@ -91,14 +92,19 @@ gh:
 `flow set pr=<url>`, or filled in by a trigger). It emits once.
 
 **Repo mode** watches a repository: `with.repo` (`owner/name`), or when absent the repo of the
-process's `cwd`. Its first poll is a baseline; after that it emits each item not seen before,
-oldest first. A wait in repo mode emits once to its entry and stops; a trigger subscription keeps
-emitting broadcasts.
+process's `cwd`. Its first poll is a baseline; after that it emits each new item, oldest first:
+for `gh.merged` a PR merged after the newest merge seen (merged PRs are listed most recently
+updated first, so a long-lived PR merged now is found), for `gh.opened` a PR created after the
+newest one seen, or with a label a PR that first shows up with it, for `gh.ci` a run not seen
+before. A wait in repo mode emits once to its entry and stops; a trigger subscription keeps
+emitting. A trigger always watches a repo: `with.pr` on a trigger is refused. A `gh.merged` wait
+without a PR needs `with.repo`, `with.base` or `with.label` to mean "any merge"; otherwise it
+asks for a PR.
 
 | Event | Mode | Polls | Emits (`data`) | Outcome |
 |---|---|---|---|---|
 | `gh.checks` | PR only | `gh pr checks <pr> --required --json name,bucket,link` | `pr`, `failed` (names), `links` | When no required check is pending: `done` if none failed or was cancelled, else `failed`. A PR with no checks counts as pending until 5 polls in a row find none, then `done`: right after a PR opens, CI has not registered its checks yet. |
-| `gh.merged` | PR, or repo (`with.base?`, `with.label?`) | PR: `gh pr view <pr> --json state`; repo: `gh pr list --state merged` | PR: `pr`, `state`; repo: `pr` (URL), `number`, `title`, `branch`, `base`, `author` | `done` when merged; in PR mode `failed` when closed unmerged |
+| `gh.merged` | PR, or repo (`with.base?`, `with.label?`) | PR: `gh pr view <pr> --json state`; repo: `gh pr list --state merged --search sort:updated-desc` | PR: `pr`, `state`; repo: `pr` (URL), `number`, `title`, `branch`, `base`, `author` | `done` when merged; in PR mode `failed` when closed unmerged |
 | `gh.review` | PR only | `gh pr view <pr> --json reviews,comments` | `reviews`, `comments` (counts) | None. Emits when the count changes after the watch started. |
 | `gh.opened` | repo (`with.base?`, `with.label?`) | `gh pr list --state open` | as `gh.merged` in repo mode | `done`. With a label: when an open PR first shows up with it (opened with it, or labelled later). |
 | `gh.ci` | repo (`with.branch` required, `with.workflow?`) | `gh run list --branch <b>` | `run` (URL), `id`, `workflow`, `conclusion`, `branch`, `sha`, `event` | Once per workflow run, when it completes: `done` on `success`, else `failed`. |

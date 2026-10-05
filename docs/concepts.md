@@ -108,9 +108,10 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 Every event has a `type`, `data`, an optional `outcome` (`done` or `failed`) and a `source`.
 
 - **Targeted** events name a run (and maybe an entry) and apply to that run only.
-- **Broadcast** events wake every run whose current entry waits for that type and whose `where`
-  is a subset of the event's `data` (values compared as strings). They also start every process
-  whose trigger matches the same way.
+- **Broadcast** events (core `flow.*` events, `flow signal`, events a plugin pushes from `start`)
+  wake every run whose current entry waits for that type and whose `where` is a subset of the
+  event's `data` (values compared as strings). They also start every process whose trigger matches
+  the same way. An event from a trigger subscription is narrower: see below.
 - Ad-hoc events are `signal.<name>`. `flow signal deploy-done` sends `signal.deploy-done`.
 
 The core emits these (`src/defs.ts` `CORE_EVENTS`, `src/engine.ts`). Every one carries
@@ -148,8 +149,9 @@ interest are subscriptions:
   plugin emits to that entry, once, and the watch stops when the entry stops waiting.
 - A **trigger** (`triggers: [{on: gh.merged, with: {base: main}}]`) is a standing subscription
   with no run. Identical triggers (same type, `with` and process `cwd`) in several processes share
-  one subscription, so one merge is one event. Its events are broadcasts: routing matches each one
-  against every trigger's `where` and every waiting entry, and starts or wakes what matches.
+  one subscription, so one merge is one event for all of them. Its events go only to the processes
+  that asked for that subscription, each through its trigger's `where`; they wake no waiting entry
+  (a wait has its own watch), and a trigger with a different `with` or `cwd` does not see them.
 - flowd brings trigger subscriptions in line with the definitions on every load: new ones are
   started, removed ones stopped, unchanged ones left running, so a plugin keeps its state (gh's
   list of PRs already seen) through an unrelated edit.

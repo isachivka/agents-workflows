@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/store.ts";
@@ -87,4 +88,15 @@ test("a file database survives reopening", () => {
   s.createRun(run("p#1"), 1);
   s.close();
   assert.equal(new Store(path).getRun("p#1")?.id, "p#1");
+});
+
+test("a database from before the subscription column gets it on open", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "flows-old-")), "flows.db");
+  const old = new DatabaseSync(path);
+  old.exec("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, type TEXT NOT NULL, run_id TEXT, entry_id TEXT, outcome TEXT, data TEXT NOT NULL, source TEXT NOT NULL, processed INTEGER NOT NULL DEFAULT 0)");
+  old.close();
+  const s = new Store(path);
+  const id = s.addEvent({ type: "test.ping", data: {}, source: "test", subscription: "k" });
+  assert.equal(s.event(id)!.subscription, "k");
+  s.close();
 });

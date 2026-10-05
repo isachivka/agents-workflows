@@ -41,6 +41,7 @@ export default {
       if (w.with.fail) throw new Error("test cannot " + w.with.fail);
       (g.__flowsSubs ??= []).push(w);
       g.__flowsCtx = ctx;
+      (g.__flowsCtxOf ??= new Map()).set(w, ctx);
       return () => { g.__flowsSubs = g.__flowsSubs.filter((x: any) => x !== w); };
     }
     (g.__flowsWatches ??= []).push(w.run + "/" + w.entry);
@@ -51,6 +52,8 @@ export default {
 `;
 export const subs = (): any[] => ((globalThis as any).__flowsSubs ??= []);
 export const pluginCtx = (): any => (globalThis as any).__flowsCtx;
+/** The ctx the host gave one subscription: emitting through it is emitting as that subscription. */
+export const ctxOf = (w: any): any => (globalThis as any).__flowsCtxOf?.get(w);
 export const resetSubs = () => { (globalThis as any).__flowsSubs = []; };
 
 export const STEP_FILES: Record<string, string> = {

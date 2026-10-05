@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, subs, pluginCtx, resetSubs } from "./daemon-helpers.ts";
+import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
 const start = (process: string, bind?: Record<string, string>) => ({ type: "run.start", data: { process, bind }, source: "test" });
@@ -453,4 +453,50 @@ test("a reload keeps unchanged subscriptions and replaces changed ones", async (
   assert.deepEqual(subs().map((s) => s.with.k), [2]);
   await f.close();
   assert.deepEqual(subs(), []);
+});
+
+// --- plugin triggers: final review ---
+
+test("a subscription's event starts only the processes whose trigger it serves", async () => {
+  resetSubs();
+  const { f } = await startFlowd(makeHome({
+    ...STEP_FILES,
+    ...proc("  - {step: c, role: human}\n", "triggers:\n  - {on: test.ping, with: {k: 1}}\n", "a"),
+    ...proc("  - {step: c, role: human}\n", "triggers:\n  - {on: test.ping, with: {k: 2}}\n", "b"),
+  }));
+  const k1 = subs().find((s) => s.with.k === 1);
+  ctxOf(k1).emit({ type: "ping", data: { n: 1 } });
+  await settle(f);
+  assert.ok(f.store.getRun("a#1"), "a's subscription fired");
+  assert.equal(f.store.getRun("b#1"), null, "b asked for k: 2, not k: 1");
+  await f.close();
+});
+
+test("a subscription's event wakes no wait: waits have their own watch", async () => {
+  resetSubs();
+  const { f } = await startFlowd(makeHome({
+    ...STEP_FILES,
+    ...proc("  - {id: w, wait_for: test.ping}\n  - {step: c, role: human}\n", "", "waiter"),
+    ...proc("  - {step: c, role: human}\n", "triggers:\n  - {on: test.ping}\n", "trig"),
+  }));
+  await f.submit(start("waiter"));
+  ctxOf(subs()[0]).emit({ type: "ping", data: {} });
+  await settle(f);
+  assert.ok(f.store.getRun("trig#1"));
+  assert.equal(f.store.getRun("waiter#1")!.entries.w.status, "waiting");
+  await f.close();
+});
+
+const EAGER_PLUGIN = `export default { name: "eager", events: ["go"], watch(w: any, ctx: any) { if (!w.run) ctx.emit({ type: "go", data: {} }); return () => {}; } };\n`;
+
+test("a subscription that fires at startup does not get its run's first action failed as cut off", async () => {
+  const { f } = await startFlowd(makeHome({
+    ...STEP_FILES, "plugins/slow.ts": SLOW_PLUGIN, "plugins/eager.ts": EAGER_PLUGIN,
+    ...proc("  - {do: slow.wait}\n  - {step: c, role: human}\n", "triggers:\n  - {on: eager.go}\n", "e"),
+  }));
+  await settle(f);
+  const run = f.store.getRun("e#1")!;
+  assert.equal(run.entries["slow.wait"].status, "active");
+  assert.equal(run.entries["slow.wait"].failures, 0, run.reason ?? "");
+  await f.close();
 });

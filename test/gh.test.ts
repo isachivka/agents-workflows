@@ -73,13 +73,14 @@ test("the plugin refuses a gh.checks wait without a PR", () => {
   assert.throws(() => makeGhPlugin(fake({})).watch!({ run: "p#1", entry: "ci", type: "gh.checks", with: {}, cwd: "/w", vars: {} }, ctx), /gh\.checks needs a PR/);
 });
 
-const PR = (n: number, extra = {}) => ({ number: n, url: `https://g/pull/${n}`, title: `t${n}`, headRefName: `b${n}`, baseRefName: "main", author: { login: "me" }, labels: [], ...extra });
+const day = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00Z`;
+const PR = (n: number, extra = {}) => ({ number: n, url: `https://g/pull/${n}`, title: `t${n}`, headRefName: `b${n}`, baseRefName: "main", author: { login: "me" }, labels: [], createdAt: day(n), mergedAt: day(n), ...extra });
 
 test("pollRepo merged/opened: pr list with filters, documented data", async () => {
   const exec = fake({ "pr list": { stdout: JSON.stringify([PR(2), PR(1)]) } });
   const items = await pollRepo("merged", { with: { base: "main", label: "x", repo: "o/r" }, cwd: "/w" }, exec);
-  assert.deepEqual(exec.calls[0], ["pr", "list", "--repo", "o/r", "--state", "merged", "--limit", "30", "--json", "number,url,title,headRefName,baseRefName,author,labels", "--base", "main", "--label", "x"]);
-  assert.deepEqual(items[1], { id: "1", outcome: "done", data: { pr: "https://g/pull/1", number: 1, title: "t1", branch: "b1", base: "main", author: "me" } });
+  assert.deepEqual(exec.calls[0], ["pr", "list", "--repo", "o/r", "--state", "merged", "--search", "sort:updated-desc", "--limit", "30", "--json", "number,url,title,headRefName,baseRefName,author,labels,createdAt,mergedAt", "--base", "main", "--label", "x"]);
+  assert.deepEqual(items[1], { id: "1", at: day(1), outcome: "done", data: { pr: "https://g/pull/1", number: 1, title: "t1", branch: "b1", base: "main", author: "me" } });
   await pollRepo("opened", { with: {} }, exec);
   assert.deepEqual(exec.calls[1].slice(0, 4), ["pr", "list", "--state", "open"]);
 });
@@ -138,4 +139,54 @@ test("gh runs in the watch's cwd, in repo and PR mode", async () => {
   await pollRepo("merged", { with: {}, cwd: "/w" }, exec);
   await pollOnce("merged", "7", exec, undefined, "/w2");
   assert.deepEqual(exec.cwds, ["/w", "/w2"]);
+});
+
+const repoCtx = (emitted: PluginEvent[], errors: unknown[] = []): PluginCtx =>
+  ({ emit: (e) => emitted.push(e), log: () => {}, error: (e) => errors.push(e), config: { interval_ms: 5 } });
+
+test("an old open PR that slides into the window does not fire gh.opened", async () => {
+  let list = [40, 39, 38].map((n) => PR(n));
+  const exec = (async () => ({ code: 0, stdout: JSON.stringify(list), stderr: "" })) as Exec;
+  const emitted: PluginEvent[] = [];
+  const stop = makeGhPlugin(exec).watch!({ type: "gh.opened", with: {}, cwd: "/w", vars: {} }, repoCtx(emitted)) as () => void;
+  await sleep(15);
+  list = [40, 38, 10].map((n) => PR(n)); // #39 closed, an old PR enters the window
+  await sleep(15);
+  stop();
+  assert.deepEqual(emitted, []);
+});
+
+test("gh.merged fires for a long-lived PR merged now, not for an old merge that was only touched", async () => {
+  let list = [PR(5)];
+  const exec = (async () => ({ code: 0, stdout: JSON.stringify(list), stderr: "" })) as Exec;
+  const emitted: PluginEvent[] = [];
+  const stop = makeGhPlugin(exec).watch!({ type: "gh.merged", with: {}, cwd: "/w", vars: {} }, repoCtx(emitted)) as () => void;
+  await sleep(15);
+  list = [PR(2, { mergedAt: day(9) }), PR(1, { mergedAt: day(3) }), PR(5)]; // #2: opened long ago, merged now; #1: old merge, commented on
+  await sleep(15);
+  stop();
+  assert.deepEqual(emitted.map((e) => e.data!.number), [2]);
+});
+
+test("a gh.merged wait without a PR or a repo filter refuses instead of waiting for any merge", () => {
+  const ctx = repoCtx([]);
+  assert.throws(() => makeGhPlugin(fake({})).watch!({ type: "gh.merged", run: "p#1", entry: "m", with: {}, cwd: "/w", vars: {} }, ctx), /gh\.merged needs a PR/);
+  assert.doesNotThrow(() => (makeGhPlugin(fake({ "pr list": { stdout: "[]" } })).watch!({ type: "gh.merged", run: "p#1", entry: "m", with: { base: "main" }, cwd: "/w", vars: {} }, ctx) as () => void)());
+});
+
+test("a trigger cannot watch one PR: it watches a repo", () => {
+  assert.throws(() => makeGhPlugin(fake({})).watch!({ type: "gh.merged", with: { pr: "7" }, cwd: "/w", vars: {} }, repoCtx([])), /a trigger watches a repo/);
+});
+
+test("a poll that works again clears the error the last one reported", async () => {
+  let fail = true;
+  const exec = (async () => (fail ? { code: 1, stdout: "", stderr: "network down" } : { code: 0, stdout: "[]", stderr: "" })) as Exec;
+  const errors: unknown[] = [];
+  const stop = makeGhPlugin(exec).watch!({ type: "gh.merged", with: {}, cwd: "/w", vars: {} }, repoCtx([], errors)) as () => void;
+  await sleep(8);
+  fail = false;
+  await sleep(15);
+  stop();
+  assert.match(String(errors[0]), /network down/);
+  assert.equal(errors[errors.length - 1], null);
 });

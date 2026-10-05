@@ -38,6 +38,7 @@ function toEvent(row: Row): StoredEvent {
     id: Number(row.id), ts: Number(row.ts), type: row.type,
     run: row.run_id ?? undefined, entry: row.entry_id ?? undefined, outcome: row.outcome ?? undefined,
     data: JSON.parse(row.data), source: row.source, processed: Boolean(row.processed),
+    ...(row.subscription ? { subscription: row.subscription } : {}),
   };
 }
 
@@ -50,6 +51,9 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     this.db.exec(SCHEMA);
+    // added after the first release: older databases lack it
+    const cols = this.db.prepare("PRAGMA table_info(events)").all() as Row[];
+    if (!cols.some((c) => c.name === "subscription")) this.db.exec("ALTER TABLE events ADD COLUMN subscription TEXT");
   }
 
   close(): void { this.db.close(); }
@@ -72,8 +76,8 @@ export class Store {
 
   addEvent(e: FlowEvent, ts = Date.now()): number {
     const r = this.db
-      .prepare("INSERT INTO events (ts, type, run_id, entry_id, outcome, data, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(ts, e.type, e.run ?? null, e.entry ?? null, e.outcome ?? null, JSON.stringify(e.data ?? {}), e.source);
+      .prepare("INSERT INTO events (ts, type, run_id, entry_id, outcome, data, source, subscription) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(ts, e.type, e.run ?? null, e.entry ?? null, e.outcome ?? null, JSON.stringify(e.data ?? {}), e.source, e.subscription ?? null);
     return Number(r.lastInsertRowid);
   }
 

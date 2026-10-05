@@ -94,20 +94,26 @@ export class PluginHost {
       config: this.config[name] ?? {},
       log: (m) => this.log(`[${name}] ${m}`),
       error: (err, w) => {
+        const a = w ? this.active.get(keyOf(w)) : undefined;
+        if (err === null || err === undefined) { // the plugin works again
+          if (a) a.error = undefined;
+          return;
+        }
         const l = this.loaded.get(name);
         if (l) l.lastError = msg(err);
-        if (w) {
-          const a = this.active.get(keyOf(w));
-          if (a) a.error = msg(err);
-        }
+        if (a) a.error = msg(err);
         this.log(`[${name}] ${msg(err)}`);
       },
-      emit: (e) => {
-        const type = e.type.startsWith(`${name}.`) ? e.type : `${name}.${e.type}`;
-        this.sink({ type, data: e.data ?? {}, outcome: e.outcome, run: e.run, entry: e.entry, source: name });
-      },
+      emit: (e) => this.emitFrom(name, e),
     };
     this.loaded.set(name, { plugin, ctx, source });
+  }
+
+  private emitFrom(name: string, e: PluginEvent, subscription?: string): void {
+    const type = e.type.startsWith(`${name}.`) ? e.type : `${name}.${e.type}`;
+    const ev: FlowEvent = { type, data: e.data ?? {}, outcome: e.outcome, run: e.run, entry: e.entry, source: name };
+    if (subscription && !e.run) ev.subscription = subscription; // starts only the processes that asked for it
+    this.sink(ev);
   }
 
   eventTypes(): Set<string> {
@@ -146,7 +152,9 @@ export class PluginHost {
     const l = this.loaded.get(a.w.type.split(".")[0]);
     if (!l?.plugin.watch) return; // flow.* and signal.* arrive without a watcher
     try {
-      a.stop = l.plugin.watch(a.w, l.ctx) || undefined;
+      // a trigger subscription gets its own emit, which stamps its key on what it sends
+      const ctx = a.w.run ? l.ctx : { ...l.ctx, emit: (e: PluginEvent) => this.emitFrom(l.plugin.name, e, a.key) };
+      a.stop = l.plugin.watch(a.w, ctx) || undefined;
       a.error = undefined;
       a.attempt = 0;
     } catch (e) {

@@ -56,10 +56,11 @@ export async function pollOnce(kind: "checks" | "merged" | "review", pr: string,
   return { baseline: now, emit: { data: { reviews: v.reviews.length, comments: v.comments.length } } };
 }
 
-const PR_FIELDS = "number,url,title,headRefName,baseRefName,author,labels";
+const PR_FIELDS = "number,url,title,headRefName,baseRefName,author,labels,createdAt,mergedAt";
 const RUN_FIELDS = "databaseId,url,workflowName,conclusion,status,headSha,event,headBranch";
 
-type RepoItem = { id: string; outcome: "done" | "failed"; data: Dict };
+/** `at`: when it happened (merged PRs: mergedAt; open PRs: createdAt); used to tell new from old. */
+type RepoItem = { id: string; at?: string; outcome: "done" | "failed"; data: Dict };
 
 /** One repo-mode poll: merged or open PRs, or completed workflow runs, newest first as gh lists them. */
 export async function pollRepo(kind: "merged" | "opened" | "ci", w: { with: Dict; cwd?: string }, exec: Exec): Promise<RepoItem[]> {
@@ -74,12 +75,14 @@ export async function pollRepo(kind: "merged" | "opened" | "ci", w: { with: Dict
       data: { run: r.url, id: r.databaseId, workflow: r.workflowName, conclusion: r.conclusion, branch: r.headBranch, sha: r.headSha, event: r.event },
     }));
   }
-  const args = ["pr", "list", ...repo, "--state", kind === "merged" ? "merged" : "open", "--limit", "30", "--json", PR_FIELDS];
+  // merged PRs sorted by update: a long-lived PR merged now is near the top, not 30 PRs down
+  const state = kind === "merged" ? ["--state", "merged", "--search", "sort:updated-desc"] : ["--state", "open"];
+  const args = ["pr", "list", ...repo, ...state, "--limit", "30", "--json", PR_FIELDS];
   if (w.with.base) args.push("--base", String(w.with.base));
   if (w.with.label) args.push("--label", String(w.with.label));
   const rows = json(await exec(args, w.cwd), "pr list") as Record<string, any>[];
   return rows.map((r) => ({
-    id: String(r.number), outcome: "done",
+    id: String(r.number), at: kind === "merged" ? r.mergedAt : r.createdAt, outcome: "done",
     data: { pr: r.url, number: r.number, title: r.title, branch: r.headRefName, base: r.baseRefName, author: r.author?.login ?? "" },
   }));
 }
@@ -91,25 +94,41 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
     watch(w, ctx) {
       const kind = w.type.slice("gh.".length) as "checks" | "merged" | "review" | "opened" | "ci";
       const every = Number(ctx.config.interval_ms ?? intervalMs);
-      // PR mode: with.pr, or for a wait the run's vars.pr. Repo mode otherwise (gh.opened and gh.ci always).
+      if (!w.run && w.with.pr) throw new Error(`a trigger watches a repo, not one PR: drop with.pr from the ${w.type} trigger`);
+      // PR mode: with.pr, or for a wait the run's vars.pr. Repo mode otherwise (gh.opened and gh.ci
+      // always); a gh.merged wait needs a repo filter to mean "any merge", so a missing pr stays an error.
       const pr = String(w.with.pr ?? (w.run ? w.vars.pr ?? "" : ""));
+      const repoFilter = ["repo", "base", "label"].some((k) => w.with[k] !== undefined);
+      if (kind === "merged" && !pr && w.run && !repoFilter) {
+        throw new Error("gh.merged needs a PR (vars.pr or with.pr), or with.repo, with.base or with.label to wait for any merge");
+      }
       if (kind === "opened" || kind === "ci" || (kind === "merged" && !pr)) {
         if (kind === "ci" && !w.with.branch) throw new Error("gh.ci needs with.branch");
-        let seen: Set<string> | null = null; // the first poll is the baseline: history never fires
+        // The first poll is the baseline: history never fires. A timed kind also needs a time after the
+        // newest one seen, so an old item that slides into the 30-item window is not taken for new.
+        const timed = kind === "merged" || (kind === "opened" && w.with.label === undefined);
+        let seen: Set<string> | null = null;
+        let mark = "";
         let finished = false;
+        let failing = false;
         const poll = async () => {
           if (finished) return;
           try {
             const items = await pollRepo(kind, w, exec);
             if (finished) return;
-            if (!seen) { seen = new Set(items.map((i) => i.id)); return; }
-            for (const i of [...items].reverse()) { // oldest first
-              if (seen.has(i.id)) continue;
-              seen.add(i.id);
+            if (failing) { ctx.error(null, w); failing = false; } // working again: clear the error
+            const newest = items.reduce((m, i) => (i.at && i.at > m ? i.at : m), mark);
+            if (!seen) { seen = new Set(items.map((i) => i.id)); mark = newest; return; }
+            const fresh = items.filter((i) => !seen!.has(i.id) && (!timed || (i.at !== undefined && i.at > mark)));
+            fresh.sort((a, b) => (a.at && b.at ? a.at.localeCompare(b.at) : items.indexOf(b) - items.indexOf(a))); // oldest first
+            for (const i of items) seen.add(i.id);
+            mark = newest;
+            for (const i of fresh) {
               ctx.emit({ type: w.type, run: w.run, entry: w.entry, outcome: i.outcome, data: i.data });
               if (w.run) { finished = true; return; } // a wait takes one event; a subscription keeps going
             }
           } catch (e) {
+            failing = true;
             ctx.error(e, w);
           }
         };
@@ -128,16 +147,19 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
       const prKind = kind as "checks" | "merged" | "review";
       let baseline: string | undefined;
       let finished = false;
+      let failing = false;
       const poll = async () => {
         if (finished) return;
         try {
           const r = await pollOnce(prKind, pr, exec, baseline, w.cwd);
+          if (failing) { ctx.error(null, w); failing = false; } // working again: clear the error
           baseline = r.baseline ?? baseline;
           if (r.emit && !finished) {
             finished = true;
             ctx.emit({ type: w.type, run: w.run, entry: w.entry, outcome: r.emit.outcome, data: { pr, ...r.emit.data } });
           }
         } catch (e) {
+          failing = true;
           ctx.error(e, w);
         }
       };
