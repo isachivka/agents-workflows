@@ -55,6 +55,20 @@ The plist and the hooks call node by its absolute path, which nvm changes with e
 
 - Fix: `flow install` again. It replaces flows' own hooks and links.
 
+## A trigger on a plugin event never starts the process
+
+- Check the Processes page (or `GET /api/processes`): a trigger whose plugin refused it shows
+  `trigger: <type>: <error>` under the process, for example `gh.checks needs a PR …; to start on
+  CI results use gh.ci`. The Plugins page lists the subscription as `trigger · <process>`.
+- Plugin triggers see only what happens after their first poll: an older merge or a CI run that
+  finished before flowd started (or while it was down) never fires.
+- For `gh`: `gh auth status` must pass for the user flowd runs as, and the process `cwd` must be
+  inside the repository, or the trigger must name it with `with: {repo: owner/name}`. Polls run
+  every 60 s by default (`interval_ms` in `plugins.yaml`).
+- `where` must match the event's data exactly (values compared as strings), for example
+  `where: {conclusion: failure}` for `gh.ci`.
+- `max_runs` reached: the start is refused and `flow.trigger.skipped` is recorded.
+
 ## A process shows as invalid
 
 - Check: `flow check <name>` prints every problem, one per line. The messages are explained in
