@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches } from "./daemon-helpers.ts";
+import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, subs, pluginCtx, resetSubs } from "./daemon-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
 const start = (process: string, bind?: Record<string, string>) => ({ type: "run.start", data: { process, bind }, source: "test" });
@@ -416,4 +416,41 @@ test("an action started by a wait that fires right after a restart is not failed
   assert.equal(run.entries["slow.wait"].status, "active", run.reason ?? "");
   assert.equal(run.status, "running");
   await B.f.close();
+});
+
+// --- plugin events as triggers ---
+
+const TRIGGERED = (name: string, extra = "") =>
+  proc("  - {step: c, role: human}\n", `triggers:\n  - {on: test.ping, with: {k: 1}${extra}}\n`, name);
+
+test("processes with the same trigger share one subscription; its broadcast starts each of them", async () => {
+  resetSubs();
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TRIGGERED("a"), ...TRIGGERED("b") }));
+  assert.equal(subs().length, 1);
+  assert.deepEqual([...subs()[0].processes].sort(), ["a", "b"]);
+  assert.equal(subs()[0].cwd, "/tmp");
+  pluginCtx().emit({ type: "ping", data: { pr: "u1", n: 3 } });
+  await settle(f);
+  assert.deepEqual(f.store.getRun("a#1")!.vars, { pr: "u1", n: "3", trigger: "test.ping" });
+  assert.ok(f.store.getRun("b#1"));
+  await f.close();
+});
+
+test("a reload keeps unchanged subscriptions and replaces changed ones", async () => {
+  resetSubs();
+  const home = makeHome({ ...STEP_FILES, ...TRIGGERED("a"), ...TRIGGERED("b") });
+  const { f } = await startFlowd(home);
+  const first = subs()[0];
+  writeFileSync(join(home, "processes/b.yaml"), "description: changed\ncwd: /tmp\ntriggers:\n  - {on: test.ping, with: {k: 1}}\nsteps:\n  - {step: c, role: human}\n");
+  f.reloadDefs();
+  assert.equal(subs()[0], first, "same subscription object: not recreated");
+  writeFileSync(join(home, "processes/b.yaml"), "description: d\ncwd: /tmp\ntriggers:\n  - {on: test.ping, with: {k: 2}}\nsteps:\n  - {step: c, role: human}\n");
+  f.reloadDefs();
+  assert.equal(subs().length, 2);
+  assert.deepEqual(subs()[0].processes, ["a"]);
+  writeFileSync(join(home, "processes/a.yaml"), "description: d\ncwd: /tmp\nsteps:\n  - {step: c, role: human}\n");
+  f.reloadDefs();
+  assert.deepEqual(subs().map((s) => s.with.k), [2]);
+  await f.close();
+  assert.deepEqual(subs(), []);
 });

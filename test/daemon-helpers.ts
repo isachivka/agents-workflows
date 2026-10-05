@@ -36,10 +36,22 @@ export const TEST_PLUGIN = `const g = globalThis as any;
 export default {
   name: "test",
   events: ["ping"],
-  watch(w: any) { (g.__flowsWatches ??= []).push(w.run + "/" + w.entry); return () => {}; },
+  watch(w: any, ctx: any) {
+    if (!w.run) {
+      if (w.with.fail) throw new Error("test cannot " + w.with.fail);
+      (g.__flowsSubs ??= []).push(w);
+      g.__flowsCtx = ctx;
+      return () => { g.__flowsSubs = g.__flowsSubs.filter((x: any) => x !== w); };
+    }
+    (g.__flowsWatches ??= []).push(w.run + "/" + w.entry);
+    return () => {};
+  },
   actions: { post(args: any) { if (args.fail) throw new Error("post failed"); } },
 };
 `;
+export const subs = (): any[] => ((globalThis as any).__flowsSubs ??= []);
+export const pluginCtx = (): any => (globalThis as any).__flowsCtx;
+export const resetSubs = () => { (globalThis as any).__flowsSubs = []; };
 
 export const STEP_FILES: Record<string, string> = {
   "steps/b.md": "---\nsummary: b\n---\nDo B for {{run.id}}\n",

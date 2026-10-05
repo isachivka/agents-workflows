@@ -5,7 +5,7 @@ import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
-import { PluginHost, msg } from "./plugins.ts";
+import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { TERMINAL } from "./types.ts";
@@ -180,7 +180,39 @@ export class Flowd {
         this.crons.push(new Cron(t.cron, () => { void this.submit({ type: "run.start", data: { process: p.name, trigger: "cron" }, source: "cron" }); }));
       }
     }
+    this.syncSubscriptions();
     this.changed("defs");
+  }
+
+  /**
+   * Every on: trigger for a plugin event is a standing subscription through the plugin's watch().
+   * Identical ones (type, cwd, with) are shared; unchanged ones keep their plugin state (a baseline).
+   */
+  private syncSubscriptions(): void {
+    const wanted = new Map<string, Watch>();
+    for (const p of Object.values(this.defs.processes)) {
+      for (const t of p.triggers) {
+        if (!t.on || !this.plugins.loaded.has(t.on.split(".")[0])) continue; // flow.* and signal.* need no plugin
+        const w: Watch = { type: t.on, with: t.with, cwd: expandHome(p.cwd), vars: {}, processes: [p.name] };
+        const k = subscriptionKey(w);
+        const same = wanted.get(k);
+        if (same) same.processes!.push(p.name);
+        else wanted.set(k, w);
+      }
+    }
+    for (const k of this.plugins.subscriptionKeys()) if (!wanted.has(k)) this.plugins.unsubscribe(k);
+    for (const [k, w] of wanted) {
+      const have = this.plugins.subscription(k);
+      if (have) have.processes = w.processes; // the same subscription, perhaps asked for by other processes now
+      else this.plugins.watch(w);
+    }
+  }
+
+  /** "<type>: <error>" for each failing trigger subscription this process asked for. */
+  triggerErrors(process: string): string[] {
+    return this.plugins.status().flatMap((p) => p.watches)
+      .filter((w) => w.run === null && w.error && w.processes?.includes(process))
+      .map((w) => `${w.type}: ${w.error}`);
   }
 
   private scheduleReload(): void {

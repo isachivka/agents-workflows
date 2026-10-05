@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
-import { STEP_FILES, proc, settle } from "./daemon-helpers.ts";
+import { STEP_FILES, proc, settle, resetSubs } from "./daemon-helpers.ts";
 import { serve } from "./http-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
@@ -161,5 +161,15 @@ test("a malformed request target gets 400 and flowd keeps answering", async () =
   });
   assert.equal(code, 400);
   assert.equal((await s.call("GET", "/api/runs")).status, 200);
+  await s.close();
+});
+
+test("a failing subscription shows on the process and in the plugin status", async () => {
+  resetSubs();
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n", "triggers:\n  - {on: test.ping, with: {fail: listen}}\n", "a") });
+  const procs = (await s.call("GET", "/api/processes")).body;
+  assert.deepEqual(procs[0].triggerErrors, ["test.ping: test cannot listen"]);
+  const plugins = (await s.call("GET", "/api/plugins")).body.plugins;
+  assert.deepEqual(plugins[0].watches, [{ run: null, entry: null, type: "test.ping", processes: ["a"], error: "test cannot listen" }]);
   await s.close();
 });

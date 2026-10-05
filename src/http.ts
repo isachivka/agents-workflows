@@ -63,6 +63,7 @@ function listProcesses(f: Flowd) {
       repeat: p?.repeat ?? false, triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
       entries: (p?.entries ?? []).map((e) => ({ id: e.id, kind: e.kind, role: e.role ?? null, waitFor: e.waitFor?.on ?? null, detour: e.detour })),
       openRuns: open.filter((r) => r.process === name).map((r) => r.id),
+      triggerErrors: f.triggerErrors(name),
     };
   });
 }
