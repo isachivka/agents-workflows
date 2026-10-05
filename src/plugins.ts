@@ -5,7 +5,16 @@ import { CORE_EVENTS } from "./defs.ts";
 import type { Dict, FlowEvent, Outcome } from "./types.ts";
 
 export interface PluginEvent { type: string; data?: Dict; outcome?: Outcome; run?: string; entry?: string }
-export interface Watch { run: string; entry: string; type: string; with: Dict; vars: Record<string, string> }
+/** A wait (run and entry set) or a trigger subscription (no run; shared by `processes`). */
+export interface Watch {
+  type: string;
+  with: Dict;
+  cwd: string;
+  run?: string;
+  entry?: string;
+  vars: Record<string, string>;
+  processes?: string[];
+}
 export interface PluginCtx {
   emit(e: PluginEvent): void;
   log(msg: string): void;
@@ -25,14 +34,18 @@ export interface PluginStatus {
   events: string[];
   actions: string[];
   lastError: string | null;
-  watches: { run: string; entry: string; type: string; error: string | null }[];
+  watches: { run: string | null; entry: string | null; type: string; processes: string[] | null; error: string | null }[];
 }
 
 interface Loaded { plugin: Plugin; ctx: PluginCtx; source: string; lastError?: string }
-interface Active { w: Watch; stop?: () => void; error?: string; attempt: number; retry?: ReturnType<typeof setTimeout> }
+interface Active { key: string; w: Watch; stop?: () => void; error?: string; attempt: number; retry?: ReturnType<typeof setTimeout> }
 
 export const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const key = (run: string, entry: string) => `${run}\u0000${entry}`;
+const stable = (v: unknown): string =>
+  JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+export const subscriptionKey = (w: Pick<Watch, "type" | "cwd" | "with">) => `trigger\u0000${w.type}\u0000${w.cwd}\u0000${stable(w.with)}`;
+const keyOf = (w: Watch) => (w.run ? key(w.run, w.entry ?? "") : subscriptionKey(w));
 const RESERVED = new Set(["flow", "signal"]);
 
 export class PluginHost {
@@ -84,7 +97,7 @@ export class PluginHost {
         const l = this.loaded.get(name);
         if (l) l.lastError = msg(err);
         if (w) {
-          const a = this.active.get(key(w.run, w.entry));
+          const a = this.active.get(keyOf(w));
           if (a) a.error = msg(err);
         }
         this.log(`[${name}] ${msg(err)}`);
@@ -120,10 +133,12 @@ export class PluginHost {
     }
   }
 
+  /** A wait is keyed by its run and entry, a trigger subscription by type, cwd and with. */
   watch(w: Watch): void {
-    this.unwatch(w.run, w.entry);
-    const a: Active = { w, attempt: 0 };
-    this.active.set(key(w.run, w.entry), a);
+    const k = keyOf(w);
+    this.drop(k);
+    const a: Active = { key: k, w, attempt: 0 };
+    this.active.set(k, a);
     this.arm(a);
   }
 
@@ -138,13 +153,28 @@ export class PluginHost {
       l.ctx.error(e, a.w);
       const delay = Math.min(this.retryBaseMs * 2 ** a.attempt++, 300_000);
       a.retry = setTimeout(() => {
-        if (this.active.get(key(a.w.run, a.w.entry)) === a) this.arm(a);
+        if (this.active.get(a.key) === a) this.arm(a);
       }, delay);
     }
   }
 
   unwatch(run: string, entry: string): void {
-    const k = key(run, entry);
+    this.drop(key(run, entry));
+  }
+
+  unsubscribe(k: string): void {
+    this.drop(k);
+  }
+
+  subscription(k: string): Watch | undefined {
+    return this.active.get(k)?.w;
+  }
+
+  subscriptionKeys(): string[] {
+    return [...this.active.values()].filter((a) => !a.w.run).map((a) => a.key);
+  }
+
+  private drop(k: string): void {
     const a = this.active.get(k);
     if (!a) return;
     clearTimeout(a.retry);
@@ -179,13 +209,13 @@ export class PluginHost {
       lastError: l.lastError ?? null,
       watches: watches
         .filter((a) => a.w.type.startsWith(`${l.plugin.name}.`))
-        .map((a) => ({ run: a.w.run, entry: a.w.entry, type: a.w.type, error: a.error ?? null })),
+        .map((a) => ({ run: a.w.run ?? null, entry: a.w.entry ?? null, type: a.w.type, processes: a.w.processes ?? null, error: a.error ?? null })),
     }));
     const failed = Object.entries(this.loadErrors).map(([name, err]) => ({ name, source: "", events: [], actions: [], lastError: err, watches: [] }));
     return [...loaded, ...failed];
   }
 
   stopAll(): void {
-    for (const a of [...this.active.values()]) this.unwatch(a.w.run, a.w.entry);
+    for (const a of [...this.active.values()]) this.drop(a.key);
   }
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PluginHost, type Plugin, type Watch } from "../src/plugins.ts";
+import { PluginHost, subscriptionKey, type Plugin, type Watch } from "../src/plugins.ts";
 import type { FlowEvent } from "../src/types.ts";
 
 const host = (extra: Partial<ConstructorParameters<typeof PluginHost>[0]> = {}) => {
@@ -11,7 +11,7 @@ const host = (extra: Partial<ConstructorParameters<typeof PluginHost>[0]> = {}) 
   const h = new PluginHost({ dirs: [], config: { demo: { k: 1 } }, sink: (e) => sunk.push(e), log: () => {}, retryBaseMs: 10, ...extra });
   return { h, sunk };
 };
-const w = (type: string, entry = "e1"): Watch => ({ run: "p#1", entry, type, with: {}, vars: {} });
+const w = (type: string, entry = "e1"): Watch => ({ run: "p#1", entry, type, with: {}, cwd: "/repo", vars: {} });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("event types and actions are namespaced; core events always exist", () => {
@@ -106,4 +106,45 @@ test("load reads .ts plugins; later directories win; bad files are reported", as
 test("plugin type is a structural contract", () => {
   const p: Plugin = { name: "x" };
   assert.equal(p.name, "x");
+});
+
+const sub = (type: string, withArgs = {}): Watch => ({ type, with: withArgs, cwd: "/repo", vars: {}, processes: ["p"] });
+
+test("a run-less watch is a subscription keyed by type, cwd and with", () => {
+  const { h } = host();
+  const log: string[] = [];
+  h.add({ name: "demo", watch: (x) => { log.push(`watch ${x.run ?? "sub"}`); return () => log.push("stop"); } });
+  h.watch(sub("demo.ping", { b: 1, a: 2 }));
+  const k = subscriptionKey(sub("demo.ping", { a: 2, b: 1 }));
+  assert.deepEqual(h.subscriptionKeys(), [k]);
+  assert.equal(h.subscription(k)?.type, "demo.ping");
+  h.unsubscribe(k);
+  assert.deepEqual(h.subscriptionKeys(), []);
+  assert.deepEqual(log, ["watch sub", "stop"]);
+});
+
+test("a subscription's emit without run is a broadcast; status shows who asked", () => {
+  const { h, sunk } = host();
+  h.add({ name: "demo", watch: (_x, ctx) => { ctx.emit({ type: "ping", data: { a: 1 } }); } });
+  h.watch(sub("demo.ping"));
+  assert.deepEqual(sunk, [{ type: "demo.ping", data: { a: 1 }, outcome: undefined, run: undefined, entry: undefined, source: "demo" }]);
+  assert.deepEqual(h.status()[0].watches, [{ run: null, entry: null, type: "demo.ping", processes: ["p"], error: null }]);
+});
+
+test("a throwing subscription is reported and retried like a wait", async () => {
+  const { h } = host();
+  let calls = 0;
+  h.add({ name: "demo", watch: () => { if (++calls === 1) throw new Error("needs with.repo"); } });
+  h.watch(sub("demo.ping"));
+  assert.equal(h.status()[0].watches[0].error, "needs with.repo");
+  await sleep(40);
+  assert.equal(calls, 2);
+});
+
+test("an error a running subscription reports later marks that subscription", async () => {
+  const { h } = host();
+  h.add({ name: "demo", watch: (x, ctx) => { setTimeout(() => ctx.error(new Error("poll failed"), x), 1); } });
+  h.watch(sub("demo.ping"));
+  await sleep(10);
+  assert.equal(h.status()[0].watches[0].error, "poll failed");
 });

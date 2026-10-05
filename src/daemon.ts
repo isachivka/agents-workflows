@@ -147,6 +147,11 @@ export class Flowd {
     return { steps: this.defs.steps, eventTypes: this.plugins.eventTypes(), actionNames: this.plugins.actionNames() };
   }
 
+  /** Where a process's plugins run: its cwd, ~ expanded. */
+  private cwdOf(process: string): string {
+    return expandHome(this.defs.processes[process]?.cwd ?? "~");
+  }
+
   private currentEntry(run: RunState) {
     return run.current ? this.defs.processes[run.process]?.entries.find((x) => x.id === run.current) : undefined;
   }
@@ -213,7 +218,7 @@ export class Flowd {
       void this.submit({ type: "run.halt", run: run.id, data: { reason: `${cur.id}: ${msg(e)}` }, source: "flowd" });
       return;
     }
-    this.plugins.watch({ run: run.id, entry: cur.id, type: cur.waitFor.on, with: w, vars: run.vars });
+    this.plugins.watch({ run: run.id, entry: cur.id, type: cur.waitFor.on, with: w, cwd: this.cwdOf(run.process), vars: run.vars });
   }
 
   submit(e: FlowEvent): Promise<Result> {
@@ -386,7 +391,7 @@ export class Flowd {
       if (res.run.status === "stopped") this.store.dropOutbox(runId);
     });
     for (const a of res.actions) {
-      if (a.kind === "watch") this.plugins.watch({ run: runId, entry: a.entry, type: a.waitFor.on, with: a.waitFor.with, vars: res.run.vars });
+      if (a.kind === "watch") this.plugins.watch({ run: runId, entry: a.entry, type: a.waitFor.on, with: a.waitFor.with, cwd: this.cwdOf(res.run.process), vars: res.run.vars });
       else if (a.kind === "unwatch") this.plugins.unwatch(runId, a.entry);
       else if (a.kind === "plugin-action") void this.runAction(runId, a.entry, a.name, a.with);
     }

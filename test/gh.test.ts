@@ -57,7 +57,7 @@ test("the plugin polls the watched PR and emits once, targeted at the waiting en
   const emitted: PluginEvent[] = [];
   const errors: string[] = [];
   const ctx: PluginCtx = { emit: (e) => emitted.push(e), log: () => {}, error: (e) => errors.push(String(e)), config: { interval_ms: 5 } };
-  const stop = makeGhPlugin(exec).watch!({ run: "p#1", entry: "merge", type: "gh.merged", with: {}, vars: { pr: "7" } }, ctx) as () => void;
+  const stop = makeGhPlugin(exec).watch!({ run: "p#1", entry: "merge", type: "gh.merged", with: {}, cwd: "/w", vars: { pr: "7" } }, ctx) as () => void;
   await new Promise((r) => setTimeout(r, 30));
   stop();
   assert.deepEqual(emitted, [{ type: "gh.merged", run: "p#1", entry: "merge", outcome: "done", data: { pr: "7", state: "MERGED" } }]);
@@ -66,5 +66,5 @@ test("the plugin polls the watched PR and emits once, targeted at the waiting en
 
 test("the plugin refuses a watch without a PR", () => {
   const ctx: PluginCtx = { emit: () => {}, log: () => {}, error: () => {}, config: {} };
-  assert.throws(() => makeGhPlugin(fake({})).watch!({ run: "p#1", entry: "ci", type: "gh.checks", with: {}, vars: {} }, ctx), /no pr/);
+  assert.throws(() => makeGhPlugin(fake({})).watch!({ run: "p#1", entry: "ci", type: "gh.checks", with: {}, cwd: "/w", vars: {} }, ctx), /no pr/);
 });
