@@ -171,3 +171,9 @@ test("a repeating iteration that does no work halts instead of looping forever",
   assert.equal(s.run.status, "needs-human");
   assert.match(s.run.reason!, /did no work/);
 });
+
+test("a run started by an event gets the event's scalar data and type as vars", () => {
+  const s = new Sim(LINEAR, STEPS).send({ kind: "start", event: { type: "gh.merged", data: { pr: "https://x/pull/7", number: 7, draft: false, labels: ["a"], author: null }, source: "gh" } });
+  assert.deepEqual(s.run.vars, { pr: "https://x/pull/7", number: "7", draft: "false", trigger: "gh.merged" });
+  assert.equal(s.run.entries.b.event?.type, "gh.merged");
+});

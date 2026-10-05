@@ -249,7 +249,14 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     case "start": {
       if (curId) return fail(`run ${run.id} already started`);
       const first = p.entries.find((x) => !x.detour)!;
-      if (input.event) st(first.id).event = input.event;
+      if (input.event) {
+        st(first.id).event = input.event;
+        // the run knows what started it: scalar event data become vars, plus the event type
+        for (const [k, v] of Object.entries(input.event.data)) {
+          if (v !== null && v !== undefined && typeof v !== "object") run.vars[k] = String(v);
+        }
+        run.vars.trigger = input.event.type;
+      }
       enter(first.id);
       return done();
     }
