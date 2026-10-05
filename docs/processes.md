@@ -88,13 +88,21 @@ roles:
 triggers:
   - {cron: "0 9 * * 1-5"}
   - {on: flow.run.done, where: {process: ci-loop}}
+  - {on: gh.merged, with: {base: main}}
 ```
 
 | Key | Meaning |
 |---|---|
 | `cron` | A cron expression in [croner](https://github.com/hexagon/croner) syntax (5 fields; a leading seconds field is accepted). |
 | `on` | An event type. The run's first entry gets the event as `{{event.*}}` (first iteration only). |
+| `with` | With `on` and a plugin event: parameters for the plugin's subscription, plain values (no templates: there is no run yet). For `gh`: `repo`, `base`, `label`, `branch`, `workflow` (see [plugins.md](plugins.md#worked-example-gh)). |
 | `where` | With `on`: a mapping that must be a subset of the event's data. |
+
+A run an `on:` trigger started begins with the event in its vars: each scalar field of the
+event's `data` as a string, plus `trigger` (the event type). After a `gh.merged` trigger that is
+`{{vars.pr}}` (the PR's URL), `{{vars.number}}`, `{{vars.title}}`, `{{vars.branch}}`,
+`{{vars.base}}`, `{{vars.author}}` and `{{vars.trigger}}`. With `repeat: true` they are gone
+from the second iteration on, like every var.
 
 ## Entries
 
@@ -157,7 +165,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | YAML | `yaml: …`, `a process file must be a YAML mapping` |
 | process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1` |
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
-| triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping` |
+| triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping`, `trigger N: with must be a mapping`, `trigger N: with only applies to on: triggers` |
 | entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do or wait_for`, `steps[N]: step and do are exclusive` |
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
@@ -238,5 +246,49 @@ steps:
   - {step: cut-release, role: dev}
 ```
 
+**Release notes for every PR merged into main.** One run per merge; three may be open at once.
+
+```yaml
+description: Release notes for every PR merged into main
+cwd: ~/code/my-repo
+triggers:
+  - {on: gh.merged, with: {base: main}}
+roles:
+  writer: {spawn: "claude --dangerously-skip-permissions"}
+max_runs: 3
+steps:
+  - {step: release-notes, role: writer}   # the prompt reads {{vars.pr}}, {{vars.title}}
+  - {step: approve-notes, role: human}
+```
+
+**An agent picks up every PR labelled `ready-for-agent`.** The trigger fills `vars.pr`, so the CI
+wait needs no `flow set`.
+
+```yaml
+description: An agent picks up every PR labelled ready-for-agent
+cwd: ~/code/my-repo
+triggers:
+  - {on: gh.opened, with: {label: ready-for-agent}}
+roles:
+  dev: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: pick-up-pr, role: dev}
+  - {id: ci, wait_for: gh.checks}
+```
+
+**Fix main when its CI fails.** `where` keeps only failed runs.
+
+```yaml
+description: Fix main when its CI fails
+cwd: ~/code/my-repo
+triggers:
+  - {on: gh.ci, with: {branch: main}, where: {conclusion: failure}}
+roles:
+  dev: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: fix-main, role: dev}         # the prompt reads {{vars.run}}, {{vars.sha}}
+```
+
 The shipped examples are in [`examples/`](../examples/): `demo` (an agent step, compact, clear, a signal wait
-and a human step, for a first run) and `pr-loop` (two roles, CI, a human merge, a detour).
+and a human step, for a first run), `pr-loop` (two roles, CI, a human merge, a detour) and
+`merged-followup` (started by a merge into main).

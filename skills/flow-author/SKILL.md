@@ -43,6 +43,7 @@ From the installed copy of this skill, the repo is
 | retry, or loop back on failure | `on_fail: retry` or `on_fail: {goto: <id>}`; `retries` caps failures per iteration (default 3) |
 | a fix-up branch | `{step: <id>, role: <role>, detour: true, after: {goto: <id>}}` after the main line; reached only by a `goto` |
 | start on a schedule or an event | `triggers: [{cron: "0 10 * * 1-5"}]`, `[{on: flow.run.done, where: {process: other}}]` |
+| start on a plugin event (GitHub) | `triggers: [{on: gh.opened, with: {label: ready-for-agent}}]`; also `{on: gh.merged, with: {base: main}}`, `{on: gh.ci, with: {branch: main}, where: {conclusion: failure}}`. The run starts with the event's data as vars: `{{vars.pr}}`, `{{vars.number}}`, … |
 | one item per pass, forever | `repeat: true` — vars are cleared between iterations |
 
 ## Traps
@@ -61,6 +62,11 @@ From the installed copy of this skill, the repo is
 - `human` is a reserved role; agent roles must be declared under `roles`.
 - `gh.*` waits need the PR: `flow set pr=<url>` before the wait, or
   `wait_for: {on: gh.checks, with: {pr: "{{vars.pr}}"}}`.
+- `gh.checks` and `gh.review` need a PR, so they cannot be triggers: start on CI with `gh.ci`.
+  A trigger that cannot work shows its error under the process (UI) and on the Plugins page.
+- A trigger's `with` takes plain values, no templates: there is no run yet.
+- Plugin triggers fire only on what happens after flowd started watching: history, and anything
+  that happened while flowd was down, never fires.
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
   for the user.
 

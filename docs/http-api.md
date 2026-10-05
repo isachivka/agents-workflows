@@ -21,7 +21,7 @@ reachable only from this machine, and the checks below keep web pages out. The w
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, triggers, roles, entries, openRuns}]`, every file in `processes/` |
+| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, triggers, roles, entries, openRuns, triggerErrors}]`, every file in `processes/`; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
 | GET | `/api/processes/:name` | | `{name, text, mtime, errors, object}` (`object`: the parsed YAML, or `null`) |
 | PUT | `/api/processes/:name` | `{text, mtime}` or `{object, mtime}` | `{mtime}`. `mtime` is the one the edit was based on, `null` for a new file. `object` is re-serialised (comments lost). |
 | DELETE | `/api/processes/:name` | `?mtime=` | `{}` |
@@ -69,7 +69,7 @@ standing on an open human step.
 |---|---|---|---|
 | GET | `/api/sessions` | | `[{id, name, cwd, workspace, status?, title?}]` from `agtermctl tree --json` |
 | POST | `/api/sessions/:id/focus` | | `{}`; selects that session in agterm |
-| GET | `/api/plugins` | | `{core: [core event types], plugins: [{name, source, events, actions, lastError, watches}]}` |
+| GET | `/api/plugins` | | `{core: [core event types], plugins: [{name, source, events, actions, lastError, watches}]}`; each watch is `{run, entry, type, processes, error}`, with `run` and `entry` null and `processes` set for a trigger subscription |
 | POST | `/api/restart` | | `{}`, then flowd exits; launchd starts it again |
 | GET | `/api/stream` | | Server-sent events: `data: runs` when any run changed, `data: defs` when definitions were reloaded |
 

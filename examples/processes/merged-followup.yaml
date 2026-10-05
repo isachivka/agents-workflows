@@ -1,0 +1,10 @@
+description: "Sample — for each PR merged into main, an agent drafts its changelog entry and a human approves it"
+cwd: ~/code/my-repo
+triggers:
+  - {on: gh.merged, with: {base: main}}
+max_runs: 3
+roles:
+  writer: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: changelog-draft, role: writer}
+  - {step: changelog-approve, role: human}

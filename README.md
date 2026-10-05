@@ -24,7 +24,9 @@ watch and take over at any time.
   and reminds an agent that went quiet without reporting.
 - **A web UI** to watch runs, close human steps, override (done, skip, retry, goto), edit
   processes and steps, and jump to an agent's terminal in one click.
-- **Plugins** for event sources and actions. `gh` (required checks, merge, reviews) is built in.
+- **Plugins** for event sources and actions, as waits or as triggers that start a process. `gh`
+  is built in: required checks, reviews, and per repo merged PRs, newly opened or labelled PRs
+  and CI runs on a branch.
 
 ## Requirements
 

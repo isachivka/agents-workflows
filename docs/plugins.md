@@ -12,7 +12,7 @@ export default {
   name: "gh",                                  // lowercase: ^[a-z][a-z0-9-]*$
   events: ["checks", "merged", "review"],      // emitted as gh.checks, gh.merged, gh.review
   start(ctx) {},                               // optional: once at daemon start
-  watch(w, ctx) { return () => {}; },          // optional: while an entry waits on one of its events
+  watch(w, ctx) { return () => {}; },          // optional: a wait or a trigger wants one of its events
   actions: { post(args, ctx) {} },             // optional: `do: gh.post` in a process
 };
 ```
@@ -22,17 +22,24 @@ export default {
 | `name` | The namespace of its events and actions. `flow` and `signal` are reserved. |
 | `events` | The event types it emits, without the prefix. They feed validation and the editor's dropdown. |
 | `start(ctx)` | For sources that push: a socket, a webhook listener. May return a promise; a rejection is reported. |
-| `watch(w, ctx)` | Called when an entry starts waiting on one of the plugin's types. Returns a function that stops the watch; it is called when the entry stops waiting (event arrived, timeout, goto, stop). |
+| `watch(w, ctx)` | Called when someone subscribes to one of the plugin's types: an entry starts waiting on it (a **wait**), or a process has an `on:` trigger for it (a **trigger subscription**). Returns a function that stops the watch; it is called when the entry stops waiting (event arrived, timeout, goto, stop) or the trigger goes away. Throw to refuse what it cannot serve, with a message that says what to write instead. |
 | `actions` | Functions called by `{do: <name>.<action>, with: {...}}` entries. Resolving marks the entry done; throwing fails it with the error as the note. |
 
 `w` (a `Watch`):
 
 | Field | Meaning |
 |---|---|
-| `run`, `entry` | Which entry waits. Put them on the event to target it. |
-| `type` | The full event type waited for (`gh.checks`). |
-| `with` | The entry's `wait_for.with`, templates already rendered. |
-| `vars` | The run's vars when the watch started. |
+| `run`, `entry` | A wait: which entry waits; put them on the event to target it. A trigger subscription has neither. |
+| `type` | The full event type wanted (`gh.checks`). |
+| `with` | A wait: the entry's `wait_for.with`, templates already rendered. A trigger: the trigger's `with`, plain values. |
+| `cwd` | The process's `cwd`, `~` expanded: where a repo-bound plugin should run its commands. |
+| `vars` | A wait: the run's vars when the watch started. A trigger: `{}`. |
+| `processes` | A trigger subscription: the processes that asked for it (it is shared by identical triggers). |
+
+**Wait or trigger.** Tell them apart by `w.run`. For a wait, emit with `run` and `entry`, once, and
+stop. For a trigger subscription, emit without `run`, as a broadcast, and keep emitting for as
+long as the subscription lives: routing starts every process whose trigger (with its `where`)
+matches, and wakes any entry waiting on that type.
 
 `ctx` (a `PluginCtx`):
 
@@ -52,10 +59,12 @@ export default {
 - **No hot reload.** Restart flowd after changing a plugin: the Plugins page has a button, or
   `launchctl kickstart -k gui/$UID/local.flows`.
 - **`start`** runs once, after the definitions are loaded.
-- **`watch`** runs only while an entry waits, so a polling plugin polls only what someone waits
-  for. After a restart every waiting entry's watch is started again. A definition reload re-arms
-  only an entry whose `wait_for` changed; the others keep their running watch, so a plugin that
-  compares against what it saw at start (like `gh.review`) does not miss an event.
+- **`watch`** runs only while an entry waits or a trigger asks for the type, so a polling plugin
+  polls only what someone wants. After a restart every waiting entry's watch and every trigger
+  subscription is started again. A definition reload re-arms only an entry whose `wait_for`
+  changed, and starts or stops only trigger subscriptions that appeared or went away; the others
+  keep running, so a plugin that compares against what it saw at start (like `gh.review`, or gh's
+  repo mode) does not miss or repeat an event.
 - **Failures.** A throw from `start` or an action is caught and reported. An action still running
   when flowd stops is not resumed: at the next start its entry fails with
   `flowd restarted while the action ran`, and `on_fail` decides. A `watch` that throws is
@@ -75,15 +84,28 @@ gh:
 
 ## Worked example: gh
 
-`plugins/gh.ts`, built in. The PR is `wait_for.with.pr` or, failing that, `vars.pr`; set it with
-`flow set pr=<url>` before the wait. Each watch polls at once and then every `interval_ms`
-(default 60 000), and emits at most once.
+`plugins/gh.ts`, built in. It works in two modes. Each watch polls at once and then every
+`interval_ms` (default 60 000), running `gh` in the process's `cwd`.
 
-| Event | Polls | Outcome |
-|---|---|---|
-| `gh.checks` | `gh pr checks <pr> --required --json name,bucket,link` | When no required check is pending: `done` if none failed or was cancelled, else `failed` with `data.failed` (names) and `data.links`. A PR with no checks counts as pending until 5 polls in a row find none: right after a PR opens, CI has not registered its checks yet. |
-| `gh.merged` | `gh pr view <pr> --json state` | `done` when `MERGED`, `failed` when `CLOSED`. |
-| `gh.review` | `gh pr view <pr> --json reviews,comments` | No outcome. Emits when the review or comment count changes after the watch started. |
+**PR mode** watches one pull request: `with.pr`, or for a wait the run's `vars.pr` (set with
+`flow set pr=<url>`, or filled in by a trigger). It emits once.
+
+**Repo mode** watches a repository: `with.repo` (`owner/name`), or when absent the repo of the
+process's `cwd`. Its first poll is a baseline; after that it emits each item not seen before,
+oldest first. A wait in repo mode emits once to its entry and stops; a trigger subscription keeps
+emitting broadcasts.
+
+| Event | Mode | Polls | Emits (`data`) | Outcome |
+|---|---|---|---|---|
+| `gh.checks` | PR only | `gh pr checks <pr> --required --json name,bucket,link` | `pr`, `failed` (names), `links` | When no required check is pending: `done` if none failed or was cancelled, else `failed`. A PR with no checks counts as pending until 5 polls in a row find none, then `done`: right after a PR opens, CI has not registered its checks yet. |
+| `gh.merged` | PR, or repo (`with.base?`, `with.label?`) | PR: `gh pr view <pr> --json state`; repo: `gh pr list --state merged` | PR: `pr`, `state`; repo: `pr` (URL), `number`, `title`, `branch`, `base`, `author` | `done` when merged; in PR mode `failed` when closed unmerged |
+| `gh.review` | PR only | `gh pr view <pr> --json reviews,comments` | `reviews`, `comments` (counts) | None. Emits when the count changes after the watch started. |
+| `gh.opened` | repo (`with.base?`, `with.label?`) | `gh pr list --state open` | as `gh.merged` in repo mode | `done`. With a label: when an open PR first shows up with it (opened with it, or labelled later). |
+| `gh.ci` | repo (`with.branch` required, `with.workflow?`) | `gh run list --branch <b>` | `run` (URL), `id`, `workflow`, `conclusion`, `branch`, `sha`, `event` | Once per workflow run, when it completes: `done` on `success`, else `failed`. |
+
+Repo-mode lists ask for the latest 30 items. `gh.checks` and `gh.review` refuse to work without a
+PR; as a trigger, `gh.checks` says `to start on CI results use gh.ci`. Nothing that happened
+before the baseline (or while flowd was down) fires.
 
 `gh` must be installed and logged in for the user flowd runs as.
 

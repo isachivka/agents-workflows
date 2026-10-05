@@ -131,7 +131,30 @@ triggered by them.
 ## Triggers
 
 - `{cron: "0 10 * * 1-5"}` starts a run on a schedule (croner syntax).
-- `{on: <type>, where: {...}}` starts a run when a matching event arrives. The run's first
-  entry gets that event as `{{event.*}}`, in the first iteration only.
+- `{on: <type>, with: {...}, where: {...}}` starts a run when a matching event arrives. The run's
+  first entry gets that event as `{{event.*}}`, in the first iteration only.
+- A triggered run starts with the event in its vars: every scalar field of the event's `data`
+  as a string (`vars.pr`, `vars.number`, `vars.branch`, …) and `vars.trigger` = the event type.
+  So a later `wait_for: gh.checks` finds `vars.pr` with no `flow set`.
 - A start is refused when the process already has `max_runs` open runs. A refused trigger records
   `flow.trigger.skipped`. You can always start a process by hand.
+
+## Subscriptions: how a plugin hears about waits and triggers
+
+A plugin learns that someone wants its events through one call, `watch()`. Both kinds of
+interest are subscriptions:
+
+- A **wait** (an entry with `wait_for: gh.checks`) is a subscription for one entry of one run. The
+  plugin emits to that entry, once, and the watch stops when the entry stops waiting.
+- A **trigger** (`triggers: [{on: gh.merged, with: {base: main}}]`) is a standing subscription
+  with no run. Identical triggers (same type, `with` and process `cwd`) in several processes share
+  one subscription, so one merge is one event. Its events are broadcasts: routing matches each one
+  against every trigger's `where` and every waiting entry, and starts or wakes what matches.
+- flowd brings trigger subscriptions in line with the definitions on every load: new ones are
+  started, removed ones stopped, unchanged ones left running, so a plugin keeps its state (gh's
+  list of PRs already seen) through an unrelated edit.
+- A plugin that polls takes its first poll as a baseline and reports only what is new after it.
+  Nothing is caught up after flowd was down: a restart starts from a new baseline.
+- `flow.*` and `signal.*` events need no plugin and no subscription. A trigger whose plugin cannot
+  serve it (for example `gh.checks`, which needs a PR) shows its error under the process and on
+  the Plugins page.
