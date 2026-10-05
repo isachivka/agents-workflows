@@ -2,11 +2,12 @@ import { execFile } from "node:child_process";
 import type { Plugin } from "../src/plugins.ts";
 import type { Dict } from "../src/types.ts";
 
-export type Exec = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
+/** Runs gh with these args, in `cwd` when given (a repo-mode watch without with.repo uses the process cwd). */
+export type Exec = (args: string[], cwd?: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const realExec: Exec = (args) =>
+const realExec: Exec = (args, cwd) =>
   new Promise((resolve) => {
-    execFile("gh", args, { timeout: 30_000 }, (err, stdout, stderr) => {
+    execFile("gh", args, { timeout: 30_000, cwd }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
       resolve({ code, stdout: String(stdout), stderr: String(stderr) });
     });
@@ -29,10 +30,10 @@ function json(out: { code: number; stdout: string; stderr: string }, what: strin
 /** Polls in a row with no checks at all before a PR counts as having none (a fresh PR has not registered them yet). */
 export const EMPTY_POLLS = 5;
 
-export async function pollOnce(kind: "checks" | "merged" | "review", pr: string, exec: Exec, baseline?: string):
+export async function pollOnce(kind: "checks" | "merged" | "review", pr: string, exec: Exec, baseline?: string, cwd?: string):
   Promise<{ emit?: { outcome?: "done" | "failed"; data: Dict }; baseline?: string }> {
   if (kind === "checks") {
-    const out = await exec(["pr", "checks", pr, "--required", "--json", "name,bucket,link"]);
+    const out = await exec(["pr", "checks", pr, "--required", "--json", "name,bucket,link"], cwd);
     const none = !out.stdout.trim() && /no required checks/i.test(out.stderr);
     const rows = none ? [] : json(out, "pr checks") as { name: string; bucket: string; link?: string }[];
     if (rows.length === 0) {
@@ -44,31 +45,93 @@ export async function pollOnce(kind: "checks" | "merged" | "review", pr: string,
     return result ? { emit: result } : { baseline: "0" }; // checks exist: empty polls must start over
   }
   if (kind === "merged") {
-    const { state } = json(await exec(["pr", "view", pr, "--json", "state"]), "pr view") as { state: string };
+    const { state } = json(await exec(["pr", "view", pr, "--json", "state"], cwd), "pr view") as { state: string };
     if (state === "MERGED") return { emit: { outcome: "done", data: { state } } };
     if (state === "CLOSED") return { emit: { outcome: "failed", data: { state } } };
     return {};
   }
-  const v = json(await exec(["pr", "view", pr, "--json", "reviews,comments"]), "pr view") as { reviews: unknown[]; comments: unknown[] };
+  const v = json(await exec(["pr", "view", pr, "--json", "reviews,comments"], cwd), "pr view") as { reviews: unknown[]; comments: unknown[] };
   const now = `${v.reviews.length}/${v.comments.length}`;
   if (baseline === undefined || baseline === now) return { baseline: now };
   return { baseline: now, emit: { data: { reviews: v.reviews.length, comments: v.comments.length } } };
 }
 
+const PR_FIELDS = "number,url,title,headRefName,baseRefName,author,labels";
+const RUN_FIELDS = "databaseId,url,workflowName,conclusion,status,headSha,event,headBranch";
+
+type RepoItem = { id: string; outcome: "done" | "failed"; data: Dict };
+
+/** One repo-mode poll: merged or open PRs, or completed workflow runs, newest first as gh lists them. */
+export async function pollRepo(kind: "merged" | "opened" | "ci", w: { with: Dict; cwd?: string }, exec: Exec): Promise<RepoItem[]> {
+  const repo = w.with.repo ? ["--repo", String(w.with.repo)] : [];
+  if (kind === "ci") {
+    if (!w.with.branch) throw new Error("gh.ci needs with.branch");
+    const args = ["run", "list", ...repo, "--branch", String(w.with.branch), "--limit", "30", "--json", RUN_FIELDS];
+    if (w.with.workflow) args.push("--workflow", String(w.with.workflow));
+    const rows = json(await exec(args, w.cwd), "run list") as Record<string, any>[];
+    return rows.filter((r) => r.status === "completed").map((r) => ({
+      id: String(r.databaseId), outcome: r.conclusion === "success" ? "done" : "failed",
+      data: { run: r.url, id: r.databaseId, workflow: r.workflowName, conclusion: r.conclusion, branch: r.headBranch, sha: r.headSha, event: r.event },
+    }));
+  }
+  const args = ["pr", "list", ...repo, "--state", kind === "merged" ? "merged" : "open", "--limit", "30", "--json", PR_FIELDS];
+  if (w.with.base) args.push("--base", String(w.with.base));
+  if (w.with.label) args.push("--label", String(w.with.label));
+  const rows = json(await exec(args, w.cwd), "pr list") as Record<string, any>[];
+  return rows.map((r) => ({
+    id: String(r.number), outcome: "done",
+    data: { pr: r.url, number: r.number, title: r.title, branch: r.headRefName, base: r.baseRefName, author: r.author?.login ?? "" },
+  }));
+}
+
 export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin {
   return {
     name: "gh",
-    events: ["checks", "merged", "review"],
+    events: ["checks", "merged", "review", "opened", "ci"],
     watch(w, ctx) {
-      const pr = String(w.with.pr ?? w.vars.pr ?? "");
-      if (!pr) throw new Error("gh: no pr to watch (set vars.pr with `flow set pr=<url>`, or wait_for.with.pr)");
-      const kind = w.type.slice("gh.".length) as "checks" | "merged" | "review";
+      const kind = w.type.slice("gh.".length) as "checks" | "merged" | "review" | "opened" | "ci";
+      const every = Number(ctx.config.interval_ms ?? intervalMs);
+      // PR mode: with.pr, or for a wait the run's vars.pr. Repo mode otherwise (gh.opened and gh.ci always).
+      const pr = String(w.with.pr ?? (w.run ? w.vars.pr ?? "" : ""));
+      if (kind === "opened" || kind === "ci" || (kind === "merged" && !pr)) {
+        if (kind === "ci" && !w.with.branch) throw new Error("gh.ci needs with.branch");
+        let seen: Set<string> | null = null; // the first poll is the baseline: history never fires
+        let finished = false;
+        const poll = async () => {
+          if (finished) return;
+          try {
+            const items = await pollRepo(kind, w, exec);
+            if (finished) return;
+            if (!seen) { seen = new Set(items.map((i) => i.id)); return; }
+            for (const i of [...items].reverse()) { // oldest first
+              if (seen.has(i.id)) continue;
+              seen.add(i.id);
+              ctx.emit({ type: w.type, run: w.run, entry: w.entry, outcome: i.outcome, data: i.data });
+              if (w.run) { finished = true; return; } // a wait takes one event; a subscription keeps going
+            }
+          } catch (e) {
+            ctx.error(e, w);
+          }
+        };
+        void poll();
+        const timer = setInterval(poll, every);
+        return () => {
+          finished = true;
+          clearInterval(timer);
+        };
+      }
+      if (!pr) {
+        throw new Error(kind === "checks"
+          ? "gh.checks needs a PR (vars.pr or with.pr); to start on CI results use gh.ci"
+          : `gh.${kind} needs a PR (vars.pr or with.pr)`);
+      }
+      const prKind = kind as "checks" | "merged" | "review";
       let baseline: string | undefined;
       let finished = false;
       const poll = async () => {
         if (finished) return;
         try {
-          const r = await pollOnce(kind, pr, exec, baseline);
+          const r = await pollOnce(prKind, pr, exec, baseline, w.cwd);
           baseline = r.baseline ?? baseline;
           if (r.emit && !finished) {
             finished = true;
@@ -79,7 +142,7 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
         }
       };
       void poll();
-      const timer = setInterval(poll, Number(ctx.config.interval_ms ?? intervalMs));
+      const timer = setInterval(poll, every);
       return () => {
         finished = true;
         clearInterval(timer);
