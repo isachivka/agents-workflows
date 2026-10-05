@@ -200,7 +200,8 @@ function Processes() {
       <tbody>${data.map((p) => html`<tr>
         <td><a href="#/process/${enc(p.name)}">${p.name}</a>${p.repeat ? html` <span class="st">repeat</span>` : ""}
           <div class="muted">${p.description}</div>
-          ${p.errors.length > 0 && html`<div class="err">${p.errors.join("\n")}</div>`}</td>
+          ${p.errors.length > 0 && html`<div class="err">${p.errors.join("\n")}</div>`}
+          ${(p.triggerErrors || []).length > 0 && html`<div class="err">${p.triggerErrors.map((e) => `trigger: ${e}`).join("\n")}</div>`}</td>
         <td class="muted">${p.entries.map((e) => e.id).join(" → ")}</td>
         <td class="muted">${p.triggers.map((t) => t.cron || t.on).join(", ") || "manual"}</td>
         <td>${p.openRuns.map((rid) => html`<a href="#/run/${enc(rid)}">${rid}</a> `)}</td>
@@ -327,6 +328,11 @@ function ProcessForm({ obj, set, stepIds, eventTypes, actions }) {
                  onChange=${(e) => {
                    try { setTrigger(i, clean({ ...t, where: e.target.value ? JSON.parse(e.target.value) : undefined })); }
                    catch { alert("where must be a JSON object"); }
+                 }} />
+               <input placeholder='with, JSON: {"base":"main"}' value=${t.with ? JSON.stringify(t.with) : ""}
+                 onChange=${(e) => {
+                   try { setTrigger(i, clean({ ...t, with: e.target.value ? JSON.parse(e.target.value) : undefined })); }
+                   catch { alert("with must be a JSON object"); }
                  }} />`}
       <button class="danger" onClick=${() => upd({ triggers: triggers.filter((_, j) => j !== i) })}>×</button>
     </div>`)}
@@ -500,7 +506,9 @@ function Plugins() {
         <td>${p.name}<div class="muted"><code>${p.source}</code></div></td>
         <td>${p.events.map((e) => `${p.name}.${e}`).join(", ")}</td>
         <td>${p.actions.join(", ")}</td>
-        <td>${p.watches.map((w) => html`<div><a href="#/run/${enc(w.run)}">${w.run}</a> ${w.entry} ${w.error && html`<span class="err">${w.error}</span>`}</div>`)}</td>
+        <td>${p.watches.map((w) => html`<div>${w.run === null
+          ? html`trigger · ${(w.processes || []).map((n, i) => html`${i ? ", " : ""}<a href="#/process/${enc(n)}">${n}</a>`)} <span class="muted">${w.type}</span>`
+          : html`<a href="#/run/${enc(w.run)}">${w.run}</a> ${w.entry}`} ${w.error && html`<span class="err">${w.error}</span>`}</div>`)}</td>
         <td class="err">${p.lastError || ""}</td>
       </tr>`)}</tbody>
     </table>`;
