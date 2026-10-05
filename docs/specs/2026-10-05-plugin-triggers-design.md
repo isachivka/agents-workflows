@@ -1,6 +1,8 @@
 # Plugin events as triggers
 
-Status: design agreed 2026-10-05 (user, Claude). Not implemented yet.
+Status: implemented 2026-10-05 (main `a159204`). The implementation corrected parts of this
+design; those places are marked *(amended: A1–A6)* and explained in [Amendments](#amendments).
+The current behaviour is documented in `docs/concepts.md` and `docs/plugins.md`.
 
 ## Problem
 
@@ -50,7 +52,8 @@ interface Watch {
 - **Trigger**: every `triggers: [{on: <plugin type>, with?, where?}]` → a standing subscription
   `watch({type, with, cwd, vars: {}, processes})` with no `run`. The plugin emits without
   `run`/`entry` → a broadcast → routing matches it against every trigger (with its `where`) and
-  every waiting step, as today. A trigger subscription keeps emitting for as long as it lives.
+  every waiting step, as today. *(amended: A1 — it reaches only the processes that asked for that
+  subscription and wakes no wait.)* A trigger subscription keeps emitting for as long as it lives.
 - A plugin tells the two apart by `w.run`. A plugin that cannot serve a subscription throws from
   `watch()` with a message that says what to write instead; the host's existing retry/backoff
   and error reporting apply.
@@ -92,10 +95,12 @@ between iterations as before.
 
 ### gh
 
-PR mode (unchanged): `with.pr` or, for a wait, `vars.pr`. Repo mode: no PR; the repo is
+PR mode (unchanged): `with.pr` or, for a wait, `vars.pr` *(amended: A3, A4 — a trigger with
+`with.pr` is refused; a `gh.merged` wait without a PR needs `repo`, `base` or `label`)*. Repo mode: no PR; the repo is
 `with.repo` (`owner/name`) or, when absent, the repo of `w.cwd` (gh resolves it from the
 directory). Every repo-mode subscription takes its first poll as the **baseline** and emits only
-what is new after it — history never fires a trigger. A wait in repo mode emits once and stops;
+what is new after it — history never fires a trigger. *(amended: A2 — "new" is decided by time
+for `gh.merged` and unlabelled `gh.opened`, not by an id unseen in the last 30 items.)* A wait in repo mode emits once and stops;
 a trigger subscription keeps emitting.
 
 | Event | Mode | Polls | Emits (data) | Outcome |
@@ -111,6 +116,7 @@ a trigger subscription keeps emitting.
 - `gh.ci` fires once per workflow run when it reaches `status: completed`.
 - `gh.checks` or `gh.review` without a PR throws: `gh.checks needs a PR; to start on CI results use gh.ci`.
 - Repo mode polls every `interval_ms` (default 60 000) with `--limit 30`; `gh` runs with `cwd: w.cwd`.
+  *(amended: A2 — `gh.merged` lists with `--search sort:updated-desc`.)*
 
 ### Visibility
 
@@ -123,7 +129,7 @@ a trigger subscription keeps emitting.
 ## Testing
 
 - Plugin host: a watch without `run` is keyed and stopped by its subscription key; emits from it
-  broadcast.
+  broadcast *(amended: A1 — they carry their subscription key)*.
 - Daemon: a trigger on a test-plugin event creates one subscription; two processes with the same
   trigger share it; an emitted event starts both processes; an edit that changes `with` replaces
   only that subscription; deleting the trigger unwatches it; an unchanged subscription survives a
@@ -139,3 +145,38 @@ a trigger subscription keeps emitting.
   `flow-author` skill's entry table and a recipe per scenario; `test/docs.test.ts` stays green.
 - Manual: a throwaway flowd with a process triggered by `gh.merged` on a scratch repo the user
   names, or skipped if there is none — never on a repo without asking.
+
+## Amendments
+
+Found while implementing and in the final review; all are in `main` as of `a159204`. Code and
+the living docs follow these, not the text above.
+
+**A1. Subscription events are addressed, not broadcast.** As designed, a subscription's `with`
+and `cwd` decided what was polled but not who received the event: a merge in repo X would start
+a process watching repo Y, two triggers differing only in `with` would both fire, and any
+`gh.merged` would close unrelated waits (enabling `merged-followup` would have broken
+`pr-loop`'s merge step). Now the `ctx` a subscription gets stamps its key on every event it
+emits (stored in the new `events.subscription` column, added on open). Routing starts only the
+processes listed on that subscription, each through its trigger's `where`, and wakes no waiting
+entry. Events a plugin emits from `start()`, and `flow.*` and `signal.*`, stay broadcasts.
+
+**A2. gh repo mode decides "new" by time.** With `--limit 30`, an old PR could slide into the
+window and fire `gh.opened`, and a long-lived PR merged late could be missed. `gh.merged` now
+lists `--search sort:updated-desc` and fires on a `mergedAt` later than the newest one seen;
+`gh.opened` without a label fires on a `createdAt` later than the newest one seen; with a label
+it still fires on a PR's first appearance with that label; `gh.ci` fires on a completed run id
+not seen before.
+
+**A3. A `gh.merged` wait without a PR keeps asking for one** unless `with` names `repo`, `base`
+or `label`. Silently turning an existing wait into "any merge in the repo" would have changed
+its meaning.
+
+**A4. A trigger with `with.pr` is refused.** In PR mode it would fire once per flowd start.
+
+**A5. Subscriptions start after stored events replay at startup**, so one that fires at once
+cannot start a run whose first action is then cut off by the replay.
+
+**A6. A recovered poll clears its error.** `ctx.error(null, w)` clears a watch's error and `gh`
+calls it when a failing poll succeeds again; before, one network blip left a trigger error
+showing for good.
+
