@@ -22,7 +22,7 @@ export interface Entry {
 }
 
 export interface Role { spawn: string; cwd?: string }
-export interface Trigger { cron?: string; on?: string; where: Dict }
+export interface Trigger { cron?: string; on?: string; where: Dict; with: Dict }
 
 export interface Process {
   name: string;

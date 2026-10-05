@@ -119,11 +119,13 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       } catch (e) {
         err(`${at}: cron ${t.cron}: ${message(e)}`);
       }
-      triggers.push({ cron: t.cron, where: {} });
+      if (t.with !== undefined) err(`${at}: with only applies to on: triggers`);
+      triggers.push({ cron: t.cron, where: {}, with: {} });
     } else if (typeof t.on === "string") {
       if (!knownEvent(t.on, ctx)) err(`${at}: unknown event type ${t.on}`);
       if (t.where !== undefined && !isObj(t.where)) err(`${at}: where must be a mapping`);
-      triggers.push({ on: t.on, where: isObj(t.where) ? t.where : {} });
+      if (t.with !== undefined && !isObj(t.with)) err(`${at}: with must be a mapping`);
+      triggers.push({ on: t.on, where: isObj(t.where) ? t.where : {}, with: isObj(t.with) ? t.with : {} });
     } else {
       err(`${at}: needs cron or on`);
     }

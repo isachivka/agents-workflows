@@ -49,7 +49,7 @@ test("parses a valid process into entries", () => {
   assert.equal(p.entries[1].onFail, "human");
   assert.deepEqual(p.entries[3].waitFor, { on: "gh.checks", where: {}, with: {} });
   assert.equal(p.entries[5].detour, true);
-  assert.deepEqual(p.triggers[1], { on: "flow.iteration.done", where: { process: "other" } });
+  assert.deepEqual(p.triggers[1], { on: "flow.iteration.done", where: { process: "other" }, with: {} });
 });
 
 test("collects every validation error at once", () => {
@@ -138,4 +138,12 @@ test("writeDef validates, checks mtime and writes atomically", () => {
   assert.equal(deleteDef(home, "step", "pick", cur.mtime).ok, false);
   assert.equal(deleteDef(home, "step", "pick", readDef(home, "step", "pick")!.mtime).ok, true);
   assert.equal(readDef(home, "step", "pick"), null);
+});
+
+test("an on: trigger takes a with mapping; cron does not", () => {
+  const p = parseProcess("t", `description: d\ncwd: /tmp\ntriggers:\n  - {on: gh.merged, with: {base: main}, where: {author: me}}\nsteps:\n  - {wait_for: signal.x}\n`, ctx);
+  assert.deepEqual(p.triggers[0], { on: "gh.merged", where: { author: "me" }, with: { base: "main" } });
+  const errs = errorsOf(() => parseProcess("t", `description: d\ncwd: /tmp\ntriggers:\n  - {on: gh.merged, with: main}\n  - {cron: "0 10 * * *", with: {a: 1}}\nsteps:\n  - {wait_for: signal.x}\n`, ctx));
+  assert.ok(errs.includes("trigger 1: with must be a mapping"), errs.join(" | "));
+  assert.ok(errs.includes("trigger 2: with only applies to on: triggers"), errs.join(" | "));
 });
