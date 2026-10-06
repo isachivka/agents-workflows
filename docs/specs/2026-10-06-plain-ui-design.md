@@ -1,6 +1,6 @@
 # A web UI anyone can follow: see what runs, see what needs you, act
 
-Status: design, awaiting approval.
+Status: implemented 2026-10-06 (main 194c914).
 Mockups: a private Claude Design canvas — boards Main, Run, RunNeedsYou, Process, Brand.
 
 ## Problem

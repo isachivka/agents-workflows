@@ -30,7 +30,7 @@ Review the new commits in {{vars.worktree}} against "{{vars.task}}". Run the tes
 Something to fix: `flow failed --note "<what to fix>"`. Good: `flow done --note "<verdict>"`.
 ```
 
-- `summary` (required, the only frontmatter key): one line shown in the UI and the run's strip.
+- `summary` (required, the only frontmatter key): the headline a person reads for that step in the UI. Write it as a plain sentence saying who does what ("The dev fixes red CI"), not a label.
 - The body is the prompt an agent reads with `flow show`. It must not be empty.
 
 Placeholders, substituted when the step starts (`src/template.ts`, `renderData` in `src/engine.ts`):
@@ -116,7 +116,7 @@ Each item of `steps:` is one of these kinds:
 | Kind | Write | What happens |
 |---|---|---|
 | agent step | `{step: <id>, role: <role>}` | The role's session gets the nudge line; the agent reports with `flow done` / `flow failed`. |
-| human step | `{step: <id>, role: human}` | Shown in the UI under "Needs you"; closed there or with `flow done --human`. |
+| human step | `{step: <id>, role: human}` | Shown in the UI under "Waiting for you"; closed there or with `flow done --human`. |
 | session action | `{do: clear, role: <role>}`, `{do: compact, role: <role>}` | flowd types `/clear` or `/compact` into the role's session. |
 | typed line | `{do: type, role: <role>, text: "..."}` | flowd types a literal line (a template) into the role's session. |
 | plugin action | `{do: <plugin>.<action>, with: {...}}` | flowd calls the plugin; a throw fails the entry. No action ships with flows yet. |

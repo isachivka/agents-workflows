@@ -20,7 +20,7 @@ From the installed copy of this skill, the repo is
 
 1. **Look first.** `ls $FLOWS_HOME/steps $FLOWS_HOME/processes`; read the process you are changing.
    Reuse a step whose prompt already fits.
-2. **Write the steps.** Frontmatter `summary:` (one line, shown in the UI), then the prompt. Talk
+2. **Write the steps.** Frontmatter `summary:` (the headline a person reads for the step in the UI: a plain sentence saying who does what, "The dev fixes red CI", not a label), then the prompt. Talk
    to the agent directly, say what "done" means, and end with how to report:
    `flow done --note "…"`, or `flow failed --note "…"`. A value a later step needs: tell the agent
    to `flow set key=value`, and read it later as `{{vars.key}}`.

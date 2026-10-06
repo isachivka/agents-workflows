@@ -36,7 +36,14 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml` 
 | `src/check.ts` | `flow check`: offline validation with the same loader and plugins. |
 | `src/install.ts` | `flow install`: launchd plist, hooks, skill links. |
 | `plugins/gh.ts` | The built-in GitHub plugin. |
-| `ui/index.html`, `ui/app.js`, `ui/style.css` | The web UI: plain browser JavaScript, no build. |
+| `ui/index.html`, `ui/app.js`, `ui/style.css` | The web UI: plain browser JavaScript, no build. `app.js` holds the shell and screens. |
+| `ui/text.js` | Every UI string in English and Russian, and the rules that turn a run into words. Tested by `test/ui-text.test.ts`. |
+| `ui/lib.js` | Fetching, live data, routing and icons. |
+| `ui/editors.js` | The process and step editors. |
+| `ui/icons/`, `ui/favicon.ico`, `ui/manifest.webmanifest` | App icons, the attention favicon and the web manifest. |
+| `ui/vendor/fonts/` | The Onest font (OFL). |
+| `scripts/icons.sh` | Regenerates the raster icons from the SVGs (needs `rsvg-convert` and ImageMagick). |
+| `scripts/ui-preview.ts` | Runs a throwaway flowd with generic data and a fake agterm on port 7421, for looking at the UI. |
 | `ui/vendor/preact-htm.js` | Preact and htm, vendored as one ES module. |
 
 ## An event's path

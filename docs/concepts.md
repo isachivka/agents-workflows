@@ -110,7 +110,7 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   wait up.
 - A wait shows on the run: `waiting since <time>: <note>` in the run page's entry panel and in
   `flow show`, `waiting: <note>` in the runs list and `flow ls`. With `--human` the wait is on a
-  person and the run is listed under "Needs you".
+  person and the run is listed under "Waiting for you".
 - A line that reaches an agent must start its turn. If the session has not gone `active` 2 minutes
   after a nudge or a reminder was delivered (and the step has no `flow wait`), the run stops for
   the user: "the agent has not started 2 min after its line was delivered". Before spawning

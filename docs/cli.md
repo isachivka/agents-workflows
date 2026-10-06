@@ -61,7 +61,7 @@ viewer) and will come back to this step. Prints `waiting: <note>`. Without it, f
 agent that ends its turn without reporting and stops the run after the third such turn.
 
 - `--note` is required: what you are waiting for. It shows in the UI, `flow ls` and `flow show`.
-- `--human` says a person has to act; the run is then listed under "Needs you".
+- `--human` says a person has to act; the run is then listed under "Waiting for you".
 - The wait covers the end of the current turn. When your next turn begins it is used up: finish
   with `flow done` or `flow failed`, or run `flow wait` again with a fresh note.
 - Refused like `flow done`: only your own active agent step, after its line reached you.

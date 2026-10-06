@@ -22,8 +22,9 @@ watch and take over at any time.
 - **flowd**, a local daemon that types each step into the right [agterm](https://github.com/umputun/agterm)
   session (spawning it when needed), clears or compacts between steps, never interrupts a turn,
   and reminds an agent that went quiet without reporting.
-- **A web UI** to watch runs, close human steps, override (done, skip, retry, goto), edit
-  processes and steps, and jump to an agent's terminal in one click.
+- **A web UI** that says what waits for you and what each run is doing, in English or Russian;
+  close human steps, retry, skip or step in by hand; read each process as a story; edit processes
+  and steps; jump to an agent's terminal in one click.
 - **Plugins** for event sources and actions, as waits or as triggers that start a process. `gh`
   is built in: required checks, reviews, and per repo merged PRs, newly opened or labelled PRs
   and CI runs on a branch.
@@ -76,10 +77,10 @@ flow start demo
    ```
 
    The agent gets a new line, reads `msg=hi` in `flow show` and reports done.
-4. The last step is yours. The Runs page lists `demo#1` under "Needs you"; open it and press
-   **done**. `flow ls --all` shows the run `done`.
+4. The last step is yours. The Now page lists `demo#1` under "Waiting for you"; open it and press
+   **Done**. `flow ls --all` shows the run `done`.
 
-The `agent ↗` button on the Runs page selects that agent's session in agterm.
+The **Agent terminal** button on a run selects that agent's session in agterm.
 
 ## A process at a glance
 
@@ -108,7 +109,7 @@ gets it. A failed review goes back to `task-implement`, red CI takes the `ci-fix
 returns to the wait, and the merge is a human step that GitHub's merge event closes. With
 `repeat: true` the next task starts when this one is merged.
 
-![Process editor](docs/assets/ui-process.png)
+![A process](docs/assets/ui-process.png)
 
 ## Agents
 
