@@ -518,14 +518,45 @@ test("flow wait from the agent's own session parks on its turn end; nothing but 
   await f.close();
 });
 
-test("a wait sent with --run/--step from another session starts parked; --human puts the run under needs-you", async () => {
+test("a wait sent with --run/--step from another session after the agent's turn ended starts parked; --human puts the run under needs-you", async () => {
   const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1", "ME") });
   await f.submit(start("p", { pm: "S1" }));
   await settle(f);
   await f.submit(status("S1", "active"));
+  await f.submit(status("S1", "completed")); // no turn end will follow to park it
   await f.submit({ type: "entry.wait", data: { session: "ME", run: "p#1", entry: "b", note: "user reads the PR", human: true }, source: "cli" });
   const run = f.store.getRun("p#1")!;
   assert.equal(run.entries.b.wait?.parked, true);
   assert.equal(f.runSummary(run).needsYou, true);
   await f.close();
+});
+
+test("a wait declared while the agent's session is blocked or mid-turn parks on that turn's end, whoever sent it", async () => {
+  // blocked: the flow wait call itself hit a permission prompt; the late active is the same turn
+  const A = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  await A.f.submit(start("p", { pm: "S1" }));
+  await settle(A.f);
+  await A.f.submit(status("S1", "active"));
+  await A.f.submit(status("S1", "blocked"));
+  await A.f.submit({ type: "entry.wait", data: { session: "S1", note: "review running" }, source: "cli" });
+  assert.equal(A.f.store.getRun("p#1")!.entries.b.wait?.parked, false);
+  await A.f.submit(status("S1", "active"));
+  await A.f.submit(status("S1", "idle"));
+  A.clock.t += 40_000;
+  await A.f.tickNow();
+  await settle(A.f);
+  assert.equal(A.agterm.typed().length, 1, A.agterm.typed().join("\n"));
+  await A.f.close();
+  // the user's own terminal while the agent is mid-turn: a repeated active must not use the wait up
+  const B = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1", "ME") });
+  await B.f.submit(start("p", { pm: "S1" }));
+  await settle(B.f);
+  await B.f.submit(status("S1", "active"));
+  await B.f.submit({ type: "entry.wait", data: { session: "ME", run: "p#1", entry: "b", note: "user reads the PR", human: true }, source: "cli" });
+  await B.f.submit(status("S1", "active"));
+  await B.f.submit(status("S1", "idle"));
+  const run = B.f.store.getRun("p#1")!;
+  assert.equal(run.entries.b.wait?.parked, true);
+  assert.equal(B.f.runSummary(run).needsYou, true);
+  await B.f.close();
 });

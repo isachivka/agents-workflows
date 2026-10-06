@@ -323,8 +323,11 @@ export class Flowd {
         const run = this.store.getRun(t.run);
         const role = run ? this.currentEntry(run)?.role : undefined;
         const bound = run && role ? run.roles[role] : null;
-        // only the agent's own session, seen active, can be mid-turn; anything else parks at once
-        const sessionActive = Boolean(bound) && d.session === bound && this.store.sessionStatus(bound!) === "active";
+        // Mid-turn (active, or blocked on a prompt) the wait parks on that turn's end, whoever sent it;
+        // an agent already idle has no turn end coming, so the wait parks at once. Unknown status:
+        // a call from the agent's own session is mid-turn by definition.
+        const st = bound ? this.store.sessionStatus(bound) : null;
+        const sessionActive = st === "active" || st === "blocked" || (st === null && Boolean(bound) && d.session === bound);
         return this.apply(t.run, { kind: "wait", entry: t.entry, note: String(d.note ?? ""), human: d.human === true, sessionActive });
       }
       case "entry.delivered":
