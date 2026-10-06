@@ -5,7 +5,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
+import { composerDraft, expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -520,6 +520,7 @@ export class Flowd {
       const busy = this.store.sessionStatus(session);
       if (busy === "active" || busy === "blocked") continue; // mid-turn, or at a permission prompt
       if (this.now() - (this.lastTyped.get(session) ?? -Infinity) < (this.o.gapMs ?? 2_000)) continue;
+      if (await this.userInSession(session)) continue; // the line stays queued; retried on the next flush
       try {
         await this.agterm.type(session, row.text);
         this.store.markSent(row.id, this.now());
@@ -569,6 +570,16 @@ export class Flowd {
       }
     } finally {
       this.spawning.delete(key);
+    }
+  }
+
+  /** The user has a draft in the session's input box, or an overlay open in it: typing now would land on top. */
+  private async userInSession(session: string): Promise<boolean> {
+    try {
+      if ((await this.agterm.tree()).find((s) => s.id === session)?.overlay) return true;
+      return composerDraft(await this.agterm.text(session)) !== "";
+    } catch {
+      return false; // cannot tell: deliver as before
     }
   }
 

@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { realAgterm, shq, spawnCommand, expandHome } from "../src/agterm.ts";
+import { realAgterm, shq, spawnCommand, expandHome, composerDraft } from "../src/agterm.ts";
 
 function fakeAgtermctl() {
   const dir = mkdtempSync(join(tmpdir(), "flows-agterm-"));
@@ -46,8 +46,8 @@ test("type sends the text, then Enter on its own, both on stdin; focus selects",
 test("tree flattens workspaces into sessions", async () => {
   const f = fakeAgtermctl();
   assert.deepEqual(await realAgterm(f.bin).tree(), [
-    { id: "S1", name: "one", cwd: "/x", workspace: "W", status: "active", title: "t" },
-    { id: "S2", name: "two", cwd: "/y", workspace: "W", status: undefined, title: undefined },
+    { id: "S1", name: "one", cwd: "/x", workspace: "W", status: "active", title: "t", overlay: false },
+    { id: "S2", name: "two", cwd: "/y", workspace: "W", status: undefined, title: undefined, overlay: false },
   ]);
 });
 
@@ -77,4 +77,17 @@ test("expandHome", () => {
   assert.equal(expandHome("~/a", "/h"), "/h/a");
   assert.equal(expandHome("~", "/h"), "/h");
   assert.equal(expandHome("/abs", "/h"), "/abs");
+});
+
+const RULE = "─".repeat(60);
+const screen = (composer: string[], top = RULE) =>
+  ["⏺ earlier output", "", top, ...composer, RULE, "  ➜ repo (main) Opus 5.5 ctx:6%", "  ⏵⏵ bypass permissions on"].join("\n");
+
+test("composerDraft reads what sits in the input box between the last two rules", () => {
+  assert.equal(composerDraft(screen(["❯ "])), "");
+  assert.equal(composerDraft(screen(["❯ уже второй раз сегодня"])), "уже второй раз сегодня");
+  assert.equal(composerDraft(screen(["❯ first line", "  second line"])), "first line\n  second line");
+  assert.equal(composerDraft(screen(["› codex draft"])), "codex draft");
+  assert.equal(composerDraft(screen(["❯ "], `${"─".repeat(40)} Agent Workflows Executor ─`)), "");
+  assert.equal(composerDraft("no rules at all\n❯ text"), "");
 });

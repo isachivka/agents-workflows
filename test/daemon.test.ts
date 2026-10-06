@@ -601,3 +601,20 @@ test("a trusted folder, a non-claude spawn, or no Claude config is not stopped",
   assert.equal(c.f.store.getRun("p#1")!.status, "running");
   await c.f.close();
 });
+
+test("a line waits while the user has a draft in the input box or an overlay is open, then goes out", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  const RULE = "─".repeat(60);
+  agterm.screens.set("S1", [RULE, "❯ half a message", RULE].join("\n"));
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  assert.deepEqual(agterm.typed(), []);
+  agterm.screens.set("S1", [RULE, "❯ ", RULE].join("\n"));
+  agterm.sessions[0].overlay = true;
+  await settle(f);
+  assert.deepEqual(agterm.typed(), []);
+  agterm.sessions[0].overlay = false;
+  await settle(f);
+  assert.equal(agterm.typed().length, 1);
+  await f.close();
+});
