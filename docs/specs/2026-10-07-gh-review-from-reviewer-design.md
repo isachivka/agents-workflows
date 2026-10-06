@@ -1,6 +1,7 @@
 # `gh.review` that waits for the reviewer, not for any comment
 
-Status: approved 2026-10-07 by the user (a request from a live process).
+Status: implemented 2026-10-07 (main `2a15ea8`). The implementation corrected parts of this design;
+see [Amendments](#amendments). Current behaviour: `docs/plugins.md` (gh section).
 
 ## Problem
 
@@ -109,3 +110,26 @@ arming counts; no `from` keeps today's count-based behaviour and its tests uncha
 `plugins.md` gh section (options, data, outcome, the pure-wait note), `processes.md` recipe
 "wait for the requested reviewer", `flow-author` skill trap. Manual: one read-only GraphQL call
 against a public repository's merged PR to confirm the field shapes (no writes, no private repo).
+
+## Amendments
+
+Found while implementing and in the final review; in `main` as of `2a15ea8`.
+
+**A1. `previous` survives a `goto` within the iteration, not only `retry`.** The design's own pure
+decision wait (`already: true`, `on_fail: {goto: fix}`, a fix detour that jumps back) would
+otherwise re-fire `already` on the same changes-requested review on every loop. The engine keeps
+what woke the entry in a `woke` field for the rest of the iteration; a new iteration clears it.
+Consequence: after a `goto` back, the wait needs a new decision.
+
+**A2. `only` or `already` without `from` also use the GraphQL path**, with nobody filtered.
+`already: false` keeps the old count-based behaviour.
+
+**A3. `already` skips a decision older than what woke the entry**, not only the same review: a
+comment that woke the entry must not let an older decision fire on the next arm. Events carry
+`at` (the review's or comment's time) for this.
+
+**A4. Smaller corrections:** logins compare case-insensitively; an empty `from` is refused; a time
+mark keeps an old item that slides back into the 50-item window from looking new; owner and repo
+go to GraphQL as strings; partial GraphQL data that comes with errors is still used; the counts in
+the event are `totalCount`.
+
