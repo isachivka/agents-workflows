@@ -328,11 +328,11 @@ function Processes() {
   return html`
     <section class="head"><div><h1>${t("nav.processes")}</h1><p class="lead">${t("procs.lead")}</p></div></section>
     ${data.length === 0 && html`<p class="muted">${t("procs.empty")}</p>`}
-    <div class="stack">${data.map((p) => html`<article class="box" key=${p.name}>
+    <div class="stack">${[...data].sort((a, b) => Number(!a.valid) - Number(!b.valid)).map((p) => html`<article class="box" key=${p.name}>
       <h3><a href="#/process/${enc(p.name)}">${p.name}</a></h3>
       ${p.description && html`<p class="muted">${p.description}</p>`}
       ${p.valid && html`<p class="small muted">${tn("proc.steps", p.entries.length)} · ${processFacts(p).join(" · ")}</p>`}
-      ${defErrors(p).length > 0 && html`<div class="err-box">${t("proc.invalid")}\n${defErrors(p).join("\n")}</div>`}
+      ${defErrors(p).length > 0 && html`<div class="err-box">${[t("proc.invalid"), ...defErrors(p)].join("\n")}</div>`}
       <div class="acts">
         ${p.valid && html`<button class="btn primary" onClick=${() => go("start", p.name)}>${t("act.start")}</button>`}
         <a class="btn" href="#/process/${enc(p.name)}">${t("act.details")}</a>
@@ -369,7 +369,7 @@ function ProcessView({ arg: name, sub }) {
         <a class="btn quiet" href="#/process/${enc(p.name)}/edit">${t("act.edit")}</a>
       </div>
     </section>
-    ${defErrors(p).length > 0 && html`<div class="err-box">${t("proc.invalid")}\n${defErrors(p).join("\n")}</div>`}
+    ${defErrors(p).length > 0 && html`<div class="err-box">${[t("proc.invalid"), ...defErrors(p)].join("\n")}</div>`}
     ${p.openRuns.length > 0 && html`<section><h2>${t("proc.openRuns")}</h2><div class="acts">
       ${p.openRuns.map((rid) => {
         const r = (runs || []).find((x) => x.id === rid);
@@ -407,7 +407,7 @@ function StepFold({ id, human, usedBy }) {
   return html`<details class="more" onToggle=${(ev) => setOn(ev.currentTarget.open)}>
     <summary>${human ? t("proc.toldHuman") : t("proc.told")}</summary>
     ${data && html`<pre class="instr">${data.body}</pre>`}
-    <p class="small muted" style="margin-top:8px">${usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")}
+    <p class="small muted" style="margin-top:8px">${usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")}${" "}
       <a href="#/step/${enc(id)}">${t("act.editText")}</a></p>
   </details>`;
 }
@@ -432,9 +432,10 @@ function StartForm({ arg: name }) {
         <option value="">${t("start.newTerminal")}</option>
         ${(sessions || []).map((s) => html`<option value=${s.id}>${sessionLabel(s)}</option>`)}
       </select></label>`)}</div>`}
+    ${!p.valid && html`<div class="err-box">${[t("proc.invalid"), ...defErrors(p)].join("\n")}</div>`}
     <${Err} msg=${err} />
-    <div class="acts"><button class="btn primary" onClick=${start}>${t("act.start")}</button>
-      <button class="btn quiet" onClick=${() => history.back()}>${t("act.cancel")}</button></div>`;
+    <div class="acts">${p.valid && html`<button class="btn primary" onClick=${start}>${t("act.start")}</button>`}
+      <button class="btn quiet" onClick=${() => go("process", name)}>${t("act.cancel")}</button></div>`;
 }
 
 const LangSwitch = ({ lang, onLang }) => html`<div class="lang" role="group" aria-label=${t("lang.label")}>
