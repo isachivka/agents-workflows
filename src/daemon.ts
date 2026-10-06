@@ -236,7 +236,14 @@ export class Flowd {
       return;
     }
     const ids = new Set(live.map((s) => s.id));
-    for (const s of live) this.store.setSessionStatus(s.id, s.status ?? "idle", this.now());
+    for (const s of live) {
+      // active before the restart and cleared now: the turn ended while flowd was down
+      // (agterm resets completed to idle on the user's first key), so it counts as completed
+      const was = this.store.sessionStatus(s.id);
+      const shown = s.status && s.status !== "idle" ? s.status : undefined; // agterm omits idle
+      const now = shown ?? (was === "active" ? "completed" : "idle");
+      this.store.setSessionStatus(s.id, now, this.now());
+    }
     for (const run of this.store.openRuns()) {
       for (const session of new Set(Object.values(run.roles))) {
         if (!session) continue;

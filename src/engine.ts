@@ -368,7 +368,8 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
         s.remindAt = undefined;
         s.startBy = undefined;
         if (run.startBlocked === cur!.id) resume(); // the prompt that held it was answered
-      } else if (input.status === "completed" || input.status === "idle") {
+      } else if (input.status === "completed") {
+        // only completed ends a turn: idle is agterm clearing the status (the user pressed a key, a session started)
         if (s.wait) {
           s.wait.parked = true; // the turn the wait was declared in ended; repeats change nothing
           s.remindAt = undefined;

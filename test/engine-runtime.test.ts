@@ -111,7 +111,7 @@ test("an agent that ends its turn without reporting is reminded twice, then the 
     assert.deepEqual(s.delivered(), [`pm: ${reminderText("b")}`]);
     assert.equal(s.run.entries.b.reminded, i);
   }
-  s.send({ kind: "session", session: "S1", status: "active" }).send({ kind: "session", session: "S1", status: "idle" });
+  s.send({ kind: "session", session: "S1", status: "active" }).send({ kind: "session", session: "S1", status: "completed" });
   s.now += 30_000;
   s.send({ kind: "tick" });
   assert.equal(s.run.status, "needs-human");
@@ -360,4 +360,19 @@ test("a start block names only the current step", () => {
   const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
   s.send({ kind: "start-blocked", entry: "c", reason: "x" });
   assert.equal(s.run.status, "running");
+});
+
+test("idle is not a turn end: it arms no reminder and parks no wait", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  turn(s, "active");
+  turn(s, "idle");
+  assert.equal(s.run.entries.b.remindAt, undefined);
+  s.now += 60_000;
+  s.send({ kind: "tick" });
+  assert.deepEqual(s.delivered(), []);
+  s.send(wait());
+  turn(s, "idle");
+  assert.equal(s.run.entries.b.wait?.parked, false);
+  turn(s, "completed");
+  assert.equal(s.run.entries.b.wait?.parked, true);
 });

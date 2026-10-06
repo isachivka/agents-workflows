@@ -541,7 +541,7 @@ test("a wait declared while the agent's session is blocked or mid-turn parks on 
   await A.f.submit({ type: "entry.wait", data: { session: "S1", note: "review running" }, source: "cli" });
   assert.equal(A.f.store.getRun("p#1")!.entries.b.wait?.parked, false);
   await A.f.submit(status("S1", "active"));
-  await A.f.submit(status("S1", "idle"));
+  await A.f.submit(status("S1", "completed"));
   A.clock.t += 40_000;
   await A.f.tickNow();
   await settle(A.f);
@@ -554,7 +554,7 @@ test("a wait declared while the agent's session is blocked or mid-turn parks on 
   await B.f.submit(status("S1", "active"));
   await B.f.submit({ type: "entry.wait", data: { session: "ME", run: "p#1", entry: "b", note: "user reads the PR", human: true }, source: "cli" });
   await B.f.submit(status("S1", "active"));
-  await B.f.submit(status("S1", "idle"));
+  await B.f.submit(status("S1", "completed"));
   const run = B.f.store.getRun("p#1")!;
   assert.equal(run.entries.b.wait?.parked, true);
   assert.equal(B.f.runSummary(run).needsYou, true);
