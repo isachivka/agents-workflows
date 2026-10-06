@@ -284,7 +284,8 @@ steps:
 **Wait for the requested reviewer.** The agent answers each review and, when it has pushed its
 fixes, runs `flow failed --note "waiting for re-review"` to wait again; bots, the PR's author and
 other people's comments never wake it. It finishes with `flow done` when the event it was woken
-by is an approval (`{{event.data.state}}` is `APPROVED`).
+by is an approval (`{{event.data.state}}` is `APPROVED`). `already: true` catches a review that
+lands between the agent's push and its `flow failed`, without firing again on the one it answered.
 
 ```yaml
 description: Address the requested reviewer's feedback until they approve
@@ -293,7 +294,7 @@ roles:
   dev: {spawn: "claude --dangerously-skip-permissions"}
 steps:
   - {step: open-pr, role: dev}            # the agent runs `flow set pr=<url>`
-  - {step: address-review, role: dev, wait_for: {on: gh.review, with: {from: requested}}, on_fail: retry, retries: 10}
+  - {step: address-review, role: dev, wait_for: {on: gh.review, with: {from: requested, already: true}}, on_fail: retry, retries: 10}
   - {step: merge-pr, role: human}
 ```
 

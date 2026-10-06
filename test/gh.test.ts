@@ -195,14 +195,15 @@ test("a poll that works again clears the error the last one reported", async () 
 
 type Rv = { id: string; by: string; bot?: boolean; state: string; at: string };
 type Cm = { id: string; by: string; bot?: boolean; at: string };
-const answer = (o: { author?: string; decision?: string | null; requested?: (string | { team: string } | { bot: string } | null)[]; reviews?: Rv[]; comments?: Cm[] }) => ({
+const answer = (o: { author?: string; decision?: string | null; requested?: (string | { team: string } | { bot: string } | null)[]; reviews?: Rv[]; comments?: Cm[]; totals?: [number, number]; errors?: string[] }) => ({
+  ...(o.errors ? { errors: o.errors.map((message) => ({ message })) } : {}),
   data: { repository: { pullRequest: {
     author: { login: o.author ?? "carol" },
     reviewDecision: o.decision ?? null,
     timelineItems: { nodes: (o.requested ?? []).map((r) => ({ requestedReviewer:
       r === null ? null : typeof r === "string" ? { __typename: "User", login: r } : "team" in r ? { __typename: "Team", slug: r.team } : { __typename: "Bot", login: r.bot } })) },
-    reviews: { nodes: (o.reviews ?? []).map((r) => ({ id: r.id, url: `https://g/pull/7#${r.id}`, state: r.state, submittedAt: r.at, author: { __typename: r.bot ? "Bot" : "User", login: r.by } })) },
-    comments: { nodes: (o.comments ?? []).map((c) => ({ id: c.id, url: `https://g/pull/7#${c.id}`, createdAt: c.at, author: { __typename: c.bot ? "Bot" : "User", login: c.by } })) },
+    reviews: { totalCount: o.totals?.[0] ?? (o.reviews ?? []).length, nodes: (o.reviews ?? []).map((r) => ({ id: r.id, url: `https://g/pull/7#${r.id}`, state: r.state, submittedAt: r.at, author: { __typename: r.bot ? "Bot" : "User", login: r.by } })) },
+    comments: { totalCount: o.totals?.[1] ?? (o.comments ?? []).length, nodes: (o.comments ?? []).map((c) => ({ id: c.id, url: `https://g/pull/7#${c.id}`, createdAt: c.at, author: { __typename: c.bot ? "Bot" : "User", login: c.by } })) },
   } } },
 });
 const PRURL = "https://github.com/org/app/pull/7";
@@ -213,6 +214,8 @@ test("parseReviewAnswer: requested users from the timeline, never teams or bots"
   assert.equal(a.author.login, "carol");
   assert.deepEqual(a.items[0], { id: "R1", kind: "review", by: "ci-bot", bot: true, state: "COMMENTED", at: day(1), url: "https://g/pull/7#R1" });
   assert.throws(() => parseReviewAnswer({ errors: [{ message: "Could not resolve to a PullRequest" }] }), /Could not resolve/);
+  // partial data (say a team the token cannot read) is still an answer
+  assert.deepEqual(parseReviewAnswer(answer({ requested: ["alice"], errors: ["Resource not accessible by integration"] })).requested, ["alice"]);
 });
 
 test("countedItems: requested people only, never bots or the author; decisions only on request; oldest first", () => {
@@ -266,7 +269,7 @@ test("a from wait asks GraphQL for the PR, baselines, then emits the requested r
   assert.deepEqual([args[0], args[1]], ["api", "graphql"]);
   assert.ok(args.includes("owner=org") && args.includes("name=app") && args.includes("number=7"), args.join(" "));
   assert.deepEqual(emitted, [{ type: "gh.review", run: "p#1", entry: "feedback", outcome: "failed", data: {
-    pr: PRURL, id: "R3", by: "alice", kind: "review", state: "CHANGES_REQUESTED", decision: "CHANGES_REQUESTED", url: "https://g/pull/7#R3", reviews: 3, comments: 0,
+    pr: PRURL, id: "R3", by: "alice", kind: "review", state: "CHANGES_REQUESTED", decision: "CHANGES_REQUESTED", url: "https://g/pull/7#R3", at: day(3), reviews: 3, comments: 0,
   } }]);
 });
 
@@ -306,14 +309,17 @@ test("already fires at once on an existing decision, but not on the one that alr
   const state = { now: existing as unknown };
   const again: PluginEvent[] = [];
   const stop = makeGhPlugin(reviewExec(state)).watch!(reviewWait({ from: "requested", already: true }, { type: "gh.review", data: { id: "R1" } }), repoCtx(again)) as () => void;
-  await sleep(12);
-  assert.equal(again.length, 0);
-  state.now = answer({ decision: "APPROVED", requested: ["alice"], reviews: [
-    { id: "R1", by: "alice", state: "CHANGES_REQUESTED", at: day(1) },
-    { id: "R2", by: "alice", state: "APPROVED", at: day(2) },
-  ] });
-  await sleep(20);
-  stop();
+  try {
+    await sleep(12);
+    assert.equal(again.length, 0);
+    state.now = answer({ decision: "APPROVED", requested: ["alice"], reviews: [
+      { id: "R1", by: "alice", state: "CHANGES_REQUESTED", at: day(1) },
+      { id: "R2", by: "alice", state: "APPROVED", at: day(2) },
+    ] });
+    await sleep(20);
+  } finally {
+    stop();
+  }
   assert.deepEqual(again.map((e) => [e.data!.id, e.outcome]), [["R2", "done"]]);
 });
 
@@ -321,4 +327,63 @@ test("gh.review refuses an unknown only, and a bare PR number without with.repo"
   const ctx = repoCtx([]);
   assert.throws(() => makeGhPlugin(fake({})).watch!(reviewWait({ from: "requested", only: "approvals" }), ctx), /gh\.review: only must be "decisions"/);
   assert.throws(() => makeGhPlugin(fake({})).watch!({ ...reviewWait({ from: "alice" }), vars: { pr: "7" } }, ctx), /with\.repo/);
+});
+
+const runWatch = async (state: { now: unknown }, withArgs: Record<string, unknown>, change: () => void, previous?: { type: string; data: Record<string, unknown> }) => {
+  const emitted: PluginEvent[] = [];
+  const stop = makeGhPlugin(reviewExec(state)).watch!(reviewWait(withArgs, previous), repoCtx(emitted)) as () => void;
+  try {
+    await sleep(12);
+    change();
+    await sleep(20);
+  } finally {
+    stop();
+  }
+  return emitted;
+};
+
+test("already does not re-fire an old decision after a comment woke the entry", async () => {
+  const state = { now: answer({ requested: ["alice"], reviews: [{ id: "R1", by: "alice", state: "CHANGES_REQUESTED", at: day(1) }], comments: [{ id: "C1", by: "alice", at: day(2) }] }) as unknown };
+  const emitted = await runWatch(state, { from: "requested", already: true }, () => {}, { type: "gh.review", data: { id: "C1", at: day(2) } });
+  assert.deepEqual(emitted, []);
+});
+
+test("from matches logins whatever their case; an empty from is refused", async () => {
+  const state = { now: answer({ requested: [] }) as unknown };
+  const emitted = await runWatch(state, { from: "Alice" }, () => { state.now = answer({ reviews: [{ id: "R1", by: "alice", state: "APPROVED", at: day(2) }] }); });
+  assert.deepEqual(emitted.map((e) => e.data!.by), ["alice"]);
+  assert.throws(() => makeGhPlugin(fake({})).watch!(reviewWait({ from: " , " }), repoCtx([])), /gh\.review: from needs/);
+});
+
+test("an old comment that slides back into the 50-item window is not taken for new", async () => {
+  const c = (n: number) => ({ id: `C${n}`, by: "alice", at: day(n + 1) });
+  const state = { now: answer({ requested: ["alice"], comments: Array.from({ length: 5 }, (_, k) => c(k + 1)) }) as unknown };
+  const emitted = await runWatch(state, { from: "requested" }, () => { state.now = answer({ requested: ["alice"], comments: [c(0), c(1), c(2), c(3), c(4)] }); });
+  assert.deepEqual(emitted, []);
+});
+
+test("owner and repository names go to GraphQL as strings, the number as a number", async () => {
+  const exec = reviewExec({ now: answer({}) });
+  const stop = makeGhPlugin(exec).watch!({ ...reviewWait({ from: "alice" }), vars: { pr: "https://github.com/org/2048/pull/7" } }, repoCtx([])) as () => void;
+  await sleep(5);
+  stop();
+  const a = exec.calls[0];
+  assert.equal(a[a.indexOf("owner=org") - 1], "-f");
+  assert.equal(a[a.indexOf("name=2048") - 1], "-f");
+  assert.equal(a[a.indexOf("number=7") - 1], "-F");
+});
+
+test("review and comment counts in the event are the PR's totals, not the 50-item window", async () => {
+  const state = { now: answer({ requested: ["alice"], totals: [120, 300] }) as unknown };
+  const emitted = await runWatch(state, { from: "requested" }, () => {
+    state.now = answer({ requested: ["alice"], reviews: [{ id: "R9", by: "alice", state: "APPROVED", at: day(9) }], totals: [121, 300] });
+  });
+  assert.deepEqual([emitted[0]?.data!.reviews, emitted[0]?.data!.comments], [121, 300]);
+});
+
+test("already: false keeps the plain count-based gh.review", () => {
+  const exec = fake({ "pr view": { stdout: JSON.stringify({ reviews: [], comments: [] }) } });
+  const stop = makeGhPlugin(exec).watch!({ ...reviewWait({ already: false }), vars: { pr: "7" } }, repoCtx([])) as () => void;
+  stop();
+  assert.deepEqual(exec.calls[0]?.slice(0, 2), ["pr", "view"]);
 });

@@ -97,21 +97,24 @@ const REVIEW_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
       timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], first: 100) {
         nodes { ... on ReviewRequestedEvent { requestedReviewer { __typename ... on User { login } } } }
       }
-      reviews(last: 50) { nodes { id url state submittedAt author { __typename login } } }
-      comments(last: 50) { nodes { id url createdAt author { __typename login } } }
+      reviews(last: 50) { totalCount nodes { id url state submittedAt author { __typename login } } }
+      comments(last: 50) { totalCount nodes { id url createdAt author { __typename login } } }
     }
   }
 }`;
 
 export interface ReviewItem { id: string; kind: "review" | "comment"; by: string; bot: boolean; state: string; at: string; url: string }
-export interface ReviewAnswer { author: { login: string }; reviewDecision: string | null; requested: string[]; items: ReviewItem[] }
+export interface ReviewAnswer {
+  author: { login: string }; reviewDecision: string | null; requested: string[]; items: ReviewItem[];
+  totals: { reviews: number; comments: number };
+}
 
 /** The PR's author, decision, every user ever review-requested (teams and bots dropped), its reviews and comments. */
 export function parseReviewAnswer(json: unknown): ReviewAnswer {
   const j = json as { errors?: { message: string }[]; data?: { repository?: { pullRequest?: Record<string, any> | null } | null } };
-  if (j.errors?.length) throw new Error(`gh api graphql: ${j.errors.map((e) => e.message).join("; ")}`);
   const pr = j.data?.repository?.pullRequest;
-  if (!pr) throw new Error("gh api graphql: no such pull request");
+  // partial data with errors (a team the token cannot read) is still an answer
+  if (!pr) throw new Error(`gh api graphql: ${j.errors?.length ? j.errors.map((e) => e.message).join("; ") : "no such pull request"}`);
   const requested = (pr.timelineItems?.nodes ?? [])
     .map((n: any) => n?.requestedReviewer)
     .filter((r: any) => r?.__typename === "User" && r.login)
@@ -121,16 +124,20 @@ export function parseReviewAnswer(json: unknown): ReviewAnswer {
     ...(pr.reviews?.nodes ?? []).map((r: any) => ({ id: String(r.id), kind: "review" as const, ...who(r.author), state: String(r.state ?? ""), at: String(r.submittedAt ?? ""), url: String(r.url ?? "") })),
     ...(pr.comments?.nodes ?? []).map((c: any) => ({ id: String(c.id), kind: "comment" as const, ...who(c.author), state: "", at: String(c.createdAt ?? ""), url: String(c.url ?? "") })),
   ];
-  return { author: { login: String(pr.author?.login ?? "") }, reviewDecision: pr.reviewDecision ?? null, requested: [...new Set<string>(requested)], items };
+  const totals = { reviews: Number(pr.reviews?.totalCount ?? items.filter((i) => i.kind === "review").length), comments: Number(pr.comments?.totalCount ?? items.filter((i) => i.kind === "comment").length) };
+  return { author: { login: String(pr.author?.login ?? "") }, reviewDecision: pr.reviewDecision ?? null, requested: [...new Set<string>(requested)], items, totals };
 }
 
 const DECISIONS = new Set(["APPROVED", "CHANGES_REQUESTED"]);
 
-/** The items that count, oldest first. With `from`, bots and the PR's author never count. */
+const fromLogins = (from: string) => from.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+/** The items that count, oldest first. With `from`, bots and the PR's author never count. Logins ignore case. */
 export function countedItems(a: ReviewAnswer, o: { from?: string; only?: string }): ReviewItem[] {
-  const people = o.from === undefined ? null : o.from === "requested" ? a.requested : o.from.split(",").map((s) => s.trim()).filter(Boolean);
+  const people = o.from === undefined ? null : (o.from === "requested" ? a.requested : fromLogins(o.from)).map((p) => p.toLowerCase());
+  const author = a.author.login.toLowerCase();
   return a.items
-    .filter((i) => !people || (i.by && !i.bot && i.by !== a.author.login && people.includes(i.by)))
+    .filter((i) => !people || (i.by && !i.bot && i.by.toLowerCase() !== author && people.includes(i.by.toLowerCase())))
     .filter((i) => o.only !== "decisions" || (i.kind === "review" && DECISIONS.has(i.state)))
     .sort((x, y) => x.at.localeCompare(y.at));
 }
@@ -199,7 +206,8 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
           clearInterval(timer);
         };
       }
-      if (kind === "review" && pr && ["from", "only", "already"].some((k) => w.with[k] !== undefined)) {
+      const already = w.with.already === true || w.with.already === "true";
+      if (kind === "review" && pr && (w.with.from !== undefined || w.with.only !== undefined || already)) {
         return watchReviewers(w, ctx, pr, exec, every);
       }
       if (!pr) {
@@ -246,18 +254,23 @@ function watchReviewers(w: Watch, ctx: PluginCtx, pr: string, exec: Exec, every:
   const only = w.with.only === undefined ? undefined : String(w.with.only);
   if (only !== undefined && only !== "decisions") throw new Error('gh.review: only must be "decisions"');
   const from = w.with.from === undefined ? undefined : String(w.with.from);
+  if (from !== undefined && from !== "requested" && fromLogins(from).length === 0) {
+    throw new Error('gh.review: from needs "requested" or at least one login');
+  }
   const already = w.with.already === true || w.with.already === "true";
   const { owner, name, number } = prCoordinates(pr, w.with.repo);
-  const args = ["api", "graphql", "-f", `query=${REVIEW_QUERY}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`];
+  // -f keeps owner and name strings (a repo named 2048 is not a number); -F makes number an Int
+  const args = ["api", "graphql", "-f", `query=${REVIEW_QUERY}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `number=${number}`];
   let seen: Set<string> | null = null;
+  let mark = ""; // the newest time seen: an old item that slides back into the 50-item window is not new
   let finished = false;
   let failing = false;
   const emit = (a: ReviewAnswer, i: ReviewItem) => {
     finished = Boolean(w.run); // a wait takes one event
     ctx.emit({
       type: w.type, run: w.run, entry: w.entry, outcome: reviewOutcome(i.state),
-      data: { pr, id: i.id, by: i.by, kind: i.kind, state: i.state, decision: a.reviewDecision ?? "", url: i.url,
-        reviews: a.items.filter((x) => x.kind === "review").length, comments: a.items.filter((x) => x.kind === "comment").length },
+      data: { pr, id: i.id, by: i.by, kind: i.kind, state: i.state, decision: a.reviewDecision ?? "", url: i.url, at: i.at,
+        reviews: a.totals.reviews, comments: a.totals.comments },
     });
   };
   const poll = async () => {
@@ -267,15 +280,21 @@ function watchReviewers(w: Watch, ctx: PluginCtx, pr: string, exec: Exec, every:
       if (finished) return;
       if (failing) { ctx.error(null, w); failing = false; }
       const counted = countedItems(a, { from, only });
+      const newest = a.items.reduce((m, i) => (i.at > m ? i.at : m), mark);
       if (!seen) {
         seen = new Set(a.items.map((i) => i.id)); // the baseline: what is there now never fires...
+        mark = newest;
         const latest = [...counted].reverse().find((i) => i.kind === "review" && DECISIONS.has(i.state));
-        // ...except, with already, a decision that is there now and did not wake this entry before
-        if (already && latest && latest.id !== w.previous?.data.id) emit(a, latest);
+        // ...except, with already, a decision that is there now and is not, or is not older than,
+        // what last woke this entry (a comment that woke it is newer than the old decision)
+        const prev = w.previous?.data;
+        const wokeBy = latest && (latest.id === prev?.id || (typeof prev?.at === "string" && latest.at <= prev.at));
+        if (already && latest && !wokeBy) emit(a, latest);
         return;
       }
-      const fresh = counted.filter((i) => !seen!.has(i.id));
+      const fresh = counted.filter((i) => !seen!.has(i.id) && i.at >= mark);
       for (const i of a.items) seen.add(i.id);
+      mark = newest;
       if (fresh.length) emit(a, fresh[0]);
     } catch (e) {
       failing = true;

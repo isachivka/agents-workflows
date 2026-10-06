@@ -116,14 +116,16 @@ asks for a PR.
 |---|---|---|
 | `from` | `requested`, a login, or logins separated by commas | Whose reviews and comments count. `requested`: every **user** ever requested as a reviewer on the PR, read from its timeline, so a reviewer who already reviewed and left the current requests still counts, and one assigned after the wait armed counts too. Teams never count as people. With `from`, bots and the PR's author never count. |
 | `only` | `decisions` | Only `APPROVED` and `CHANGES_REQUESTED` reviews count; comments and `COMMENTED` reviews do not. |
-| `already` | `true` | On the first poll, a decision that is already there fires at once, unless it is the one that last woke this entry (`previous`). |
+| `already` | `true` | On the first poll, a decision that is already there fires at once, unless it is the one that last woke this entry (`previous`), or older than it. A `goto` back to the wait in the same iteration therefore needs a new decision: the one that already woke it does not count again. |
 
 ```yaml
 - {step: address-review, role: dev, wait_for: {on: gh.review, with: {from: requested}}, on_fail: retry}
 - {id: approval, wait_for: {on: gh.review, with: {from: requested, only: decisions, already: true}}, on_fail: {goto: fix-review}}
 ```
 
-Without these options `gh.review` counts everyone, bots included, as before. An event without an
+Logins are compared without case. The event's `reviews` and `comments` are the PR's totals; `at`
+is when the review was submitted or the comment written. Without these options `gh.review`
+counts everyone, bots included, as before. An event without an
 outcome closes a pure wait as `done`, so a pure `gh.review` wait should use `only: decisions`.
 The PR is a URL (`vars.pr` or `with.pr`); a bare PR number needs `with.repo` (`owner/name`). An
 unknown `only` refuses the wait: `gh.review: only must be "decisions"`.
