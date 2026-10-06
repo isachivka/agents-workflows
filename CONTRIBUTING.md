@@ -34,3 +34,9 @@ Tests never touch the real agterm, `~/.config/flows`, `~/.claude` or launchd; ke
 
 One topic per PR. Tests and typecheck green. Docs updated for whatever the change makes untrue.
 Link the spec and plan when there are any. Conventional commit messages.
+
+## Looking at the web UI
+
+`node scripts/ui-preview.ts` starts a throwaway flowd on port 7421 (`PREVIEW_PORT` changes it) with
+a fake agterm and runs in every state the UI draws. It never touches the real flowd, agterm or
+`~/.config/flows`.
