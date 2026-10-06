@@ -5,6 +5,9 @@ const BASE = process.env.FLOWD_URL || `http://127.0.0.1:${process.env.FLOWD_PORT
 
 class CliError extends Error {}
 
+/** a GitHub pull request or a GitLab merge request URL; ui/pr.js has the same rule */
+const PR_URL = /^https?:\/\/\S+\/(pull|merge_requests)\/\d+/;
+
 const HELP = `flow — drive flows from an agent session or a terminal
 
   flow show                              this session's current step: instructions, event, vars
@@ -129,7 +132,11 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "set": {
         if (!a._.length) throw new CliError("usage: flow set key=value …");
-        await call("POST", "/api/vars", { session, run: a.run, vars: pairs(a._) });
+        const vars = pairs(a._);
+        await call("POST", "/api/vars", { session, run: a.run, vars });
+        for (const [k, v] of Object.entries(vars)) {
+          if (k !== "pr" && PR_URL.test(v)) process.stderr.write(`flow: hint: ${k} looks like a pull request — the standard name is pr (flow set pr=${v})\n`);
+        }
         out("ok");
         return 0;
       }

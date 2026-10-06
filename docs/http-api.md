@@ -73,7 +73,7 @@ run, one standing on an open human step, or one whose agent waits with `human: t
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | GET | `/api/sessions` | | `[{id, name, cwd, workspace, status?, title?}]` from `agtermctl tree --json` |
-| POST | `/api/sessions/:id/focus` | | `{}`; selects that session in agterm |
+| POST | `/api/sessions/:id/focus` | | `{}`; selects that session in agterm and brings agterm to the front in macOS (`open -a agterm`) |
 | GET | `/api/plugins` | | `{core: [core event types], plugins: [{name, source, events, actions, lastError, watches}]}`; each watch is `{run, entry, type, processes, error}`, with `run` and `entry` null and `processes` set for a trigger subscription |
 | POST | `/api/restart` | | `{}`, then flowd exits; launchd starts it again |
 | GET | `/api/stream` | | Server-sent events: `data: runs` when any run changed, `data: defs` when definitions were reloaded |

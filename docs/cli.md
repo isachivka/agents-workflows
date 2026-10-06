@@ -50,6 +50,10 @@ flow set key=value … [--run ID]
 Sets run variables, read by later steps as `{{vars.key}}`. Values that are URLs show as links in
 the UI. Prints `ok`. Vars are cleared at the start of each iteration.
 
+A pull-request URL under any name but `pr` is stored, with a hint on stderr:
+`flow: hint: pull_request looks like a pull request — the standard name is pr (flow set pr=<url>)`.
+See [Standard variables](processes.md#standard-variables).
+
 ### `flow wait`
 
 ```
@@ -196,4 +200,6 @@ Claude down.
 | `FLOWS_HOME` | flowd, `flow check` | The definitions directory. Default `~/.config/flows`. |
 | `FLOWS_STATE` | flowd | The SQLite database. Default `~/.local/state/flows/flows.db`. |
 | `FLOWS_AGTERMCTL` | flowd, `flow install` | The `agtermctl` binary. Default `agtermctl` on `PATH`. |
+| `FLOWS_AGTERM_APP` | flowd | The app the terminal buttons bring forward with `open -a`. Default `agterm`. |
+| `FLOWS_OPEN` | flowd | The command used for that. Default `open`. |
 | `FLOWS_LAUNCHCTL` | `flow install` | The `launchctl` binary. Default `launchctl`. |

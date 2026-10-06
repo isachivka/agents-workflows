@@ -17,6 +17,9 @@ when a step is yours. Then:
 3. Report once: `flow done [--note "…"] [--evidence URL]`, or `flow failed --note "what went wrong"`.
    Never report what you did not verify.
 4. Values later steps need go into run variables: `flow set pr=<url>`, `flow set worktree=<path>`.
+   **The moment your work has a pull request** — you opened it, or found the one it belongs to —
+   run `flow set pr=<url>` right away, even if the step does not ask. `pr` is the standard name:
+   the UI's "Open the PR" button and the `gh` waits read it. Never invent another name for it.
 5. After reporting, end your turn. The next step arrives as a new `▶ flow:` line.
 
 Never end a turn without one of `flow done`, `flow failed` or `flow wait`. When the step has you

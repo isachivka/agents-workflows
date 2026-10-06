@@ -32,8 +32,12 @@ test("an agent session shows, sets, reports, and cannot report twice", async () 
   assert.match(shown.stdout, /Do B for p#1/);
   const noNote = await flow(["failed"], env);
   assert.deepEqual([noNote.code, noNote.stderr], [1, "flow: flow failed needs --note saying what went wrong\n"]);
-  assert.equal((await flow(["set", "pr=https://x/pull/1"], env)).code, 0);
+  const set = await flow(["set", "pr=https://x/pull/1"], env);
+  assert.deepEqual([set.code, set.stderr], [0, ""]);
   assert.deepEqual(s.f.store.getRun("p#1")!.vars, { pr: "https://x/pull/1" });
+  const other = await flow(["set", "pull_request=https://github.com/o/r/pull/7", "thread=https://chat.example/x/1"], env);
+  assert.equal(other.code, 0);
+  assert.equal(other.stderr, "flow: hint: pull_request looks like a pull request — the standard name is pr (flow set pr=https://github.com/o/r/pull/7)\n");
   const done = await flow(["done", "--note", "ok"], env);
   assert.deepEqual([done.code, done.stdout], [0, "recorded done\n"]);
   const twice = await flow(["done"], env);

@@ -39,8 +39,15 @@ function run(bin: string, args: string[], stdin?: string): Promise<string> {
   });
 }
 
-/** `submitDelayMs`: pause between the text and its Enter, so the TUI has taken the text in. */
-export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", submitDelayMs = 500): Agterm {
+/**
+ * `submitDelayMs`: pause between the text and its Enter, so the TUI has taken the text in.
+ * `opener`: what brings agterm forward in macOS after a session is selected (`open -a agterm`).
+ */
+export function realAgterm(
+  bin = process.env.FLOWS_AGTERMCTL || "agtermctl",
+  submitDelayMs = 500,
+  opener = process.env.FLOWS_OPEN || "open",
+): Agterm {
   return {
     async spawn(o) {
       const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", o.command, "--workspace-name", o.workspace,
@@ -63,6 +70,12 @@ export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", sub
     },
     async focus(session) {
       await run(bin, ["session", "select", "--target", session]);
+      // selecting inside agterm leaves agterm behind the browser, often in another Space
+      try {
+        await run(opener, ["-a", process.env.FLOWS_AGTERM_APP || "agterm"]);
+      } catch {
+        // the session is selected; failing to raise the app is no reason to report an error
+      }
     },
     async cursorColumn(surface) {
       const column = Number(JSON.parse(await run(bin, ["surface", "cursor", "--target", surface, "--json"]))?.result?.cursor?.column);

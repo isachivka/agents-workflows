@@ -34,14 +34,14 @@ test("spawn passes every flag and returns the new session id", async () => {
 
 // Live on 2026-10-04: a line typed together with its newline landed in Claude's composer
 // unsubmitted, and a newline passed as an argument did not submit either; Enter on stdin did.
-test("type sends the text, then Enter on its own, both on stdin; focus selects", async () => {
+test("type sends the text, then Enter on its own, both on stdin; focus selects and raises agterm", async () => {
   const f = fakeAgtermctl();
-  const a = realAgterm(f.bin, 0);
+  const a = realAgterm(f.bin, 0, f.bin); // the fake also stands in for `open`
   await a.type("S1", "it's `x` $HOME");
   await a.type("S1", "/clear\n");
   await a.focus("S1");
   const T = "[session][type][--stdin][--target][S1]";
-  assert.equal(f.calls(), `${T}<it's \`x\` $HOME>\n${T}<\n>\n${T}</clear>\n${T}<\n>\n[session][select][--target][S1]\n`);
+  assert.equal(f.calls(), `${T}<it's \`x\` $HOME>\n${T}<\n>\n${T}</clear>\n${T}<\n>\n[session][select][--target][S1]\n[-a][agterm]\n`);
 });
 
 test("tree flattens workspaces into sessions", async () => {

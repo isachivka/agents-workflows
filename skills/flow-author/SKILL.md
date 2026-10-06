@@ -60,6 +60,8 @@ From the installed copy of this skill, the repo is
   `flow signal deploy-done` adds it when sending.
 - A plugin's event types are `<plugin>.<event>`; an unknown type fails `flow check`.
 - `human` is a reserved role; agent roles must be declared under `roles`.
+- The run's pull request is always `vars.pr` (see "Standard variables" in docs/processes.md): a
+  step that opens or finds a PR should say `flow set pr=<url>`; never name it otherwise.
 - `gh.checks`, `gh.review` and `gh.merged` waits need the PR: `flow set pr=<url>` before the wait
   (a run a gh trigger started already has `vars.pr`), or
   `wait_for: {on: gh.checks, with: {pr: "{{vars.pr}}"}}`. A `gh.merged` wait for any merge in a

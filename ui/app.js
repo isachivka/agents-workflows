@@ -1,5 +1,6 @@
 import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
+import { prUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
   eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, duration, ago, clock, moment, runLabel } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
@@ -34,8 +35,6 @@ function useRounds(runs, since) {
   return rounds;
 }
 
-/** The PR a human step is about: a var named pr, else the first link among the vars. */
-const firstUrl = (vars) => (vars.pr && isUrl(vars.pr) ? vars.pr : Object.values(vars).find(isUrl) || null);
 
 function Now() {
   const { data, error } = useData("/api/runs?all=1");
@@ -82,7 +81,7 @@ function WaitingCard({ r, now }) {
   const d = describeRun(r);
   const s = situation(r);
   const cur = currentEntry(r);
-  const url = firstUrl(r.vars);
+  const url = prUrl(r.vars);
   const sid = cur && cur.role && cur.role !== "human" ? r.roles[cur.role] : null;
   const post = (path) => attempt(() => api("POST", `/api/runs/${enc(r.id)}${path}`, {}), setErr);
   return html`<article class="box you">
@@ -92,7 +91,7 @@ function WaitingCard({ r, now }) {
     ${d.detail && html`<p class="muted">${d.detail}</p>`}
     <${Err} msg=${err} />
     <div class="acts">
-      ${s === "human" && url && html`<a class="btn primary" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
+      ${url && html`<a class="btn ${s === "human" ? "primary" : ""}" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
       ${s === "human" && !r.waitingOn && html`<button class="btn ${url ? "" : "primary"}" onClick=${post(`/entries/${enc(cur.id)}/done`)}>${t("act.done")}</button>`}
       ${(s === "failed" || s === "stopped") && html`<a class="btn primary" href="#/run/${enc(r.id)}">${t("act.sortOut")}</a>`}
       ${s === "failed" && html`<button class="btn" onClick=${post(`/entries/${enc(cur.id)}/retry`)}>${t("act.retry")}</button>`}
@@ -109,6 +108,7 @@ function WorkingCard({ r, now }) {
   const p = progress(r);
   const sid = cur && cur.kind === "agent" ? r.roles[cur.role] : null;
   const since = r.agentWait ? r.agentWait.since : cur && cur.startedAt;
+  const url = prUrl(r.vars);
   return html`<article class="box">
     <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//><span class="muted small">${runName(r)}</span></div>
     <h3>${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</h3>
@@ -118,6 +118,7 @@ function WorkingCard({ r, now }) {
     <${Err} msg=${err} />
     <div class="acts">
       <a class="btn" href="#/run/${enc(r.id)}">${t("act.details")}</a>
+      ${url && html`<a class="btn" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
       ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.terminal")}</button>`}
     </div>
   </article>`;
@@ -129,6 +130,7 @@ function FinishedRow({ r, now }) {
     <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
     <a href="#/run/${enc(r.id)}"><b>${runLabel(r.id)}</b></a>
     ${last && html`<span class="muted grow note" title=${last.note}>— ${last.note}</span>`}
+    ${prUrl(r.vars) && html`<a class="small" href=${prUrl(r.vars)} target="_blank" rel="noreferrer">PR<${Icon} name="external" /></a>`}
     <span class="muted small" style="margin-left:auto">${ago(r.updated, now)}</span>
   </div>`;
 }
@@ -224,7 +226,7 @@ function Decide({ r, s, d, post, setErr, stop }) {
 
 function HumanStep({ r, cur, post, detail }) {
   const { data, error } = useData(`/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/prompt`, false);
-  const url = firstUrl(r.vars);
+  const url = prUrl(r.vars);
   return html`
     ${data ? html`<pre class="instr">${data.text}</pre>` : error && html`<p class="err-box">${error.message}</p>`}
     <div class="acts">

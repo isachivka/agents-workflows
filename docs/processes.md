@@ -55,6 +55,19 @@ when the process repeats). It does not check `with`, where `{{event.*}}` never w
 cron start of a triggered process, or a `goto` back to its first entry, has no event either: the
 step then stops the run with a render error.
 
+## Standard variables
+
+Names every process and agent uses the same way, so the UI and plugins can rely on them.
+
+| Name | Holds | Read by |
+|---|---|---|
+| `pr` | the URL of the run's pull request (GitHub) or merge request | the UI's "Open the PR" button on every run card and the run page; `gh.checks`, `gh.merged`, `gh.review` waits (as their default PR); a run started by a `gh` trigger gets it automatically |
+
+Agents set `pr` the moment the work has a PR (`flow set pr=<url>`), whether or not the step asks;
+the `flow` skill tells them so, and `flow set` hints when a PR URL goes under another name. When a
+run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL (`…/pull/<n>`,
+`…/merge_requests/<n>`), never to any other link.
+
 ## Process keys
 
 | Key | Type | Default | Meaning |
