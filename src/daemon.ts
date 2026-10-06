@@ -1,10 +1,11 @@
+import { execFile, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
-import { matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
+import { formatDuration, matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { EMPTY_INPUT_COLUMN, expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
@@ -29,6 +30,8 @@ export interface FlowdOptions {
   claudeConfig?: string;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
+  /** how a shell entry's command is run; the command is appended (default: a login zsh) */
+  shell?: string[];
 }
 
 export interface Result { error?: string; run?: string }
@@ -39,6 +42,8 @@ export interface PlanItem {
   onFail: OnFail; after: { goto: string } | null;
   /** a pause entry's length (ms) */
   waitMs: number | null;
+  /** a shell entry's command */
+  sh: string | null;
 }
 
 export interface RunSummary {
@@ -81,6 +86,9 @@ export class Flowd {
   private chain: Promise<unknown> = Promise.resolve();
   /** work started beside the event chain (answering a trust dialog); idle() and close() wait for it */
   private side = new Set<Promise<unknown>>();
+  /** running shell entries, killed on close */
+  private children = new Set<ChildProcess>();
+  private closing = false;
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
   private spawning = new Set<string>();
@@ -120,9 +128,10 @@ export class Flowd {
     void this.enqueue(async () => {
       for (const run of this.store.openRuns()) {
         const cur = this.currentEntry(run);
-        if (cur?.kind === "action" && cur.do?.includes(".") && run.entries[cur.id]?.status === "active") {
-          // its promise died with the old process: fail the entry so on_fail decides
-          await this.process(this.store.addEvent({ type: "entry.report", data: { run: run.id, entry: cur.id, outcome: "failed", note: "flowd restarted while the action ran", by: "system" }, source: "flowd" }, this.now()));
+        if (cur?.kind === "action" && (cur.do?.includes(".") || cur.sh !== undefined) && run.entries[cur.id]?.status === "active") {
+          // its promise (or its shell) died with the old process: fail the entry so on_fail decides
+          const note = cur.sh !== undefined ? "flowd restarted while the command ran" : "flowd restarted while the action ran";
+          await this.process(this.store.addEvent({ type: "entry.report", data: { run: run.id, entry: cur.id, outcome: "failed", note, by: "system" }, source: "flowd" }, this.now()));
         }
       }
       for (const run of this.store.openRuns()) this.rearm(run);
@@ -137,6 +146,8 @@ export class Flowd {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
+    for (const c of this.children) c.kill(); // a restart fails what was cut off: see init
     for (const t of this.timers) clearInterval(t);
     for (const c of this.crons) c.stop();
     clearTimeout(this.reloadTimer);
@@ -491,6 +502,7 @@ export class Flowd {
       if (a.kind === "watch") this.plugins.watch({ run: runId, entry: a.entry, type: a.waitFor.on, with: a.waitFor.with, cwd: this.cwdOf(res.run.process), vars: res.run.vars, ...(a.previous ? { previous: a.previous } : {}) });
       else if (a.kind === "unwatch") this.plugins.unwatch(runId, a.entry);
       else if (a.kind === "plugin-action") void this.runAction(runId, a.entry, a.name, a.with);
+      else if (a.kind === "shell") this.background(this.runShell(runId, a.entry, a.command, a.cwd, a.env, a.timeoutMs));
     }
     for (const id of emitted) void this.enqueue(() => this.process(id));
     if (res.actions.some((a) => a.kind === "deliver")) void this.flush();
@@ -643,6 +655,29 @@ export class Flowd {
     }
   }
 
+  /** A shell entry: run the command as written, the run in its environment; report how it ended. */
+  private runShell(run: string, entry: string, command: string, cwd: string, env: Record<string, string>, timeoutMs: number): Promise<void> {
+    const [bin, ...args] = this.o.shell ?? ["/bin/zsh", "-lc"];
+    return new Promise((resolve) => {
+      const child = execFile(bin, [...args, command], { cwd: expandHome(cwd), env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          this.children.delete(child);
+          if (this.closing) return resolve(); // cut off by shutdown: the next start fails the entry
+          const out = String(stdout).trim();
+          let outcome: "done" | "failed" = "done";
+          let note = out.split("\n").pop() || "exit 0";
+          if (err) {
+            outcome = "failed";
+            const e = err as { killed?: boolean; signal?: string | null; code?: unknown; message: string };
+            note = e.killed && e.signal ? `timed out after ${formatDuration(timeoutMs)}`
+              : `exit ${typeof e.code === "number" ? e.code : 1}: ${(String(stderr).trim() || out || e.message).slice(-500)}`;
+          }
+          resolve(this.submit({ type: "entry.report", data: { run, entry, outcome, note: note.slice(0, 500), by: "system" }, source: "flowd" }).then(() => undefined));
+        });
+      this.children.add(child);
+    });
+  }
+
   /** Read-only. No config, or one that cannot be read, is no reason to stop a run. */
   private claudeTrusts(cwd: string): boolean {
     const path = this.o.claudeConfig ?? join(process.env.CLAUDE_CONFIG_DIR ?? homedir(), ".claude.json");
@@ -717,7 +752,7 @@ export class Flowd {
           status: st?.status ?? "pending", step: e.step ?? null,
           summary: e.step ? this.defs.steps[e.step]?.summary ?? null : null, do: e.do ?? null,
           startedAt: st?.startedAt ?? null, note: st?.note ?? null, onFail: e.onFail, after: e.after ?? null,
-          waitMs: e.delayMs ?? null,
+          waitMs: e.delayMs ?? null, sh: e.sh ?? null,
         };
       }),
     };

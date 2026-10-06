@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, previouses, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
@@ -712,4 +712,55 @@ test("a run on a pause says until when, and the plan says how long", async () =>
   await f.tickNow();
   assert.equal(f.store.getRun("p#1")!.status, "done");
   await f.close();
+});
+
+const SH = (steps: string) => proc(steps, "", "p");
+const shellOpts = { shell: ["/bin/sh", "-c"] };
+
+test("a shell entry that exits 0 is done with its last line; a failing one fails with the exit code and stderr", async () => {
+  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: ok, sh: 'echo first; echo \"pr=$FLOW_VAR_PR run=$FLOW_RUN\"'}\n  - {id: bad, sh: 'echo oops >&2; exit 3'}\n") });
+  const { f } = await startFlowd(home, shellOpts);
+  await f.submit(start("p"));
+  await f.submit({ type: "run.set", run: "p#1", data: { vars: { pr: "u1" } }, source: "test" });
+  await settle(f);
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.entries.ok.status, "done");
+  assert.equal(run.entries.ok.note, "pr= run=p#1"); // vars set after the command started are not seen
+  assert.equal(run.entries.bad.status, "failed");
+  assert.equal(run.entries.bad.note, "exit 3: oops");
+  assert.equal(run.status, "needs-human");
+  await f.close();
+});
+
+test("a shell entry sees the run's vars and runs in its cwd", async () => {
+  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: show, sh: 'echo \"$FLOW_VAR_PR $FLOW_EVENT_N $(pwd -P)\"', cwd: '{{vars.dir}}', wait_for: signal.go}\n") });
+  const { f } = await startFlowd(home, shellOpts);
+  await f.submit(start("p"));
+  await f.submit({ type: "run.set", run: "p#1", data: { vars: { pr: "u1", dir: home } }, source: "test" });
+  await f.submit({ type: "signal.go", data: { n: 7 }, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.entries.show.note, `u1 7 ${realpathSync(home)}`);
+  await f.close();
+});
+
+test("a shell entry that runs too long is killed and fails as timed out", async () => {
+  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: slow, sh: 'sleep 5', timeout: 1s}\n") });
+  const { f } = await startFlowd(home, shellOpts);
+  await f.submit(start("p"));
+  await settle(f);
+  const e = f.store.getRun("p#1")!.entries.slow;
+  assert.deepEqual([e.status, e.note], ["failed", "timed out after 1s"]);
+  await f.close();
+});
+
+test("a shell entry cut off by a restart fails so on_fail decides", async () => {
+  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: slow, sh: 'sleep 30'}\n") });
+  const A = await startFlowd(home, shellOpts);
+  await A.f.submit(start("p"));
+  await A.f.close();
+  const B = await startFlowd(home, shellOpts);
+  await settle(B.f);
+  const e = B.f.store.getRun("p#1")!.entries.slow;
+  assert.deepEqual([e.status, e.note], ["failed", "flowd restarted while the command ran"]);
+  await B.f.close();
 });

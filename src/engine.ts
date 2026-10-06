@@ -6,6 +6,19 @@ export const REMIND_AFTER_MS = 30_000;
 export const MAX_REMINDERS = 2;
 export const COMPACT_TIMEOUT_MS = 600_000;
 export const START_TIMEOUT_MS = 120_000;
+export const SHELL_TIMEOUT_MS = 1_800_000;
+
+const envName = (k: string) => k.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+
+/** What a shell entry sees of the run: env vars only, so no outside value is ever run as code. */
+export function shellEnv(run: RunState, event?: FlowEvent): Record<string, string> {
+  const env: Record<string, string> = { FLOW_RUN: run.id, FLOW_PROCESS: run.process, FLOW_ITERATION: String(run.iteration) };
+  for (const [k, v] of Object.entries(run.vars)) env[`FLOW_VAR_${envName(k)}`] = v;
+  for (const [k, v] of Object.entries(event?.data ?? {})) {
+    if (v !== null && v !== undefined && typeof v !== "object") env[`FLOW_EVENT_${envName(k)}`] = String(v);
+  }
+  return env;
+}
 
 /** 86400000 → "1d", 5400000 → "90m": the largest whole unit, as `wait:` and `timeout:` take it. */
 export function formatDuration(ms: number): string {
@@ -187,6 +200,16 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       }
       deliver(e.role!, text);
       return finish(id, "done", { by: "system" });
+    }
+    if (e.sh !== undefined) {
+      let cwd: string;
+      try {
+        cwd = e.cwd ? renderTemplate(e.cwd, renderData(run)) : p!.cwd;
+      } catch (err) {
+        return halt(`${id}: ${errMsg(err)}`);
+      }
+      actions.push({ kind: "shell", entry: id, command: e.sh, cwd, env: shellEnv(run, s.event), timeoutMs: e.timeoutMs ?? SHELL_TIMEOUT_MS });
+      return;
     }
     let args: Dict;
     try {

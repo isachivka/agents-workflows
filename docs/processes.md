@@ -134,13 +134,14 @@ Each item of `steps:` is one of these kinds:
 | typed line | `{do: type, role: <role>, text: "..."}` | flowd types a literal line (a template) into the role's session. |
 | plugin action | `{do: <plugin>.<action>, with: {...}}` | flowd calls the plugin; a throw fails the entry. No action ships with flows yet. |
 | pure wait | `{wait_for: <type>}` | Waits for an event; its `outcome` closes the entry (`failed` fails it). |
+| shell command | `{sh: 'git worktree add "$FLOW_VAR_DIR"'}` | flowd runs the command itself (a login `zsh`) in the entry's `cwd`, else the process `cwd`. Exit 0 is done (note: the last line of output), anything else fails (note: the exit code and stderr). The command is never templated: the run reaches it as environment variables `FLOW_RUN`, `FLOW_PROCESS`, `FLOW_ITERATION`, `FLOW_VAR_<NAME>`, `FLOW_EVENT_<KEY>` (upper-cased, other characters `_`), so an outside value cannot run as code. It hands values on with `flow set --run "$FLOW_RUN" key=value`. Killed after the entry's `timeout`, else 30 minutes. A flowd restart mid-command fails the entry. It runs as you, without a sandbox. |
 | pause | `{wait: 24h}` | Waits that long, then is done and the run moves on. The clock is kept in the database, so a flowd restart does not reset it. A human can end it early (`done`, `skip`) or restart it (`retry`). |
 
 Keys on any entry:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `id` | string | the `step`, else the `do`, else the `wait_for` type, else `wait` | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
+| `id` | string | the `step`, else the `do`, else the `wait_for` type, else `wait`, else `sh` | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
 | `step` | string | | A step id (a file in `steps/`). |
 | `role` | string | | A declared role, or `human`. |
 | `do` | string | | `clear`, `compact`, `type`, or `<plugin>.<action>`. |
@@ -151,6 +152,8 @@ Keys on any entry:
 | `retries` | integer ≥ 0 | `3` | Failures of this entry allowed per iteration. One more stops the run for a human, whatever `on_fail` says. |
 | `after` | `{goto: <id>}` | | When the entry is done, jump there instead of advancing. |
 | `detour` | boolean | `false` | Normal advancing skips this entry; only a `goto` reaches it. A detour needs `after`. |
+| `sh` | string | | A shell command flowd runs (see the kinds above). Only on its own (no `step`, `do`, `wait`, `role`); a `wait_for` before it is allowed. |
+| `cwd` | string | the process `cwd` | For `sh` only: where the command runs. A template over `run` and `vars`. |
 | `wait` | duration | | A pause: `30s`, `10m`, `2h`, `1d`. Only on its own (no `step`, `do`, `wait_for`). |
 | `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. |
 
@@ -186,7 +189,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1` |
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
 | triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping`, `trigger N: with must be a mapping`, `trigger N: with only applies to on: triggers` |
-| entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do, wait_for or wait`, `steps[N]: wait is a pause on its own; it cannot go with step, do or wait_for`, `steps[N]: step and do are exclusive` |
+| entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do, wait_for, wait or sh`, `steps[N]: wait is a pause on its own; it cannot go with step, do or wait_for`, `steps[N]: sh must be a command`, `steps[N]: sh runs on its own; it cannot go with step, do, wait or role`, `steps[N]: cwd on a step is only for sh, and must be a path`, `steps[N]: step and do are exclusive` |
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
 | events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `steps[N]: wait_for.where must be a mapping`, `steps[N]: wait_for.with must be a mapping`, `X: step Y uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
@@ -350,6 +353,17 @@ steps:
   - {id: merged, wait_for: gh.merged}
   - {id: tail, wait: 24h}                # late findings still reach the reviewer's session
   - {step: reap, role: reviewer}         # git worktree remove, then close the terminal
+```
+
+**Mechanical steps without an agent.** Shell entries prepare and clean up; values go back with
+`flow set`. Quote every variable: it may hold anything.
+
+```yaml
+steps:
+  - {id: worktree, sh: 'git -C ~/code/repo worktree add "$HOME/wt/pr-$FLOW_VAR_NUMBER" "$FLOW_VAR_BRANCH" && flow set --run "$FLOW_RUN" dir="$HOME/wt/pr-$FLOW_VAR_NUMBER"'}
+  - {step: review, role: reviewer}
+  - {id: tail, wait: 24h}
+  - {id: cleanup, sh: 'git -C ~/code/repo worktree remove --force "$FLOW_VAR_DIR"', on_fail: retry, retries: 2}
 ```
 
 **Close the agent's terminal when the work is done.** Closing is just the last thing a step

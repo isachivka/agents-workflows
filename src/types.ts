@@ -21,6 +21,10 @@ export interface Entry {
   timeoutMs?: number;
   /** a pause entry (`wait: 24h`): how long it waits before it is done */
   delayMs?: number;
+  /** a shell entry: the command flowd runs, as written (never templated) */
+  sh?: string;
+  /** a shell entry's working directory (a template); else the process cwd */
+  cwd?: string;
 }
 
 export interface Role { spawn: string; cwd?: string }
@@ -130,6 +134,7 @@ export type Action =
   | { kind: "watch"; entry: string; waitFor: WaitFor; previous?: { type: string; data: Dict } }
   | { kind: "unwatch"; entry: string }
   | { kind: "plugin-action"; entry: string; name: string; with: Dict }
+  | { kind: "shell"; entry: string; command: string; cwd: string; env: Record<string, string>; timeoutMs: number }
   | { kind: "emit"; event: FlowEvent };
 
 export interface StepResult { run: RunState; actions: Action[]; error?: string }

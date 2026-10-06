@@ -444,3 +444,21 @@ test("a pause that ran out while the run was paused closes on the first tick aft
   s.send({ kind: "resume" }).send({ kind: "tick" });
   assert.equal(s.status("tail"), "done");
 });
+
+test("a shell entry hands the daemon the command as written, the cwd and the run as environment", () => {
+  const s = new Sim("description: d\ncwd: /work\nroles: {pm: {spawn: c}}\nsteps:\n  - {id: mk, sh: 'echo \"$FLOW_VAR_PR\" {{not-a-template}}', cwd: '/w/{{vars.dir}}', wait_for: signal.go, timeout: 5m}\n  - {step: b, role: pm}\n", STEPS);
+  s.send({ kind: "set", vars: { pr: "https://x/pull/1", "dir": "d1", "my-key": "v" } }).send({ kind: "start" });
+  s.send({ kind: "event", event: { type: "signal.go", data: { title: "a; rm -rf /", n: 3, list: [1] }, source: "test" } });
+  const a = s.actions.find((x) => x.kind === "shell") as any;
+  assert.equal(a.command, 'echo "$FLOW_VAR_PR" {{not-a-template}}');
+  assert.equal(a.cwd, "/w/d1");
+  assert.equal(a.timeoutMs, 300_000);
+  assert.deepEqual(a.env, {
+    FLOW_RUN: "p#1", FLOW_PROCESS: "p", FLOW_ITERATION: "1",
+    FLOW_VAR_PR: "https://x/pull/1", FLOW_VAR_DIR: "d1", FLOW_VAR_MY_KEY: "v",
+    FLOW_EVENT_TITLE: "a; rm -rf /", FLOW_EVENT_N: "3",
+  });
+  const plain = new Sim("description: d\ncwd: /work\nsteps:\n  - {sh: 'true'}\n", STEPS).send({ kind: "start" });
+  assert.deepEqual((plain.actions.find((x) => x.kind === "shell") as any).cwd, "/work");
+  assert.equal((plain.actions.find((x) => x.kind === "shell") as any).timeoutMs, 1_800_000);
+});

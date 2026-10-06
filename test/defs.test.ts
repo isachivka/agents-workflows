@@ -80,7 +80,7 @@ steps:
     /role pm: spawn is required/, /cron not a cron/, /unknown event type nope\.thing/,
     /steps\/missing\.md is missing or invalid/, /undeclared role ghost/, /do: compact needs a declared agent role/,
     /do: type needs text/, /unknown event type nope\.event/, /goto target nowhere does not exist/,
-    /a detour needs after\.goto/, /duplicate entry id pick/, /needs step, do, wait_for or wait/,
+    /a detour needs after\.goto/, /duplicate entry id pick/, /needs step, do, wait_for, wait or sh/,
     /wait_for\.where must be a mapping/, /wait_for\.with must be a mapping/, /steps\[\d+\]: with must be a mapping/,
   ]) assert.ok(errs.some((e) => want.test(e)), `missing error ${want}: ${errs.join(" | ")}`);
 });
@@ -155,4 +155,14 @@ test("a pause entry: wait with a duration, on its own", () => {
   assert.ok(errs.some((e) => /steps\[1\]: bad duration "soon"/.test(e)), errs.join(" | "));
   assert.ok(errs.includes("steps[2]: wait is a pause on its own; it cannot go with step, do or wait_for"), errs.join(" | "));
   assert.ok(errs.includes("steps[3]: wait is a pause on its own; it cannot go with step, do or wait_for"), errs.join(" | "));
+});
+
+test("a shell entry: sh with a command, on its own; cwd only beside sh", () => {
+  const p = parseProcess("s", "description: d\ncwd: /tmp\nsteps:\n  - {sh: 'echo hi'}\n  - {id: two, sh: 'ls', cwd: '{{vars.dir}}', wait_for: signal.go}\n", ctx);
+  assert.deepEqual(p.entries.map((e) => [e.id, e.kind, e.sh, e.cwd]), [["sh", "action", "echo hi", undefined], ["two", "action", "ls", "{{vars.dir}}"]]);
+  const errs = errorsOf(() => parseProcess("s", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {sh: ''}\n  - {id: a, sh: ls, role: pm}\n  - {id: b, sh: ls, wait: 1m}\n  - {id: c, step: pick, role: pm, cwd: /x}\n", ctx));
+  assert.ok(errs.includes("steps[1]: sh must be a command"), errs.join(" | "));
+  assert.ok(errs.includes("steps[2]: sh runs on its own; it cannot go with step, do, wait or role"), errs.join(" | "));
+  assert.ok(errs.includes("steps[3]: sh runs on its own; it cannot go with step, do, wait or role"), errs.join(" | "));
+  assert.ok(errs.includes("steps[4]: cwd on a step is only for sh, and must be a path"), errs.join(" | "));
 });
