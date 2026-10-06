@@ -1,6 +1,8 @@
 # Agents that wait on purpose: `flow wait`
 
-Status: design proposed 2026-10-06 (Claude, at the user's request). Awaiting the user's approval.
+Status: implemented 2026-10-07 (main `3b572b0`). The implementation corrected parts of this design;
+those places are marked *(amended: A1–A2)* and explained in [Amendments](#amendments). The current
+behaviour is documented in `docs/concepts.md` and `docs/cli.md`.
 
 ## Problem
 
@@ -76,7 +78,8 @@ On `flow wait`:
 - `reminded` is reset to 0 and any pending `remindAt` cleared — the agent answered.
 - The daemon passes the session's last known status with the input. If it is not `active` (the
   call came after the turn ended, or from a terminal with `--run/--step`), the wait starts out
-  `parked`: no idle transition will follow to park it.
+  `parked`: no idle transition will follow to park it. *(amended: A1 — the agent's session status
+  decides, not who sent the call; `blocked` and an unknown status count as mid-turn.)*
 
 `flow done`/`flow failed` end the entry, so the wait goes with it; entering an entry (advance,
 retry, goto, a new iteration) starts without a wait.
@@ -113,7 +116,8 @@ from an idle session starts parked; a third legitimate wait in one step does not
 timeout still fails a waiting entry; done/failed/goto/retry clear the wait; refusals for a
 non-agent step, an inactive step, an undelivered step, a missing note.
 Daemon: `entry.wait` resolves by session like a report and passes the session's status; `flow wait`
-from a terminal with `--run/--step` parks at once. HTTP and CLI: `/api/wait`, `flow wait` exit
+from a terminal with `--run/--step` parks at once *(amended: A1 — only once the agent's turn has
+ended)*. HTTP and CLI: `/api/wait`, `flow wait` exit
 codes and messages, `--human` → `needsYou`. Reminder text includes `flow wait`.
 Docs: `concepts.md` (Reminders and timeouts), `cli.md`, `http-api.md`, `skills/flow/SKILL.md`
 (when an agent should use it, and to always give the note), `skills/flow-author/SKILL.md` (step
@@ -123,3 +127,27 @@ Manual: a throwaway flowd and one live agent session (with the user's yes): a st
 agent to `flow wait`, end its turn, then be woken by the user; no reminder appears; a later
 forgotten report is reminded. This also settles whether a turn started by a background-task
 notification shows as `active` in agterm.
+
+## Amendments
+
+Found in the final review and the live check; in `main` as of `3b572b0`. Code and the living docs
+follow these, not the text above.
+
+**A1. The agent's session status decides whether a new wait parks at once.** As designed, a wait
+parked at once unless the call came from the agent's own session with status exactly `active`.
+A wait sent while the session was `blocked` (the `flow wait` call itself hit a permission
+prompt), while its status was still unknown, or from the user's terminal during the agent's
+turn therefore parked early; the turn's late `active` then used it up and the turn end was
+reminded — the very thing the feature prevents. Now the status of the session bound to the
+step's role decides, whoever sends the call: `active` or `blocked` means a turn end is coming, so
+the wait parks then; `completed`/`idle` parks it at once; an unknown status counts as mid-turn
+when the call comes from the agent's own session.
+
+**A2. `flow show` names `flow wait`** in its "Report:" line, so an agent reading its step learns
+the command before any reminder (goal 4).
+
+The live check (one real Claude session, statuses bridged to a throwaway flowd) confirmed that a
+parked wait suppresses the reminder and that the next turn uses it up. Whether a turn started by a
+background-task notification shows as `active` in agterm is still unverified; if it does not,
+that turn leaves the wait in place and the next turn agterm sees uses it up.
+
