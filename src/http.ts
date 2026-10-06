@@ -150,7 +150,7 @@ function stream(f: Flowd, req: IncomingMessage, res: ServerResponse): void {
   });
 }
 
-export function makeServer(f: Flowd, uiDir: string): Server {
+export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}): Server {
   const submit = async (e: Parameters<Flowd["submit"]>[0]) => refusedIfError(await f.submit(e));
   const routes: [string, RegExp, Handler][] = [
     ...defRoutes(f, "process"),
@@ -246,7 +246,9 @@ export function makeServer(f: Flowd, uiDir: string): Server {
     // Origin is a cross-site request, and JSON-only bodies force a preflight flowd never answers.
     const host = req.headers.host ?? "";
     const origin = req.headers.origin;
-    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host) || (origin && origin !== `http://${host}`)) {
+    // On the LAN a phone asks by the Mac's IP; an IP literal cannot be rebound, a name can.
+    const ownHost = opts.lan ? /^(127\.0\.0\.1|localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?$/ : /^(127\.0\.0\.1|localhost)(:\d+)?$/;
+    if (!ownHost.test(host) || (origin && origin !== `http://${host}`)) {
       return send(res, 403, { error: "flowd only answers its own pages and local clients" });
     }
     try {

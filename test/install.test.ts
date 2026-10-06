@@ -69,3 +69,17 @@ test("an install from before the skills/ move gets its skill link replaced", asy
   await install({ home, repo: "/repo", node: "/bin/node", launchctl: fakeBin(home, "launchctl").path, agtermctl: fakeBin(home, "agtermctl").path, uid: 501, log: () => {} });
   assert.equal(readlinkSync(join(home, ".claude", "skills", "flow")), "/repo/skills/flow");
 });
+
+test("a re-install keeps FLOWD_HOST from the old plist", async () => {
+  delete process.env.FLOWD_HOST;
+  const home = mkdtempSync(join(tmpdir(), "flows-install-"));
+  const launchctl = fakeBin(home, "launchctl");
+  const agtermctl = fakeBin(home, "agtermctl");
+  const opts = { home, repo: "/repo", node: "/bin/node", launchctl: launchctl.path, agtermctl: agtermctl.path, uid: 501, log: () => {} };
+  await install(opts);
+  const plistPath = join(home, "Library", "LaunchAgents", "local.flows.plist");
+  assert.doesNotMatch(readFileSync(plistPath, "utf8"), /FLOWD_HOST/);
+  writeFileSync(plistPath, readFileSync(plistPath, "utf8").replace("</string></dict>", "</string><key>FLOWD_HOST</key><string>0.0.0.0</string></dict>"));
+  await install(opts);
+  assert.match(readFileSync(plistPath, "utf8"), /<key>FLOWD_HOST<\/key><string>0\.0\.0\.0<\/string>/);
+});

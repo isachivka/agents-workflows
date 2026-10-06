@@ -184,7 +184,7 @@ and settings are left alone.
 flow daemon
 ```
 
-Runs flowd in the foreground on `127.0.0.1:7420` (`FLOWD_PORT` overrides). This is what the
+Runs flowd in the foreground on `127.0.0.1:7420` (`FLOWD_HOST`, `FLOWD_PORT` override). This is what the
 launchd agent runs. Stops on `SIGTERM` or `SIGINT`.
 
 ### `flow help`
@@ -209,6 +209,7 @@ Claude down.
 |---|---|---|
 | `AGTERM_SESSION_ID` | `flow` in an agent's session | Set by agterm; tells `flow` which session is asking. |
 | `FLOWD_URL` | `flow` | Where flowd is. Default `http://127.0.0.1:7420`. |
+| `FLOWD_HOST` | `flow daemon`, `flow install` | The address flowd listens on. Default `127.0.0.1`. `0.0.0.0` lets a phone on your Wi-Fi open `http://<the Mac's IP>:7420` — and lets anyone on that network drive flowd (see [architecture](architecture.md#security-model)). `flow install` writes it into the launchd plist when set, and keeps the one already there otherwise. |
 | `FLOWD_PORT` | `flow daemon`, `flow` | The port flowd listens on, and the CLI's default port. Default 7420. |
 | `FLOWS_HOME` | flowd, `flow check` | The definitions directory. Default `~/.config/flows`. |
 | `FLOWS_STATE` | flowd | The SQLite database. Default `~/.local/state/flows/flows.db`. |

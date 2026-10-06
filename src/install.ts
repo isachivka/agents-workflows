@@ -12,7 +12,7 @@ export interface InstallOpts { home?: string; repo?: string; node?: string; laun
 
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-export function plist(node: string, cliPath: string, logPath: string, path: string): string {
+export function plist(node: string, cliPath: string, logPath: string, path: string, listen = ""): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -25,7 +25,7 @@ export function plist(node: string, cliPath: string, logPath: string, path: stri
     <string>daemon</string>
   </array>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>${xml(path)}</string></dict>
+  <dict><key>PATH</key><string>${xml(path)}</string>${listen ? `<key>FLOWD_HOST</key><string>${xml(listen)}</string>` : ""}</dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${xml(logPath)}</string>
@@ -82,7 +82,10 @@ export async function install(o: InstallOpts = {}): Promise<void> {
   const plistPath = join(home, "Library", "LaunchAgents", `${LABEL}.plist`);
   mkdirSync(dirname(plistPath), { recursive: true });
   const path = [join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":");
-  writeFileSync(plistPath, plist(node, cli, join(stateDir, "flowd.log"), path));
+  // FLOWD_HOST from the environment, else kept from the old plist: a re-install must not quietly take flowd off the LAN
+  const oldPlist = existsSync(plistPath) ? readFileSync(plistPath, "utf8") : "";
+  const listen = process.env.FLOWD_HOST ?? /<key>FLOWD_HOST<\/key><string>([^<]*)<\/string>/.exec(oldPlist)?.[1] ?? "";
+  writeFileSync(plistPath, plist(node, cli, join(stateDir, "flowd.log"), path, listen));
   const uid = o.uid ?? process.getuid?.() ?? 501;
   const launchctl = o.launchctl ?? process.env.FLOWS_LAUNCHCTL ?? "launchctl";
   run(launchctl, ["bootout", `gui/${uid}/${LABEL}`], () => {}); // not loaded yet is fine

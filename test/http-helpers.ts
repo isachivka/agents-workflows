@@ -11,13 +11,13 @@ import type { FlowdOptions } from "../src/daemon.ts";
 const open = new Set<() => Promise<void>>();
 after(() => Promise.all([...open].map((c) => c())));
 
-export async function serve(files: Record<string, string>, opts: Partial<FlowdOptions> = {}) {
+export async function serve(files: Record<string, string>, opts: Partial<FlowdOptions> = {}, http: { lan?: boolean } = {}) {
   const home = makeHome(files);
   const { f, agterm, clock } = await startFlowd(home, opts);
   const ui = mkdtempSync(join(tmpdir(), "flows-ui-"));
   writeFileSync(join(ui, "index.html"), "<!doctype html><title>flows</title>");
   writeFileSync(join(ui, "app.js"), "export {};\n");
-  const server = makeServer(f, ui);
+  const server = makeServer(f, ui, http);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const call = async (method: string, path: string, body?: unknown) => {

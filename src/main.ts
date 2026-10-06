@@ -13,12 +13,13 @@ export async function startDaemon(): Promise<void> {
   const f = new Flowd({ home, statePath: statePath(), agterm: realAgterm(), pluginDirs: [join(REPO, "plugins"), join(home, "plugins")] });
   await f.init();
   const port = Number(process.env.FLOWD_PORT || 7420);
-  const server = makeServer(f, join(REPO, "ui"));
+  const host = process.env.FLOWD_HOST || "127.0.0.1";
+  const server = makeServer(f, join(REPO, "ui"), { lan: host !== "127.0.0.1" && host !== "localhost" });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolve);
+    server.listen(port, host, resolve);
   });
-  console.error(`[flowd] http://127.0.0.1:${port} · FLOWS_HOME ${home} · state ${statePath()}`);
+  console.error(`[flowd] http://${host}:${port} · FLOWS_HOME ${home} · state ${statePath()}`);
   const stop = async () => {
     server.closeAllConnections();
     server.close();

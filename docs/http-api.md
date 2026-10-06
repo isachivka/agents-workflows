@@ -1,7 +1,8 @@
 # HTTP API
 
-flowd serves JSON on `127.0.0.1:7420` (`FLOWD_PORT` overrides), with no authentication: it is
-reachable only from this machine, and the checks below keep web pages out. The web UI and the
+flowd serves JSON on `127.0.0.1:7420` (`FLOWD_PORT`, `FLOWD_HOST` override), with no
+authentication: by default it is reachable only from this machine, and the checks below keep web
+pages out. The web UI and the
 `flow` CLI use exactly this API (`src/http.ts`).
 
 ## Conventions
@@ -10,7 +11,9 @@ reachable only from this machine, and the checks below keep web pages out. The w
   a `POST` or `PUT` gets **415**: a browser cannot send JSON cross-site without a preflight,
   which flowd never answers.
 - A request whose `Host` is not `127.0.0.1` or `localhost` (any port), or whose `Origin` is set
-  and is not flowd's own, gets **403**. That stops DNS rebinding and cross-site requests.
+  and is not flowd's own, gets **403**. That stops DNS rebinding and cross-site requests. With
+  `FLOWD_HOST` set to anything but loopback, an IPv4 literal (`192.168.1.20:7420`) is accepted
+  too: a name can be rebound, an IP cannot.
 - Path ids are URI-encoded: run `pr-loop#3` is `/api/runs/pr-loop%233`.
 - Errors: `{"error": "…"}` with **409** (the engine refused, for example `step c is not the
   current step`), **404** (no such run, process or step, or no route), **400** (bad JSON, a malformed request target, missing

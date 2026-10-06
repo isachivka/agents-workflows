@@ -93,7 +93,9 @@ in the outbox are delivered by the next flush.
 
 ## Security model
 
-- flowd listens on `127.0.0.1` only and has no authentication.
+- flowd listens on `127.0.0.1` and has no authentication. `FLOWD_HOST=0.0.0.0` opens it to the
+  local network (a phone on the same Wi-Fi): then anyone on that network can drive flowd, and
+  through a process with an `sh` step run commands as you. Only on a network you trust.
 - Spawned agents usually run with `--dangerously-skip-permissions`, and run variables are pasted
   into their prompts. So anything that can drive flowd can make an agent run code.
 - Web pages are kept out: a request with a foreign `Host` (DNS rebinding) or a foreign `Origin`
