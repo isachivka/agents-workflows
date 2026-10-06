@@ -90,7 +90,7 @@ function RunRow({ r }) {
     <td><a href="#/run/${enc(r.id)}">${r.id}</a><div class="muted">it.${r.iteration}</div></td>
     <td><span class="st ${r.status}">${r.status}</span></td>
     <td>
-      ${r.current ? html`<b>${r.current}</b> <span class="muted">${r.currentStatus}${r.waitingOn ? ` · ⏳ ${r.waitingOn}` : ""}</span>` : "—"}
+      ${r.current ? html`<b>${r.current}</b> <span class="muted">${r.currentStatus}${r.waitingOn ? ` · ⏳ ${r.waitingOn}` : ""}${r.agentWait ? ` · waiting: ${r.agentWait.note}` : ""}</span>` : "—"}
       ${r.reason && html`<div class="reason">${r.reason}</div>`}
     </td>
     <td>${Object.entries(r.vars).filter(([, v]) => isUrl(v)).map(([k, v]) => html`<a href=${v} target="_blank" rel="noreferrer">${k}</a> `)}</td>
@@ -121,7 +121,7 @@ function Run({ arg: id }) {
     </div>`}
     <ol class="plan">${r.plan.map((e) => html`
       <li class="${e.status} ${e.id === r.current ? "cur" : ""} ${e.detour ? "detour" : ""} ${e.id === selected ? "sel" : ""}" onClick=${() => setSel(e.id)}>
-        ${ICON[e.status]} ${e.id}${e.kind === "human" ? " [you]" : ""}${e.waitFor ? ` ⏳ ${e.waitFor}` : ""}<small>${e.role || e.kind}</small>
+        ${e.id === r.current && r.agentWait ? "⏸" : ICON[e.status]} ${e.id}${e.kind === "human" ? " [you]" : ""}${e.waitFor ? ` ⏳ ${e.waitFor}` : ""}<small>${e.role || e.kind}</small>
       </li>`)}</ol>
     ${selected && html`<${EntryPanel} run=${r} id=${selected} post=${post} ask=${ask} open=${open} key=${selected} />`}
     <h2>Roles</h2>
@@ -149,6 +149,7 @@ function EntryPanel({ run, id, post, ask, open }) {
   const current = id === run.current;
   return html`<section class="panel">
     <h3>${id} <span class="muted">${e.kind}${e.role ? ` · ${e.role}` : ""} · ${s.status || "pending"} · attempts ${s.attempts || 0} · failures ${s.failures || 0}</span></h3>
+    ${s.wait && html`<p>⏸ waiting since ${new Date(s.wait.since).toLocaleString()}: ${s.wait.note}${s.wait.human ? " — on a human" : ""}</p>`}
     ${s.note && html`<p>note: ${s.note}</p>`}
     ${s.evidence && html`<p>evidence: ${isUrl(s.evidence) ? html`<a href=${s.evidence} target="_blank" rel="noreferrer">${s.evidence}</a>` : s.evidence}</p>`}
     ${s.event && html`<p class="muted">woken by ${s.event.type} ${s.event.outcome || ""}</p><pre>${JSON.stringify(s.event.data, null, 2)}</pre>`}

@@ -570,7 +570,7 @@ export class Flowd {
     if (vars.length) lines.push(`vars: ${vars.map(([k, v]) => `${k}=${v}`).join("  ")}`);
     lines.push("", prompt, "", entry.kind === "human"
       ? `Close it in the UI or with \`flow done --human --run ${shq(run.id)} --step ${entry.id}\``
-      : "Report: `flow done [--note …] [--evidence URL]` · `flow failed --note …` · `flow set key=value`");
+      : "Report: `flow done [--note …] [--evidence URL]` · `flow failed --note …` · `flow set key=value` · ending your turn to wait on purpose: `flow wait --note …`");
     return { text: lines.join("\n") };
   }
 

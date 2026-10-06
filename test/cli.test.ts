@@ -94,7 +94,9 @@ test("an agent waits on purpose: flow wait needs a note, and show and ls tell wh
   assert.deepEqual([noNote.code, noNote.stderr], [1, "flow: flow wait needs --note saying what you are waiting for\n"]);
   const waited = await flow(["wait", "--note", "review running"], env);
   assert.deepEqual([waited.code, waited.stdout], [0, "waiting: review running\n"]);
-  assert.match((await flow(["show"], env)).stdout, /^waiting since .*: review running$/m);
+  const shown = (await flow(["show"], env)).stdout;
+  assert.match(shown, /^waiting since .*: review running$/m);
+  assert.match(shown, /`flow wait --note …`/);
   assert.match((await flow(["ls"], { FLOWD_URL: s.base })).stdout, /b \(active, waiting: review running\)/);
   await s.close();
 });
