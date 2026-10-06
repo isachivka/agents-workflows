@@ -191,9 +191,9 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     }
 
     let onFail: OnFail = "human";
-    if (r.on_fail === "retry" || r.on_fail === "human") onFail = r.on_fail;
+    if (r.on_fail === "retry" || r.on_fail === "human" || r.on_fail === "end") onFail = r.on_fail;
     else if (isObj(r.on_fail) && typeof r.on_fail.goto === "string") onFail = { goto: r.on_fail.goto };
-    else if (r.on_fail !== undefined) err(`${at}: on_fail must be retry, human or {goto: id}`);
+    else if (r.on_fail !== undefined) err(`${at}: on_fail must be retry, human, end or {goto: id}`);
 
     const retries = r.retries ?? 3;
     if (!Number.isInteger(retries) || (retries as number) < 0) err(`${at}: retries must be an integer >= 0`);

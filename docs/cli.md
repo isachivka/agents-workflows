@@ -100,11 +100,19 @@ invalid, already has `max_runs` open runs, or a session is bound to another open
 ### `flow ls`
 
 ```
-flow ls [--all]
+flow ls [--all] [--process NAME] [--where key=value …]
 ```
 
 One line per open run: id, iteration, status, current entry and its status, what it waits on, and
 the reason it stopped. `--all` adds finished runs. Prints `no runs` when there are none.
+
+`--process` keeps one process's runs; `--where` keeps runs whose variable equals the value
+exactly (repeat it to require several). A filtered `ls` exits 1 when nothing matches, so a
+script can ask "was there a run for this PR":
+
+```
+flow ls --all --process review --where pr=https://github.com/o/r/pull/7 >/dev/null || echo new
+```
 
 ```
 pr-loop#3  it.2  running  ci (waiting)  waits gh.checks

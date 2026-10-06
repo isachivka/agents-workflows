@@ -159,7 +159,7 @@ function EntryCards({ entries, onChange, roles, stepIds, eventTypes, actions }) 
                 onChange=${(ev) => put(i, { wait_for: ev.target.value.trim() || undefined })} />`}</label>
           <label>on fail <select value=${failGoto ? "goto" : e.on_fail || "human"}
               onChange=${(ev) => put(i, { on_fail: ev.target.value === "goto" ? { goto: ids[0] } : ev.target.value === "human" ? undefined : ev.target.value })}>
-            <option value="human">stop for me</option><option value="retry">retry</option><option value="goto">go to…</option>
+            <option value="human">stop for me</option><option value="retry">retry</option><option value="end">end the run</option><option value="goto">go to…</option>
           </select>
           ${failGoto && html`<select value=${failGoto} onChange=${(ev) => put(i, { on_fail: { goto: ev.target.value } })}>${options(ids, failGoto)}</select>`}</label>
           <label>retries <input type="number" min="0" style="width:56px" value=${e.retries ?? 3}

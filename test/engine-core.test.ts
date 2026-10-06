@@ -177,3 +177,21 @@ test("a run started by an event gets the event's scalar data and type as vars", 
   assert.deepEqual(s.run.vars, { pr: "https://x/pull/7", number: "7", draft: "false", trigger: "gh.merged" });
   assert.equal(s.run.entries.b.event?.type, "gh.merged");
 });
+
+test("on_fail end finishes the run quietly, whatever retries says", () => {
+  const s = new Sim(ONE_ROLE("  - {step: b, role: pm, on_fail: end, retries: 0}\n  - {step: c, role: pm}\n"), STEPS)
+    .send({ kind: "start" }).send(rep("b", "failed", "agent", "nothing to review"));
+  assert.equal(s.run.status, "done");
+  assert.equal(s.run.reason, undefined);
+  assert.equal(s.status("b"), "failed");
+  assert.equal(s.status("c"), "pending");
+  assert.ok(s.emitted().includes("flow.run.done"));
+});
+
+test("on_fail end in a repeating process starts the next iteration", () => {
+  const s = new Sim(ONE_ROLE("  - {step: b, role: pm, on_fail: end}\n  - {step: c, role: pm}\n", "repeat: true\n"), STEPS)
+    .send({ kind: "start" }).send(rep("b", "failed", "agent", "nothing"));
+  assert.equal(s.run.status, "running");
+  assert.equal(s.run.iteration, 2);
+  assert.equal(s.run.current, "b");
+});

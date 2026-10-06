@@ -54,7 +54,7 @@ const EN = {
   "sess.active": "working", "sess.completed": "free", "sess.idle": "free", "sess.blocked": "asks for permission",
   "sess.closed": "closed", "sess.unknown": "unknown",
   "branch.back": "If it fails → back to “{step}”", "branch.goto": "If it fails → “{step}”",
-  "branch.retry": "If it fails → it tries again", "branch.after": "Then → “{step}”",
+  "branch.retry": "If it fails → it tries again", "branch.end": "If it fails → nothing to do, it ends here", "branch.after": "Then → “{step}”",
   "proc.all": "All processes", "proc.repeat": "Repeats in rounds", "proc.oneRun": "One run at a time",
   "proc.maxRuns.one": "Up to {n} run at once", "proc.maxRuns.other": "Up to {n} runs at once",
   "proc.manual": "Started by hand", "proc.trigger": "Starts by itself on {what}", "proc.cron": "Starts on schedule {cron}",
@@ -127,7 +127,7 @@ const RU = {
   "sess.active": "работает", "sess.completed": "свободен", "sess.idle": "свободен", "sess.blocked": "ждёт разрешения",
   "sess.closed": "закрыт", "sess.unknown": "неизвестно",
   "branch.back": "Не получилось → обратно к «{step}»", "branch.goto": "Не получилось → «{step}»",
-  "branch.retry": "Не получилось → пробует снова", "branch.after": "Потом → «{step}»",
+  "branch.retry": "Не получилось → пробует снова", "branch.end": "Не получилось → делать нечего, на этом всё", "branch.after": "Потом → «{step}»",
   "proc.all": "Все процессы", "proc.repeat": "Повторяется по кругу", "proc.oneRun": "Один запуск за раз",
   "proc.maxRuns.one": "До {n} запуска одновременно", "proc.maxRuns.few": "До {n} запусков одновременно",
   "proc.maxRuns.many": "До {n} запусков одновременно", "proc.maxRuns.other": "До {n} запуска одновременно",
@@ -213,6 +213,7 @@ export function entryBranch(e, plan) {
   const name = (id) => entryPhrase(plan.find((x) => x.id === id));
   const out = [];
   if (e.onFail === "retry") out.push(t("branch.retry"));
+  if (e.onFail === "end") out.push(t("branch.end"));
   else if (e.onFail && typeof e.onFail === "object") {
     out.push(t(num(e.onFail.goto) < num(e.id) ? "branch.back" : "branch.goto", { step: name(e.onFail.goto) }));
   }

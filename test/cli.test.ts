@@ -104,3 +104,21 @@ test("an agent waits on purpose: flow wait needs a note, and show and ls tell wh
   assert.match((await flow(["ls"], { FLOWD_URL: s.base })).stdout, /b \(active, waiting: review running\)/);
   await s.close();
 });
+
+test("flow ls --process and --where find runs by a variable; no match exits 1", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO, ...proc("  - {id: w, wait_for: signal.go}\n", "", "q") });
+  const env = { FLOWD_URL: s.base };
+  await flow(["start", "p"], env);
+  await flow(["start", "q"], env);
+  await settle(s.f);
+  await flow(["set", "pr=https://github.com/o/r/pull/7", "--run", "p#1"], env);
+  await flow(["set", "pr=https://github.com/o/r/pull/7", "--run", "q#1"], env);
+  const hit = await flow(["ls", "--all", "--process", "p", "--where", "pr=https://github.com/o/r/pull/7"], env);
+  assert.equal(hit.code, 0);
+  assert.match(hit.stdout, /^p#1 /);
+  assert.doesNotMatch(hit.stdout, /q#1/);
+  const miss = await flow(["ls", "--all", "--where", "pr=https://github.com/o/r/pull/8"], env);
+  assert.deepEqual([miss.code, miss.stdout], [1, "no runs\n"]);
+  assert.equal((await flow(["ls", "--all", "--process", "nope"], env)).code, 1);
+  await s.close();
+});

@@ -18,7 +18,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …]
-  flow ls [--all]                        open runs (--all: finished ones too)
+  flow ls [--all] [--process P] [--where k=v …]  open runs (--all: finished ones too); filtered, exit 1 when none match
   flow check [name]                      validate FLOWS_HOME offline (all, or one process or step)
   flow done|failed --human --run ID --step ID
                                          close a step from your own terminal
@@ -38,10 +38,12 @@ interface Args {
   bind: string[];
   human: boolean;
   all: boolean;
+  process?: string;
+  where: string[];
 }
 
 export function parseArgs(argv: string[]): Args {
-  const a: Args = { _: [], bind: [], human: false, all: false };
+  const a: Args = { _: [], bind: [], human: false, all: false, where: [] };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     const value = () => {
@@ -57,6 +59,8 @@ export function parseArgs(argv: string[]): Args {
     else if (x === "--bind") a.bind.push(value());
     else if (x === "--human") a.human = true;
     else if (x === "--all") a.all = true;
+    else if (x === "--process") a.process = value();
+    else if (x === "--where") a.where.push(value());
     else if (x.startsWith("--")) throw new CliError(`unknown option ${x}`);
     else a._.push(x);
   }
@@ -155,13 +159,16 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "ls": {
-        const runs = await call("GET", `/api/runs${a.all ? "?all=1" : ""}`);
+        const where = Object.entries(pairs(a.where));
+        const runs = (await call("GET", `/api/runs${a.all ? "?all=1" : ""}`)).filter((r: any) =>
+          (!a.process || r.process === a.process) && where.every(([k, v]) => r.vars?.[k] === v));
         if (!runs.length) out("no runs");
         for (const r of runs) {
           out([r.id, `it.${r.iteration}`, r.status, r.current ? `${r.current} (${r.currentStatus}${r.agentWait ? `, waiting: ${r.agentWait.note}` : ""})` : "-",
             r.waitingOn ? `waits ${r.waitingOn}` : "", r.reason ?? ""].filter(Boolean).join("  "));
         }
-        return 0;
+        // a filtered ls is a question a script asks: exit 1 is "no such run"
+        return !runs.length && (a.process || where.length) ? 1 : 0;
       }
       case "check": {
         const { checkDefs } = await import("./check.ts");

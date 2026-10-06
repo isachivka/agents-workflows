@@ -233,6 +233,8 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     emit(outcome === "done" ? "flow.step.done" : "flow.step.failed", { entry: id, note: info.note ?? "" });
     if (outcome === "done") return advance(id);
     s.failures++;
+    // end is the process's own "nothing to do here": no human, and retries does not apply
+    if (e.onFail === "end") return endIteration();
     const why = info.note ? `: ${info.note}` : "";
     if (s.failures > e.retries) return halt(`${id} failed ${s.failures} times${why}`);
     if (e.onFail === "human") return halt(`${id} failed${why}`);

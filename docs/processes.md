@@ -148,8 +148,8 @@ Keys on any entry:
 | `text` | string | | The line for `do: type`. |
 | `with` | mapping | `{}` | Arguments for a plugin action. String values are templates over `run` and `vars` (no `{{event.*}}`). |
 | `wait_for` | string or mapping | | An event type, or `{on: <type>, where: {...}, with: {...}}`. On an agent step or an action it waits, then the step starts. On a human step the event closes it (`failed` fails it), and a human can close it first. Alone it is the entry's whole job. `with` (templates over `run` and `vars`) goes to the plugin's watch, for example `{pr: "{{vars.pr}}"}`. |
-| `on_fail` | `human`, `retry` or `{goto: <id>}` | `human` | What a failure does: stop for a human, run the entry again, or jump. |
-| `retries` | integer ≥ 0 | `3` | Failures of this entry allowed per iteration. One more stops the run for a human, whatever `on_fail` says. |
+| `on_fail` | `human`, `retry`, `end` or `{goto: <id>}` | `human` | What a failure does: stop for a human, run the entry again, end the iteration quietly ("nothing to do"), or jump. |
+| `retries` | integer ≥ 0 | `3` | Failures of this entry allowed per iteration. One more stops the run for a human, whatever `on_fail` says (except `end`, which never counts). |
 | `after` | `{goto: <id>}` | | When the entry is done, jump there instead of advancing. |
 | `detour` | boolean | `false` | Normal advancing skips this entry; only a `goto` reaches it. A detour needs `after`. |
 | `sh` | string | | A shell command flowd runs (see the kinds above). Only on its own (no `step`, `do`, `wait`, `role`); a `wait_for` before it is allowed. |
@@ -163,7 +163,8 @@ From `src/engine.ts`:
 
 - **Advance.** When an entry is done, the run goes to the next entry that is not a detour, or to
   `after.goto`. Past the last entry the iteration ends.
-- **Fail.** `on_fail` applies. `retry` enters the entry again. `{goto: X}` resets X and every
+- **Fail.** `on_fail` applies. `end` ends the iteration as if past the last entry: the run is
+  `done`, or with `repeat` the next iteration starts; nobody is asked. `retry` enters the entry again. `{goto: X}` resets X and every
   entry from X through the failed one to `pending` (for a forward goto, X only), keeping their
   attempt and failure counts, then enters X. More than `retries` failures of one entry in an
   iteration stops the run.
@@ -193,7 +194,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
 | events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `steps[N]: wait_for.where must be a mapping`, `steps[N]: wait_for.with must be a mapping`, `X: step Y uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
-| failure handling | `steps[N]: with must be a mapping`, `steps[N]: on_fail must be retry, human or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
+| failure handling | `steps[N]: with must be a mapping`, `steps[N]: on_fail must be retry, human, end or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
 | detours and ids | `steps[N]: detour must be true or false`, `steps[N]: a detour needs after.goto`, `at least one entry must not be a detour`, `duplicate entry id X (give one an explicit id)`, `X: goto target Y does not exist` |
 
 An event type is known when a loaded plugin declares it (`gh.checks`), when it is a core
@@ -365,6 +366,33 @@ steps:
   - {id: tail, wait: 24h}
   - {id: cleanup, sh: 'git -C ~/code/repo worktree remove --force "$FLOW_VAR_DIR"', on_fail: retry, retries: 2}
 ```
+
+**A review queue: one pull request at a time, each reviewed once.** GitHub's list of review
+requests is the queue; a cron run takes the next PR no run has had yet. While a run is open
+`max_runs` skips the tick and the PR waits for the next one, so nothing is lost. When there is
+nothing new, `on_fail: end` finishes the run without asking anyone.
+
+```yaml
+description: Review the pull requests I am asked to review, one at a time
+cwd: ~/code/my-repo
+max_runs: 1
+triggers: [{cron: "*/10 * * * *"}]
+roles:
+  reviewer: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - id: pick
+    sh: |
+      for u in $(gh search prs --review-requested=@me --state=open --json url -q '.[].url'); do
+        flow ls --all --process "$FLOW_PROCESS" --where pr="$u" >/dev/null && continue
+        flow set --run "$FLOW_RUN" pr="$u"; exit 0
+      done
+      exit 1
+    on_fail: end
+  - {step: review, role: reviewer}       # the prompt reads {{vars.pr}}
+```
+
+One run per PR, not `repeat: true`: vars are cleared between iterations, so a repeating run
+would forget which PRs it had.
 
 **Close the agent's terminal when the work is done.** Closing is just the last thing a step
 tells the agent to do, after it reports. Each role is spawned into a workspace named after the

@@ -166,3 +166,8 @@ test("a shell entry: sh with a command, on its own; cwd only beside sh", () => {
   assert.ok(errs.includes("steps[3]: sh runs on its own; it cannot go with step, do, wait or role"), errs.join(" | "));
   assert.ok(errs.includes("steps[4]: cwd on a step is only for sh, and must be a path"), errs.join(" | "));
 });
+
+test("on_fail accepts end", () => {
+  const ok = parseProcess("p", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm, on_fail: end}\n", ctx);
+  assert.equal(ok.entries[0].onFail, "end");
+});

@@ -2,7 +2,7 @@ export type Dict = Record<string, unknown>;
 export type Outcome = "done" | "failed";
 
 export interface WaitFor { on: string; where: Dict; with: Dict }
-export type OnFail = "retry" | "human" | { goto: string };
+export type OnFail = "retry" | "human" | "end" | { goto: string };
 export type EntryKind = "agent" | "human" | "action" | "wait" | "delay";
 
 export interface Entry {
