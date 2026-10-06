@@ -38,11 +38,13 @@ start watchdog stops the run with "the agent has not started" (next section).
 
 ## A line is queued but never typed while you work in the session
 
-flowd does not type into a session whose input box holds your draft or that has an overlay open
-(a review viewer, for example), so a reminder cannot get glued to your half-written message.
-The line goes out within a second after you send or clear the draft, or close the overlay.
+flowd does not type into a session while you are typing in it (its caret is past the prompt) or
+while it has an overlay open (a review viewer, for example), so a reminder cannot get glued to
+your half-written message. A greyed suggestion in an empty input box does not count. The line
+goes out within a second after you send or clear the draft, or close the overlay.
 
-- Check: the session's input box and overlay. `flow ls` shows the step still `active`.
+- Check: `agtermctl surface cursor --target surface:<session id>:left` prints 2 for an empty
+  input box; `agtermctl tree --json` shows the session's `overlay`.
 
 ## A run stopped with "the agent has not started 2 min after its line was delivered"
 

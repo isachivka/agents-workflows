@@ -67,10 +67,11 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 - Lines to one session are at least 2 s apart. Nothing is typed into a freshly spawned session
   for 15 s.
 - flowd never types over the user. A line waits while the session has an overlay open (agterm's
-  `overlay`), or while its input box holds a draft: text after the prompt mark between the
-  screen's last two horizontal rules, where Claude Code and Codex draw their input box. Send or
-  clear the draft and the line goes out within a second. When the screen cannot be read, the
-  line goes out as before.
+  `overlay`), or while the user is typing in it: the caret of the session's main surface
+  (`agtermctl surface cursor`) is past column 2, right after the prompt mark `❯ ` / `› `. The
+  caret, not the screen text: after a turn Claude Code draws a greyed suggestion in the empty
+  input box, which the screen text cannot tell from typed text. Send or clear the draft and the
+  line goes out within a second. When the caret cannot be read, the line goes out as before.
 - A line whose step moved on before it went out is dropped.
 - An agent can close a step only after its line was typed: an early `flow done` is refused with
   `step <id> has not reached the agent yet`. This stops a double `flow done` from closing the next
