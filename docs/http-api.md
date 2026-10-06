@@ -21,7 +21,7 @@ reachable only from this machine, and the checks below keep web pages out. The w
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, triggers, roles, entries, openRuns, triggerErrors}]`, every file in `processes/`; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
+| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after}`; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
 | GET | `/api/processes/:name` | | `{name, text, mtime, errors, object}` (`object`: the parsed YAML, or `null`) |
 | PUT | `/api/processes/:name` | `{text, mtime}` or `{object, mtime}` | `{mtime}`. `mtime` is the one the edit was based on, `null` for a new file. `object` is re-serialised (comments lost). |
 | DELETE | `/api/processes/:name` | `?mtime=` | `{}` |
@@ -50,8 +50,11 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
 
 `RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
-waitingOn, roles, vars, needsYou, agentWait, plan}`, where `plan` lists every entry as
-`{id, kind, role, detour, waitFor, status}`, `agentWait` is `{note, human, since}` while the
+waitingOn, roles, vars, needsYou, agentWait, created, updated, plan}`, where `created` and
+`updated` are ms, when the run was created and last saved, `plan` lists every entry as
+`{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after}`
+(`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"` or
+`{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the
 current entry's agent declared a wait (else `null`), and `needsYou` is true for a `needs-human`
 run, one standing on an open human step, or one whose agent waits with `human: true`.
 

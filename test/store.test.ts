@@ -48,6 +48,14 @@ test("runs: create, save, open vs finished, by session, numbering", () => {
   assert.throws(() => s.saveRun(run("ghost")), /no run ghost/);
 });
 
+test("runTimes reports when a run was created and last saved", () => {
+  const s = new Store(":memory:");
+  s.createRun(run("p#1"), 1, 100);
+  s.saveRun(run("p#1", "p", { status: "paused" }), 250);
+  assert.deepEqual(s.runTimes("p#1"), { created: 100, updated: 250 });
+  assert.equal(s.runTimes("nope"), null);
+});
+
 test("outbox rows are pending until sent; attempts count; drop clears unsent rows of a run", () => {
   const s = new Store(":memory:");
   const a = s.enqueue("p#1", "pm", "one", "b", 1);

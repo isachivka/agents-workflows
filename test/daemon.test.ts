@@ -518,6 +518,27 @@ test("flow wait from the agent's own session parks on its turn end; nothing but 
   await f.close();
 });
 
+test("a run summary carries its times and what the UI says about each entry", async () => {
+  const steps = "  - {step: b, role: pm, on_fail: {goto: fix}}\n  - {id: wipe, do: clear, role: pm}\n"
+    + "  - {step: c, role: human}\n  - {id: fix, step: c, role: pm, detour: true, after: {goto: b}}\n";
+  const { f, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...proc(steps) }), { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  clock.t += 5_000;
+  await f.submit(report({ run: "p#1", entry: "b", outcome: "done", note: "did b", by: "human" }));
+  await settle(f);
+  const s = f.runSummary(f.store.getRun("p#1")!);
+  assert.equal(s.created, 1_000_000);
+  assert.ok(s.updated >= 1_005_000);
+  const [b, wipe, c, fix] = s.plan;
+  assert.deepEqual([b.step, b.summary, b.note, b.onFail, b.after, b.do], ["b", "b", "did b", { goto: "fix" }, null, null]);
+  assert.equal(typeof b.startedAt, "number");
+  assert.deepEqual([wipe.kind, wipe.do, wipe.summary, wipe.step], ["action", "clear", null, null]);
+  assert.deepEqual([c.kind, c.summary], ["human", "c"]);
+  assert.deepEqual([fix.detour, fix.after, fix.startedAt], [true, { goto: "b" }, null]);
+  await f.close();
+});
+
 test("a wait sent with --run/--step from another session after the agent's turn ended starts parked; --human puts the run under needs-you", async () => {
   const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1", "ME") });
   await f.submit(start("p", { pm: "S1" }));

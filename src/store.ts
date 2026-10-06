@@ -123,6 +123,12 @@ export class Store {
     return row ? JSON.parse(row.state) : null;
   }
 
+  /** When the run was created and last saved (ms); the state JSON does not carry them. */
+  runTimes(id: string): { created: number; updated: number } | null {
+    const row = this.db.prepare("SELECT created, updated FROM runs WHERE id = ?").get(id) as Row | undefined;
+    return row ? { created: Number(row.created), updated: Number(row.updated) } : null;
+  }
+
   openRuns(): RunState[] {
     return (this.db.prepare(`SELECT state FROM runs WHERE ${OPEN} ORDER BY created`).all() as Row[]).map((r) => JSON.parse(r.state));
   }

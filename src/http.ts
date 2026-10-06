@@ -60,8 +60,13 @@ function listProcesses(f: Flowd) {
     const p = f.defs.processes[name];
     return {
       name, valid: Boolean(p), errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
-      repeat: p?.repeat ?? false, triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
-      entries: (p?.entries ?? []).map((e) => ({ id: e.id, kind: e.kind, role: e.role ?? null, waitFor: e.waitFor?.on ?? null, detour: e.detour })),
+      repeat: p?.repeat ?? false, maxRuns: p?.maxRuns ?? 1, cwd: p?.cwd ?? "",
+      triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
+      entries: (p?.entries ?? []).map((e) => ({
+        id: e.id, kind: e.kind, role: e.role ?? null, waitFor: e.waitFor?.on ?? null, detour: e.detour,
+        step: e.step ?? null, summary: e.step ? f.defs.steps[e.step]?.summary ?? null : null,
+        do: e.do ?? null, onFail: e.onFail, after: e.after ?? null,
+      })),
       openRuns: open.filter((r) => r.process === name).map((r) => r.id),
       triggerErrors: f.triggerErrors(name),
     };

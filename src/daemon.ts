@@ -10,7 +10,7 @@ import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { TERMINAL } from "./types.ts";
-import type { Defs, Dict, FlowEvent, Input, RunState, SessionStatus, StepResult } from "./types.ts";
+import type { Defs, Dict, FlowEvent, Input, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
 
 export interface FlowdOptions {
   home: string;
@@ -31,12 +31,19 @@ export interface FlowdOptions {
 
 export interface Result { error?: string; run?: string }
 
+export interface PlanItem {
+  id: string; kind: string; role: string | null; detour: boolean; waitFor: string | null; status: string;
+  step: string | null; summary: string | null; do: string | null; startedAt: number | null; note: string | null;
+  onFail: OnFail; after: { goto: string } | null;
+}
+
 export interface RunSummary {
   id: string; process: string; iteration: number; status: string; reason: string | null;
   current: string | null; currentStatus: string | null; currentKind: string | null; waitingOn: string | null;
   roles: Record<string, string | null>; vars: Record<string, string>; needsYou: boolean;
   agentWait: { note: string; human: boolean; since: number } | null;
-  plan: { id: string; kind: string; role: string | null; detour: boolean; waitFor: string | null; status: string }[];
+  created: number; updated: number;
+  plan: PlanItem[];
 }
 
 const AGTERM_STATUSES = new Set(["active", "completed", "idle", "blocked"]);
@@ -648,6 +655,7 @@ export class Flowd {
     const p = this.defs.processes[run.process];
     const cur = run.current ? p?.entries.find((x) => x.id === run.current) : undefined;
     const s = cur ? run.entries[cur.id] : undefined;
+    const times = this.store.runTimes(run.id);
     return {
       id: run.id, process: run.process, iteration: run.iteration, status: run.status, reason: run.reason ?? null,
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
@@ -655,10 +663,16 @@ export class Flowd {
       roles: run.roles, vars: run.vars,
       needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human),
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
-      plan: (p?.entries ?? []).map((e) => ({
-        id: e.id, kind: e.kind, role: e.role ?? null, detour: e.detour, waitFor: e.waitFor?.on ?? null,
-        status: run.entries[e.id]?.status ?? "pending",
-      })),
+      created: times?.created ?? 0, updated: times?.updated ?? 0,
+      plan: (p?.entries ?? []).map((e) => {
+        const st = run.entries[e.id];
+        return {
+          id: e.id, kind: e.kind, role: e.role ?? null, detour: e.detour, waitFor: e.waitFor?.on ?? null,
+          status: st?.status ?? "pending", step: e.step ?? null,
+          summary: e.step ? this.defs.steps[e.step]?.summary ?? null : null, do: e.do ?? null,
+          startedAt: st?.startedAt ?? null, note: st?.note ?? null, onFail: e.onFail, after: e.after ?? null,
+        };
+      }),
     };
   }
 

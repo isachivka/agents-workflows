@@ -184,3 +184,15 @@ test("POST /api/wait resolves the step by session and shows on the run", async (
   assert.equal((await s.call("GET", "/api/runs")).body[0].agentWait.note, "x");
   await s.close();
 });
+
+test("the process list carries what the read-only process page shows", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: b, role: pm, on_fail: retry}\n  - {id: ci, wait_for: test.ping}\n  - {step: c, role: human}\n", "max_runs: 2\n") });
+  const [p] = (await s.call("GET", "/api/processes")).body;
+  assert.deepEqual([p.maxRuns, p.cwd], [2, "/tmp"]);
+  assert.deepEqual(p.entries.map((e: any) => [e.id, e.step, e.summary, e.do, e.onFail, e.after]), [
+    ["b", "b", "b", null, "retry", null],
+    ["ci", null, null, null, "human", null],
+    ["c", "c", "c", null, "human", null],
+  ]);
+  await s.close();
+});
