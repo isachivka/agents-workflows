@@ -66,10 +66,24 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 - Tests that run the CLI set `AGTERM_SESSION_ID` explicitly; the runner may itself be inside an
   agterm session.
 
+## Shipping: main, restart, push — no confirmation
+
+The user's standing instruction: do not ask before any of these.
+
+- Work directly on `main`. No feature branches, no merge step.
+- When a change is done (tests and typecheck green, docs updated), commit it to `main`.
+- If it touches what the daemon runs (`src/`, `plugins/`, `ui/`), restart it:
+  `launchctl kickstart -k gui/$UID/local.flows`. Runs survive a restart (state is in the database).
+- Push: `git push origin main`. The repository is **public**: before pushing, check the commits
+  for anything personal or employer-internal (people's names, logins, company or product names,
+  private repository names, PR or ticket numbers, paths under a home directory) and rewrite it
+  neutrally first. Skipping the check is the one thing worse than asking.
+- Another session may be committing in the same checkout: stage only your own files.
+
 ## Ask a human first
 
 - `flow install` (it changes launchd, `~/.config/agterm/hooks.conf`, `~/.claude/settings.json`),
-  restarting `local.flows`, or starting runs that spawn agents in the real agterm.
+  or starting runs that spawn agents in the real agterm.
 - Adding a dependency, or loosening the HTTP Host/Origin/content-type checks.
 
 ## Deferred work
