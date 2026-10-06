@@ -139,6 +139,7 @@ test("events become short sentences; the rest stay in the full history", () => {
   assert.equal(T.eventSentence(ev("gh.checks", { entry: "ci", outcome: "failed" }), plan), "GitHub checks: failed");
   assert.equal(T.eventSentence(ev("run.set"), plan), "Run details updated");
   assert.equal(T.eventSentence(ev("run.start"), plan), "The run started");
+  assert.equal(T.eventSentence(ev("flow.iteration.done", { data: { iteration: 3 } }), plan), "Round 3 finished");
   assert.equal(T.eventSentence(ev("agterm.status"), plan), null);
 });
 
@@ -148,4 +149,21 @@ test("process facts", () => {
     ["Repeats in rounds", "Up to 3 runs at once", "Started by hand", "Works in ~/code"]);
   assert.deepEqual(T.processFacts({ repeat: false, maxRuns: 1, triggers: [{ on: "gh.merged" }, { cron: "0 9 * * 1-5" }], cwd: "" }),
     ["One run at a time", "Starts by itself on the PR merge · Starts on schedule 0 9 * * 1-5"]);
+});
+
+test("roundsEnded reads a run's events: rounds that ended, newest first, with the note of the step that ended each", () => {
+  const ev = (id: number, type: string, data: Record<string, unknown>) => ({ id, ts: id * 1000, type, data, source: "flow" });
+  const events = [
+    ev(6, "flow.step.done", { entry: "pick", note: "wave 3" }),
+    ev(5, "flow.iteration.done", { iteration: 2 }),
+    ev(4, "flow.step.done", { entry: "wrap", note: "wave 2 merged" }),
+    ev(3, "entry.delivered", {}),
+    ev(2, "flow.iteration.done", { iteration: 1 }),
+    ev(1, "flow.step.done", { entry: "wrap", note: "" }),
+  ];
+  assert.deepEqual(T.roundsEnded(events), [
+    { iteration: 2, at: 5_000, note: "wave 2 merged" },
+    { iteration: 1, at: 2_000, note: null },
+  ]);
+  assert.deepEqual(T.roundsEnded([]), []);
 });

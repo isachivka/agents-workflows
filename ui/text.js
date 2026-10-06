@@ -9,7 +9,7 @@ const EN = {
   "title.waiting": "({n}) Waiting for you · flows", "title.page": "{page} · flows", "loading": "Loading…",
   "st.running": "Running", "st.paused": "Paused", "st.needs-human": "Waiting for you", "st.done": "Finished", "st.stopped": "Stopped",
   "tag.yourStep": "Your step", "tag.stopped": "Stopped", "tag.agentAsks": "Agent asks", "tag.working": "Agent working",
-  "tag.agentWaits": "Agent waits", "tag.waiting": "Waiting",
+  "tag.agentWaits": "Agent waits", "tag.roundDone": "Round done", "tag.waiting": "Waiting",
   "run.label": "{process} · run {n}", "run.round": "round {n}", "run.started": "started {when}",
   "run.finished": "Finished", "run.stopped": "Stopped by you", "run.stepFailed": "Step “{step}” did not work out",
   "run.stoppedForYou": "The run stopped and waits for you", "run.closesBy": "Closes by itself once {what} arrives",
@@ -22,7 +22,7 @@ const EN = {
   "do.plugin": "Action {name}",
   "evs.delivered": "{role} got the task", "evs.done": "{role} finished", "evs.doneNote": "{role} finished: “{note}”",
   "evs.failed": "{role} failed", "evs.failedNote": "{role} failed: “{note}”", "evs.set": "Run details updated",
-  "evs.start": "The run started", "evs.round": "A round finished", "evs.plugin": "{what}: {outcome}",
+  "evs.start": "The run started", "evs.round": "Round {n} finished", "evs.plugin": "{what}: {outcome}",
   "outcome.done": "ok", "outcome.failed": "failed",
   "now.title": "Now", "now.lead.calm": "Everything is calm.",
   "now.lead.waiting.one": "One run waits for you.", "now.lead.waiting.other": "{n} runs wait for you.",
@@ -79,7 +79,7 @@ const RU = {
   "title.waiting": "({n}) Ждут тебя · flows", "title.page": "{page} · flows", "loading": "Загрузка…",
   "st.running": "Работает", "st.paused": "На паузе", "st.needs-human": "Ждёт тебя", "st.done": "Готово", "st.stopped": "Остановлен",
   "tag.yourStep": "Твой шаг", "tag.stopped": "Остановился", "tag.agentAsks": "Агент просит", "tag.working": "Агент работает",
-  "tag.agentWaits": "Агент ждёт", "tag.waiting": "Ждёт",
+  "tag.agentWaits": "Агент ждёт", "tag.roundDone": "Круг готов", "tag.waiting": "Ждёт",
   "run.label": "{process} · запуск {n}", "run.round": "круг {n}", "run.started": "начат {when}",
   "run.finished": "Готово", "run.stopped": "Остановлен тобой", "run.stepFailed": "Шаг «{step}» не получился",
   "run.stoppedForYou": "Процесс остановился и ждёт тебя", "run.closesBy": "Закроется сам, когда дождёмся: {what}",
@@ -92,7 +92,7 @@ const RU = {
   "do.plugin": "Действие {name}",
   "evs.delivered": "{role} получил задание", "evs.done": "{role} закончил", "evs.doneNote": "{role} закончил: «{note}»",
   "evs.failed": "{role} не справился", "evs.failedNote": "{role} не справился: «{note}»", "evs.set": "Данные запуска обновились",
-  "evs.start": "Запуск начался", "evs.round": "Круг закончился", "evs.plugin": "{what}: {outcome}",
+  "evs.start": "Запуск начался", "evs.round": "Круг {n} закончился", "evs.plugin": "{what}: {outcome}",
   "outcome.done": "успешно", "outcome.failed": "не прошло",
   "now.title": "Сейчас", "now.lead.calm": "Всё спокойно.",
   "now.lead.waiting.one": "{n} запуск ждёт тебя.", "now.lead.waiting.few": "{n} запуска ждут тебя.",
@@ -278,7 +278,7 @@ export function eventSentence(e, plan) {
     case "flow.step.failed": return t(note ? "evs.failedNote" : "evs.failed", { role, note });
     case "run.set": return t("evs.set");
     case "run.start": return t("evs.start");
-    case "flow.iteration.done": return t("evs.round");
+    case "flow.iteration.done": return t("evs.round", { n: e.data && e.data.iteration });
   }
   if (plan.some((x) => x.waitFor === e.type)) {
     return t("evs.plugin", { what: eventPhrase(e.type), outcome: t(e.outcome === "failed" ? "outcome.failed" : "outcome.done") });
@@ -296,4 +296,16 @@ export function processFacts(p) {
     : t("proc.manual"));
   if (p.cwd) out.push(t("proc.cwd", { cwd: p.cwd }));
   return out;
+}
+
+/** The rounds a run's events (newest first, as the API sends them) say ended, newest first, each
+ * with the note of the step that ended it — the run list only knows the current round. */
+export function roundsEnded(events) {
+  const out = [];
+  let note = null;
+  for (const e of [...events].reverse()) {
+    if (e.type === "flow.step.done") note = (e.data && e.data.note) || null;
+    else if (e.type === "flow.iteration.done") out.push({ iteration: e.data.iteration, at: e.ts, note });
+  }
+  return out.reverse();
 }

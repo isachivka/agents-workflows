@@ -1,7 +1,7 @@
 import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
-  eventSentence, entryBranch, progress, waitingSince, processFacts, duration, ago, clock, moment, runLabel } from "./text.js";
+  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, duration, ago, clock, moment, runLabel } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
 
 const LANG_KEY = "flows.lang";
@@ -14,6 +14,26 @@ const Loading = ({ error }) => (error ? html`<p class="err-box">${error.message}
 const Pill = ({ tone, children }) => html`<span class="pill ${tone}">${children}</span>`;
 const isOpen = (r) => r.status !== "done" && r.status !== "stopped";
 
+/** "pr-loop · run 4", plus "· round 2" once a repeating run is past its first round. */
+const runName = (r) => `${runLabel(r.id)}${r.iteration > 1 ? ` · ${t("run.round", { n: r.iteration })}` : ""}`;
+
+/** Rounds that ended since `since` in the given open runs. The run list only carries the current
+ * round, so this reads each repeating run's events; few runs repeat, so a fetch each is fine. */
+function useRounds(runs, since) {
+  const [rounds, setRounds] = useState([]);
+  const ids = (runs || []).filter((r) => isOpen(r) && r.iteration > 1).map((r) => r.id);
+  useEffect(() => {
+    if (ids.length === 0) { setRounds([]); return undefined; }
+    let current = true;
+    Promise.all(ids.map((id) => api("GET", `/api/runs/${enc(id)}`).catch(() => null))).then((runs) => {
+      if (!current) return;
+      setRounds(runs.filter(Boolean).flatMap((d) => roundsEnded(d.events).filter((x) => x.at >= since).map((x) => ({ ...x, run: d.id }))));
+    });
+    return () => { current = false; };
+  }, [runs, since]);
+  return rounds;
+}
+
 /** The PR a human step is about: a var named pr, else the first link among the vars. */
 const firstUrl = (vars) => (vars.pr && isUrl(vars.pr) ? vars.pr : Object.values(vars).find(isUrl) || null);
 
@@ -21,13 +41,17 @@ function Now() {
   const { data, error } = useData("/api/runs?all=1");
   const now = useNow();
   const [older, setOlder] = useState(false);
+  const dayStart = new Date(now).setHours(0, 0, 0, 0);
+  const rounds = useRounds(data, dayStart);
   if (!data) return html`<${Loading} error=${error} />`;
   const live = data.filter(isOpen);
   const waiting = live.filter((r) => r.needsYou).sort((a, b) => waitingSince(a) - waitingSince(b));
   const working = live.filter((r) => !r.needsYou);
   const finished = data.filter((r) => !isOpen(r));
-  const today = finished.filter((r) => r.updated >= new Date(now).setHours(0, 0, 0, 0));
-  const shown = older ? finished.slice(0, 50) : today;
+  const today = finished.filter((r) => r.updated >= dayStart);
+  // a repeating run's finished rounds sit among the finished runs, newest first
+  const rows = [...(older ? finished.slice(0, 50) : today).map((r) => ({ at: r.updated, r })), ...rounds.map((round) => ({ at: round.at, round }))]
+    .sort((a, b) => b.at - a.at);
   const lead = waiting.length
     ? `${tn("now.lead.waiting", waiting.length)}${working.length ? ` ${tn("now.lead.more", working.length)}` : ""}`
     : working.length ? tn("now.lead.working", working.length) : t("now.lead.calm");
@@ -44,9 +68,11 @@ function Now() {
       <h2><${Icon} name="agent" />${t("now.working")} · ${working.length}</h2>
       <div class="grid">${working.map((r) => html`<${WorkingCard} r=${r} now=${now} key=${r.id} />`)}</div>
     </section>`}
-    ${finished.length > 0 && html`<section>
+    ${(finished.length > 0 || rounds.length > 0) && html`<section>
       <h2><${Icon} name="check" />${older ? t("now.recent") : t("now.finished")}</h2>
-      ${shown.length > 0 && html`<div class="box rows">${shown.map((r) => html`<${FinishedRow} r=${r} now=${now} key=${r.id} />`)}</div>`}
+      ${rows.length > 0 && html`<div class="box rows">${rows.map((x) => (x.r
+        ? html`<${FinishedRow} r=${x.r} now=${now} key=${x.r.id} />`
+        : html`<${RoundRow} round=${x.round} now=${now} key=${`${x.round.run}/${x.round.iteration}`} />`))}</div>`}
       ${!older && finished.length > today.length && html`<button class="btn quiet" onClick=${() => setOlder(true)}>${t("now.older")}</button>`}
     </section>`}`;
 }
@@ -60,7 +86,7 @@ function WaitingCard({ r, now }) {
   const sid = cur && cur.role && cur.role !== "human" ? r.roles[cur.role] : null;
   const post = (path) => attempt(() => api("POST", `/api/runs/${enc(r.id)}${path}`, {}), setErr);
   return html`<article class="box you">
-    <div class="meta"><${Pill} tone="you">${d.tag}<//><span class="muted small">${runLabel(r.id)}</span>
+    <div class="meta"><${Pill} tone="you">${d.tag}<//><span class="muted small">${runName(r)}</span>
       <span class="muted small when">${t("now.waitedFor", { d: duration(now - waitingSince(r)) })}</span></div>
     <h3>${d.title}</h3>
     ${d.detail && html`<p class="muted">${d.detail}</p>`}
@@ -84,7 +110,7 @@ function WorkingCard({ r, now }) {
   const sid = cur && cur.kind === "agent" ? r.roles[cur.role] : null;
   const since = r.agentWait ? r.agentWait.since : cur && cur.startedAt;
   return html`<article class="box">
-    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//><span class="muted small">${runLabel(r.id)}</span></div>
+    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//><span class="muted small">${runName(r)}</span></div>
     <h3>${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</h3>
     ${d.detail && html`<p class="muted small">${d.detail}</p>`}
     <div class="prog" role="img" aria-label=${t("now.stepOf", { i: p.i, n: p.n })}>${p.segs.map((s) => html`<span class=${s}></span>`)}</div>
@@ -102,8 +128,17 @@ function FinishedRow({ r, now }) {
   return html`<div class="row">
     <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
     <a href="#/run/${enc(r.id)}"><b>${runLabel(r.id)}</b></a>
-    ${last && html`<span class="muted grow">— ${last.note}</span>`}
+    ${last && html`<span class="muted grow note" title=${last.note}>— ${last.note}</span>`}
     <span class="muted small" style="margin-left:auto">${ago(r.updated, now)}</span>
+  </div>`;
+}
+
+function RoundRow({ round, now }) {
+  return html`<div class="row">
+    <${Pill} tone="ok">${t("tag.roundDone")}<//>
+    <a href="#/run/${enc(round.run)}"><b>${runLabel(round.run)} · ${t("run.round", { n: round.iteration })}</b></a>
+    ${round.note && html`<span class="muted grow note" title=${round.note}>— ${round.note}</span>`}
+    <span class="muted small" style="margin-left:auto">${ago(round.at, now)}</span>
   </div>`;
 }
 
@@ -341,7 +376,7 @@ function Processes() {
         ${p.openRuns.map((rid) => {
           const r = (runs || []).find((x) => x.id === rid);
           const d = r && describeRun(r);
-          return html`<a class="btn quiet" href="#/run/${enc(rid)}">${runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+          return html`<a class="btn quiet" href="#/run/${enc(rid)}">${r ? runName(r) : runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
         })}
       </div>
     </article>`)}</div>
@@ -380,7 +415,7 @@ function ProcessView({ arg: name, sub }) {
       ${p.openRuns.map((rid) => {
         const r = (runs || []).find((x) => x.id === rid);
         const d = r && describeRun(r);
-        return html`<a class="btn" href="#/run/${enc(rid)}">${runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+        return html`<a class="btn" href="#/run/${enc(rid)}">${r ? runName(r) : runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
       })}</div></section>`}
     ${(p.roles.length > 0 || human) && html`<section><h2>${t("proc.who")}</h2><div class="ppl">
       ${p.roles.map((role) => html`<div class="person"><span class="dot ag"><${Icon} name="agent" /></span><span><b>${role}</b><small>${t("proc.agent")}</small></span></div>`)}
