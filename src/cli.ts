@@ -11,6 +11,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow done [--note T] [--evidence URL]  close it as done
   flow failed --note T                   close it as failed
   flow set key=value …                   run variables (URLs show as links in the UI)
+  flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …]
@@ -120,6 +121,12 @@ export async function main(argv: string[]): Promise<number> {
         out(`recorded ${cmd}${a.step ? ` for ${a.step}` : ""}`);
         return 0;
       }
+      case "wait": {
+        if (!a.note) throw new CliError("flow wait needs --note saying what you are waiting for");
+        await call("POST", "/api/wait", { session, run: a.run, entry: a.step, note: a.note, human: a.human });
+        out(`waiting: ${a.note}`);
+        return 0;
+      }
       case "set": {
         if (!a._.length) throw new CliError("usage: flow set key=value …");
         await call("POST", "/api/vars", { session, run: a.run, vars: pairs(a._) });
@@ -144,7 +151,7 @@ export async function main(argv: string[]): Promise<number> {
         const runs = await call("GET", `/api/runs${a.all ? "?all=1" : ""}`);
         if (!runs.length) out("no runs");
         for (const r of runs) {
-          out([r.id, `it.${r.iteration}`, r.status, r.current ? `${r.current} (${r.currentStatus})` : "-",
+          out([r.id, `it.${r.iteration}`, r.status, r.current ? `${r.current} (${r.currentStatus}${r.agentWait ? `, waiting: ${r.agentWait.note}` : ""})` : "-",
             r.waitingOn ? `waits ${r.waitingOn}` : "", r.reason ?? ""].filter(Boolean).join("  "));
         }
         return 0;

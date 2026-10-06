@@ -84,3 +84,17 @@ test("with flowd down, commands say so and hooks stay silent and fast", async ()
   for (const s of sockets) s.destroy();
   hang.close();
 });
+
+test("an agent waits on purpose: flow wait needs a note, and show and ls tell what it waits for", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  const env = { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1" };
+  const noNote = await flow(["wait"], env);
+  assert.deepEqual([noNote.code, noNote.stderr], [1, "flow: flow wait needs --note saying what you are waiting for\n"]);
+  const waited = await flow(["wait", "--note", "review running"], env);
+  assert.deepEqual([waited.code, waited.stdout], [0, "waiting: review running\n"]);
+  assert.match((await flow(["show"], env)).stdout, /^waiting since .*: review running$/m);
+  assert.match((await flow(["ls"], { FLOWD_URL: s.base })).stdout, /b \(active, waiting: review running\)/);
+  await s.close();
+});

@@ -50,6 +50,27 @@ flow set key=value … [--run ID]
 Sets run variables, read by later steps as `{{vars.key}}`. Values that are URLs show as links in
 the UI. Prints `ok`. Vars are cleared at the start of each iteration.
 
+### `flow wait`
+
+```
+flow wait --note TEXT [--human] [--run ID --step ENTRY]
+```
+
+Ends your turn on purpose: you are waiting for something (a background job, the user in a
+viewer) and will come back to this step. Prints `waiting: <note>`. Without it, flowd reminds an
+agent that ends its turn without reporting and stops the run after the third such turn.
+
+- `--note` is required: what you are waiting for. It shows in the UI, `flow ls` and `flow show`.
+- `--human` says a person has to act; the run is then listed under "Needs you".
+- The wait covers the end of the current turn. When your next turn begins it is used up: finish
+  with `flow done` or `flow failed`, or run `flow wait` again with a fresh note.
+- Refused like `flow done`: only your own active agent step, after its line reached you.
+
+```
+$ flow wait --note "review running in the background; the user picks findings next"
+waiting: review running in the background; the user picks findings next
+```
+
 ## For you
 
 ### `flow done --human`

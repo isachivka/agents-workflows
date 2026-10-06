@@ -32,6 +32,7 @@ export interface RunSummary {
   id: string; process: string; iteration: number; status: string; reason: string | null;
   current: string | null; currentStatus: string | null; currentKind: string | null; waitingOn: string | null;
   roles: Record<string, string | null>; vars: Record<string, string>; needsYou: boolean;
+  agentWait: { note: string; human: boolean; since: number } | null;
   plan: { id: string; kind: string; role: string | null; detour: boolean; waitFor: string | null; status: string }[];
 }
 
@@ -316,6 +317,16 @@ export class Flowd {
         const by = (d.by === "human" || d.by === "system" ? d.by : "agent") as "agent" | "human" | "system";
         return this.apply(t.run, { kind: "report", entry: t.entry, outcome, note: str(d.note), evidence: str(d.evidence), by });
       }
+      case "entry.wait": {
+        const t = this.resolveTarget(d);
+        if ("error" in t) return t;
+        const run = this.store.getRun(t.run);
+        const role = run ? this.currentEntry(run)?.role : undefined;
+        const bound = run && role ? run.roles[role] : null;
+        // only the agent's own session, seen active, can be mid-turn; anything else parks at once
+        const sessionActive = Boolean(bound) && d.session === bound && this.store.sessionStatus(bound!) === "active";
+        return this.apply(t.run, { kind: "wait", entry: t.entry, note: String(d.note ?? ""), human: d.human === true, sessionActive });
+      }
       case "entry.delivered":
         return this.apply(run, { kind: "delivered", entry });
       case "entry.skip":
@@ -553,6 +564,7 @@ export class Flowd {
     }
     const s = run.entries[entry.id];
     const lines = [`flow · ${run.id} · iteration ${run.iteration} · step ${entry.id} (role ${entry.role}) · ${s?.status ?? "pending"}`];
+    if (s?.wait) lines.push(`waiting since ${new Date(s.wait.since).toISOString()}: ${s.wait.note}`);
     if (s?.event) lines.push(`woken by: ${s.event.type}${s.event.outcome ? ` ${s.event.outcome}` : ""} ${JSON.stringify(s.event.data)}`);
     const vars = Object.entries(run.vars);
     if (vars.length) lines.push(`vars: ${vars.map(([k, v]) => `${k}=${v}`).join("  ")}`);
@@ -581,7 +593,8 @@ export class Flowd {
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
       waitingOn: s?.status === "waiting" ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,
-      needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")),
+      needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human),
+      agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
       plan: (p?.entries ?? []).map((e) => ({
         id: e.id, kind: e.kind, role: e.role ?? null, detour: e.detour, waitFor: e.waitFor?.on ?? null,
         status: run.entries[e.id]?.status ?? "pending",

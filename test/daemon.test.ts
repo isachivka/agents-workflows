@@ -500,3 +500,32 @@ test("a subscription that fires at startup does not get its run's first action f
   assert.equal(run.entries["slow.wait"].failures, 0, run.reason ?? "");
   await f.close();
 });
+test("flow wait from the agent's own session parks on its turn end; nothing but the nudge is typed", async () => {
+  const { f, clock, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  await f.submit(status("S1", "active"));
+  assert.deepEqual(await f.submit({ type: "entry.wait", data: { session: "S1", note: "review running" }, source: "cli" }), { run: "p#1" });
+  assert.equal(f.store.getRun("p#1")!.entries.b.wait?.parked, false);
+  await f.submit(status("S1", "completed"));
+  clock.t += 120_000;
+  await f.tickNow();
+  await settle(f);
+  assert.equal(agterm.typed().length, 1);
+  const summary = f.runSummary(f.store.getRun("p#1")!);
+  assert.equal(summary.agentWait?.note, "review running");
+  assert.equal(summary.needsYou, false);
+  await f.close();
+});
+
+test("a wait sent with --run/--step from another session starts parked; --human puts the run under needs-you", async () => {
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1", "ME") });
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  await f.submit(status("S1", "active"));
+  await f.submit({ type: "entry.wait", data: { session: "ME", run: "p#1", entry: "b", note: "user reads the PR", human: true }, source: "cli" });
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.entries.b.wait?.parked, true);
+  assert.equal(f.runSummary(run).needsYou, true);
+  await f.close();
+});

@@ -183,6 +183,11 @@ export function makeServer(f: Flowd, uiDir: string): Server {
       data: { session: b.session, run: b.run, entry: b.entry, outcome: b.outcome, note: b.note, evidence: b.evidence, by: b.human ? "human" : "agent" },
       source: "cli",
     })],
+    ["POST", /^\/api\/wait$/, (_p, b) => submit({
+      type: "entry.wait",
+      data: { session: b.session, run: b.run, entry: b.entry, note: b.note, human: b.human === true },
+      source: "cli",
+    })],
     ["POST", /^\/api\/vars$/, (_p, b) => {
       let run = typeof b.run === "string" ? b.run : "";
       if (!run) {

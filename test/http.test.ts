@@ -173,3 +173,14 @@ test("a failing subscription shows on the process and in the plugin status", asy
   assert.deepEqual(plugins[0].watches, [{ run: null, entry: null, type: "test.ping", processes: ["a"], error: "test cannot listen" }]);
   await s.close();
 });
+
+test("POST /api/wait resolves the step by session and shows on the run", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const missing = await s.call("POST", "/api/wait", { session: "S9", note: "x" });
+  assert.deepEqual([missing.status, missing.body.error], [409, "no open run is bound to this session"]);
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  assert.equal((await s.call("POST", "/api/wait", { session: "S1", note: "x" })).status, 200);
+  assert.equal((await s.call("GET", "/api/runs")).body[0].agentWait.note, "x");
+  await s.close();
+});
