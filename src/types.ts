@@ -71,6 +71,8 @@ export interface EntryState {
   deliveredAt?: number;
   sawActive: boolean;
   remindAt?: number;
+  /** set when a line is delivered: the agent must go active by then */
+  startBy?: number;
   reminded: number;
   /** The agent ended (or will end) its turn on purpose: `flow wait`. */
   wait?: AgentWait;
@@ -92,6 +94,8 @@ export interface RunState {
   roles: Record<string, string | null>;
   entries: Record<string, EntryState>;
   current: string | null;
+  /** the entry whose agent has not started; its first active resumes the run */
+  startBlocked?: string;
 }
 
 export type SessionStatus = "active" | "completed" | "idle" | "blocked" | "closed";
@@ -113,6 +117,7 @@ export type Input =
   | { kind: "bind"; role: string; session: string | null; by: "spawn" | "human" }
   | { kind: "respawn"; role: string }
   | { kind: "halt"; reason: string }
+  | { kind: "start-blocked"; entry: string; reason: string }
   | { kind: "delivered"; entry: string }
   | { kind: "wait"; entry: string; note: string; human: boolean; sessionActive: boolean };
 

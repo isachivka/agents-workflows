@@ -305,3 +305,59 @@ test("flow wait is refused where a report would be, and needs a note", () => {
 test("the reminder tells a forgetful agent about flow wait", () => {
   assert.match(reminderText("b"), /`flow wait --note "…"` if you are waiting on purpose/);
 });
+
+const START = 120_000;
+
+test("a delivered line that never starts a turn stops the run after 2 min, naming the step", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.now += START - 1;
+  s.send({ kind: "tick" });
+  assert.equal(s.run.status, "running");
+  s.now += 1;
+  s.send({ kind: "tick" });
+  assert.equal(s.run.status, "needs-human");
+  assert.equal(s.run.reason, "b: the agent has not started 2 min after its line was delivered — look at its terminal (a trust or login prompt, an error)");
+  assert.equal(s.run.startBlocked, "b");
+});
+
+test("an agent that starts in time, or waits on purpose, is not stopped", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  turn(s, "active");
+  s.now += START * 3;
+  s.send({ kind: "tick" });
+  assert.equal(s.run.status, "running");
+  const w = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  w.send(wait("from my terminal", { sessionActive: false }));
+  w.now += START * 3;
+  w.send({ kind: "tick" });
+  assert.equal(w.run.status, "running");
+});
+
+test("a reminder that never starts a turn stops the run too", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  turn(s, "active");
+  turn(s, "completed");
+  s.now += 30_000;
+  s.send({ kind: "tick" });
+  assert.deepEqual(s.delivered(), [`pm: ${reminderText("b")}`]);
+  s.now += START;
+  s.send({ kind: "tick" });
+  assert.equal(s.run.startBlocked, "b");
+});
+
+test("the agent's first active resumes a start-blocked run; other stops are not resumed", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.send({ kind: "start-blocked", entry: "b", reason: "b: trust prompt" });
+  assert.deepEqual([s.run.status, s.run.reason, s.run.startBlocked], ["needs-human", "b: trust prompt", "b"]);
+  turn(s, "active");
+  assert.deepEqual([s.run.status, s.run.reason, s.run.startBlocked], ["running", undefined, undefined]);
+  s.send({ kind: "halt", reason: "something else" });
+  turn(s, "active");
+  assert.equal(s.run.status, "needs-human");
+});
+
+test("a start block names only the current step", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.send({ kind: "start-blocked", entry: "c", reason: "x" });
+  assert.equal(s.run.status, "running");
+});

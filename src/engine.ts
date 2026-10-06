@@ -5,6 +5,10 @@ import type { Action, Defs, Dict, Entry, EntryState, FlowEvent, Input, Outcome, 
 export const REMIND_AFTER_MS = 30_000;
 export const MAX_REMINDERS = 2;
 export const COMPACT_TIMEOUT_MS = 600_000;
+export const START_TIMEOUT_MS = 120_000;
+
+export const notStartedText = (entry: string) =>
+  `${entry}: the agent has not started 2 min after its line was delivered — look at its terminal (a trust or login prompt, an error)`;
 
 export const blankEntry = (): EntryState => ({ status: "pending", attempts: 0, failures: 0, sawActive: false, reminded: 0 });
 
@@ -70,6 +74,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     if (run.status === "needs-human") {
       run.status = "running";
       run.reason = undefined;
+      run.startBlocked = undefined;
     }
   };
 
@@ -94,6 +99,12 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     case "halt":
       halt(input.reason);
       return done();
+    case "start-blocked":
+      if (input.entry !== run.current) return done();
+      run.entries[input.entry].startBy = undefined;
+      halt(input.reason);
+      run.startBlocked = input.entry;
+      return done();
   }
 
   const p = ctx.process;
@@ -115,7 +126,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const e = byId(id)!;
     const s = st(id);
     run.current = id;
-    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined });
+    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined });
     if (e.waitFor) {
       let w: WaitFor;
       try {
@@ -318,7 +329,12 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       return done();
     }
     case "delivered": {
-      if (input.entry === curId && st(curId).status === "active") st(curId).deliveredAt = now;
+      if (input.entry === curId && st(curId).status === "active") {
+        const s = st(curId);
+        s.deliveredAt = now;
+        // an active seen after this line was queued means the turn already started
+        if (!s.sawActive) s.startBy = now + START_TIMEOUT_MS;
+      }
       return done();
     }
     case "event": {
@@ -350,6 +366,8 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
         if (s.wait?.parked) s.wait = undefined; // the agent's next turn began: the wait is used up
         s.sawActive = true;
         s.remindAt = undefined;
+        s.startBy = undefined;
+        if (run.startBlocked === cur!.id) resume(); // the prompt that held it was answered
       } else if (input.status === "completed" || input.status === "idle") {
         if (s.wait) {
           s.wait.parked = true; // the turn the wait was declared in ended; repeats change nothing
@@ -373,6 +391,12 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       const timeout = cur.timeoutMs ?? (cur.do === "compact" ? COMPACT_TIMEOUT_MS : undefined);
       if (timeout !== undefined && s.startedAt !== undefined && now - s.startedAt >= timeout) {
         finish(cur.id, "failed", { note: `timed out after ${timeout / 1000}s`, by: "system" });
+        return done();
+      }
+      if (cur.kind === "agent" && s.status === "active" && !s.wait && s.startBy !== undefined && now >= s.startBy) {
+        s.startBy = undefined;
+        halt(notStartedText(cur.id));
+        run.startBlocked = cur.id;
         return done();
       }
       if (s.remindAt !== undefined && now >= s.remindAt) {
