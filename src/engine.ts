@@ -135,9 +135,9 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
         return halt(`${id}: ${errMsg(err)}`);
       }
       s.status = "waiting";
-      // a re-armed wait (retry keeps the entry's event; goto and a new iteration start blank) learns
-      // what last woke it, so a plugin can avoid firing again on that same thing
-      const prev = s.event?.type === w.on ? { type: s.event.type, data: s.event.data } : undefined;
+      // a re-armed wait (retry, or a goto back within the iteration) learns what last woke it, so a
+      // plugin can avoid firing again on that same thing; a new iteration starts without it
+      const prev = s.woke?.type === w.on ? s.woke : undefined;
       actions.push(prev ? { kind: "watch", entry: id, waitFor: w, previous: prev } : { kind: "watch", entry: id, waitFor: w });
       return;
     }
@@ -219,7 +219,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const ti = ids.indexOf(to);
     for (const id of ti <= fi ? ids.slice(ti, fi + 1) : [to]) {
       const old = st(id);
-      run.entries[id] = { ...blankEntry(), attempts: old.attempts, failures: old.failures };
+      run.entries[id] = { ...blankEntry(), attempts: old.attempts, failures: old.failures, woke: old.woke };
     }
     enter(to);
   }
@@ -345,6 +345,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       const ev = input.event;
       if (ev.type !== cur.waitFor.on || (ev.entry && ev.entry !== cur.id) || !matches(cur.waitFor.where, ev.data)) return done();
       st(cur.id).event = ev;
+      st(cur.id).woke = { type: ev.type, data: ev.data };
       if (cur.kind === "agent" || cur.kind === "action") {
         actions.push({ kind: "unwatch", entry: cur.id });
         begin(cur.id);

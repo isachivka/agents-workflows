@@ -264,8 +264,8 @@ export class Flowd {
       void this.submit({ type: "run.halt", run: run.id, data: { reason: `${cur.id}: ${msg(e)}` }, source: "flowd" });
       return;
     }
-    const ev = run.entries[cur.id]?.event;
-    const previous = ev?.type === cur.waitFor.on ? { type: ev.type, data: ev.data } : undefined;
+    const woke = run.entries[cur.id]?.woke;
+    const previous = woke?.type === cur.waitFor.on ? woke : undefined;
     this.plugins.watch({ run: run.id, entry: cur.id, type: cur.waitFor.on, with: w, cwd: this.cwdOf(run.process), vars: run.vars, ...(previous ? { previous } : {}) });
   }
 

@@ -377,7 +377,7 @@ test("idle is not a turn end: it arms no reminder and parks no wait", () => {
   assert.equal(s.run.entries.b.wait?.parked, true);
 });
 
-test("a re-armed wait carries the event that last woke its entry; a first arm and goto do not", () => {
+test("a re-armed wait carries the event that last woke its entry, through retry and goto; a first arm does not", () => {
   const s = new Sim(ONE_ROLE("  - {step: b, role: pm, wait_for: test.ping, on_fail: retry}\n  - {step: c, role: pm}\n"), STEPS, { pm: "S1" }).send({ kind: "start" });
   const watchOf = () => s.actions.find((a) => a.kind === "watch") as { previous?: unknown } | undefined;
   assert.equal(watchOf()?.previous, undefined);
@@ -386,5 +386,25 @@ test("a re-armed wait carries the event that last woke its entry; a first arm an
   s.send(rep("b", "failed", "agent", "waiting for re-review"));
   assert.deepEqual(watchOf()?.previous, { type: "test.ping", data: { id: "R1", by: "alice" } });
   s.send({ kind: "goto", entry: "b" });
-  assert.equal(watchOf()?.previous, undefined);
+  assert.deepEqual(watchOf()?.previous, { type: "test.ping", data: { id: "R1", by: "alice" } });
+});
+
+test("a pure decision wait sent to a fix detour and back is not handed a fresh start: it keeps what woke it", () => {
+  const s = new Sim(ONE_ROLE("  - {id: approval, wait_for: test.ping, on_fail: {goto: fix}}\n  - {step: c, role: pm}\n  - {step: b, role: pm, id: fix, detour: true, after: {goto: approval}}\n"), STEPS, { pm: "S1" }).send({ kind: "start" });
+  const watchOf = () => s.actions.find((a) => a.kind === "watch") as { previous?: unknown } | undefined;
+  s.send(ev("test.ping", { id: "R1", state: "CHANGES_REQUESTED" }, "failed"));
+  assert.equal(s.run.current, "fix");
+  s.send(rep("fix"));
+  assert.equal(s.run.current, "approval");
+  assert.deepEqual(watchOf()?.previous, { type: "test.ping", data: { id: "R1", state: "CHANGES_REQUESTED" } });
+});
+
+test("a new iteration starts its waits with nothing that woke them before", () => {
+  const s = new Sim("description: d\ncwd: /tmp\nrepeat: true\nroles: {pm: {spawn: c}}\nsteps:\n  - {id: w, wait_for: test.ping}\n  - {step: c, role: pm}\n", STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.send(ev("test.ping", { id: "R1" }));
+  s.send(rep("c"));
+  assert.equal(s.run.iteration, 2);
+  const w = s.actions.find((a) => a.kind === "watch") as { previous?: unknown } | undefined;
+  assert.ok(w, "iteration 2 armed its wait");
+  assert.equal(w!.previous, undefined);
 });

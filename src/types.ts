@@ -74,6 +74,8 @@ export interface EntryState {
   /** set when a line is delivered: the agent must go active by then */
   startBy?: number;
   reminded: number;
+  /** The event that last woke this entry in this iteration (kept through retry and goto). */
+  woke?: { type: string; data: Dict };
   /** The agent ended (or will end) its turn on purpose: `flow wait`. */
   wait?: AgentWait;
 }
