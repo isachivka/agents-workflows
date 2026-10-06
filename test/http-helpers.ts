@@ -37,5 +37,5 @@ export async function serve(files: Record<string, string>, opts: Partial<FlowdOp
     await f.close();
   };
   open.add(close);
-  return { f, agterm, clock, home, base, call, close };
+  return { f, agterm, clock, home, base, call, close, ui };
 }

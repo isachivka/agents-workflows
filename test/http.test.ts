@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { STEP_FILES, proc, settle, resetSubs } from "./daemon-helpers.ts";
 import { serve } from "./http-helpers.ts";
 
@@ -195,4 +198,30 @@ test("the process list carries what the read-only process page shows", async () 
     ["c", "c", "c", null, "human", null],
   ]);
   await s.close();
+});
+
+test("icons, the manifest and fonts are served with their content types", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  for (const f of ["icon.png", "favicon.ico", "manifest.webmanifest", "font.woff2"]) writeFileSync(join(s.ui, f), "x");
+  assert.equal((await s.call("GET", "/icon.png")).type, "image/png");
+  assert.equal((await s.call("GET", "/favicon.ico")).type, "image/x-icon");
+  assert.equal((await s.call("GET", "/manifest.webmanifest")).type, "application/manifest+json");
+  assert.equal((await s.call("GET", "/font.woff2")).type, "font/woff2");
+  await s.close();
+});
+
+test("every file the real index.html, manifest and stylesheet point at exists in ui/", () => {
+  const ui = join(dirname(fileURLToPath(import.meta.url)), "..", "ui");
+  const index = readFileSync(join(ui, "index.html"), "utf8");
+  const css = readFileSync(join(ui, "style.css"), "utf8");
+  const manifest = JSON.parse(readFileSync(join(ui, "manifest.webmanifest"), "utf8"));
+  const refs = [
+    ...[...index.matchAll(/(?:href|src)="\/([^"]+)"/g)].map((m) => m[1]),
+    ...[...css.matchAll(/url\(\/([^)]+)\)/g)].map((m) => m[1]),
+    ...manifest.icons.map((i: { src: string }) => i.src.slice(1)),
+  ];
+  for (const must of ["icons/favicon.svg", "favicon.ico", "icons/apple-touch-icon.png", "manifest.webmanifest", "vendor/fonts/onest-cyrillic.woff2"]) {
+    assert.ok(refs.includes(must), `${must} is not linked`);
+  }
+  assert.deepEqual(refs.filter((r) => !existsSync(join(ui, r))), []);
 });
