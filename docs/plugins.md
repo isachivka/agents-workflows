@@ -35,6 +35,7 @@ export default {
 | `cwd` | The process's `cwd`, `~` expanded: where a repo-bound plugin should run its commands. |
 | `vars` | A wait: the run's vars when the watch started. A trigger: `{}`. |
 | `processes` | A trigger subscription: the processes that asked for it (it is shared by identical triggers). |
+| `previous` | A wait armed again in the same iteration (after `retry`, or a `goto` back to it): `{type, data}` of the event that last woke its entry. Use it to avoid firing again on that same thing. Absent on a first arm and in a new iteration. |
 
 **Wait or trigger.** Tell them apart by `w.run`. For a wait, emit with `run` and `entry`, once, and
 stop. For a trigger subscription, emit without `run` and keep emitting for as long as the
@@ -105,9 +106,27 @@ asks for a PR.
 |---|---|---|---|---|
 | `gh.checks` | PR only | `gh pr checks <pr> --required --json name,bucket,link` | `pr`, `failed` (names), `links` | When no required check is pending: `done` if none failed or was cancelled, else `failed`. A PR with no checks counts as pending until 5 polls in a row find none, then `done`: right after a PR opens, CI has not registered its checks yet. |
 | `gh.merged` | PR, or repo (`with.base?`, `with.label?`) | PR: `gh pr view <pr> --json state`; repo: `gh pr list --state merged --search sort:updated-desc` | PR: `pr`, `state`; repo: `pr` (URL), `number`, `title`, `branch`, `base`, `author` | `done` when merged; in PR mode `failed` when closed unmerged |
-| `gh.review` | PR only | `gh pr view <pr> --json reviews,comments` | `reviews`, `comments` (counts) | None. Emits when the count changes after the watch started. |
+| `gh.review` | PR only | Without the options below: `gh pr view <pr> --json reviews,comments`. With them: one `gh api graphql` query (PR author, decision, review requests, reviews, comments) | Without options: `reviews`, `comments` (counts). With them: `pr`, `id`, `by`, `kind` (`review`/`comment`), `state`, `decision`, `url`, `reviews`, `comments` | Without options: none; emits when a count changes. With them: `done` for an `APPROVED` review, `failed` for `CHANGES_REQUESTED`, none otherwise. |
 | `gh.opened` | repo (`with.base?`, `with.label?`) | `gh pr list --state open` | as `gh.merged` in repo mode | `done`. With a label: when an open PR first shows up with it (opened with it, or labelled later). |
 | `gh.ci` | repo (`with.branch` required, `with.workflow?`) | `gh run list --branch <b>` | `run` (URL), `id`, `workflow`, `conclusion`, `branch`, `sha`, `event` | Once per workflow run, when it completes: `done` on `success`, else `failed`. |
+
+**`gh.review` from the reviewer.** Three `wait_for.with` options narrow a `gh.review` wait:
+
+| Option | Values | Meaning |
+|---|---|---|
+| `from` | `requested`, a login, or logins separated by commas | Whose reviews and comments count. `requested`: every **user** ever requested as a reviewer on the PR, read from its timeline, so a reviewer who already reviewed and left the current requests still counts, and one assigned after the wait armed counts too. Teams never count as people. With `from`, bots and the PR's author never count. |
+| `only` | `decisions` | Only `APPROVED` and `CHANGES_REQUESTED` reviews count; comments and `COMMENTED` reviews do not. |
+| `already` | `true` | On the first poll, a decision that is already there fires at once, unless it is the one that last woke this entry (`previous`). |
+
+```yaml
+- {step: address-review, role: dev, wait_for: {on: gh.review, with: {from: requested}}, on_fail: retry}
+- {id: approval, wait_for: {on: gh.review, with: {from: requested, only: decisions, already: true}}, on_fail: {goto: fix-review}}
+```
+
+Without these options `gh.review` counts everyone, bots included, as before. An event without an
+outcome closes a pure wait as `done`, so a pure `gh.review` wait should use `only: decisions`.
+The PR is a URL (`vars.pr` or `with.pr`); a bare PR number needs `with.repo` (`owner/name`). An
+unknown `only` refuses the wait: `gh.review: only must be "decisions"`.
 
 Repo-mode lists ask for the latest 30 items. `gh.checks` and `gh.review` refuse to work without a
 PR; as a trigger, `gh.checks` says `to start on CI results use gh.ci`. Nothing that happened

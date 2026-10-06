@@ -281,6 +281,38 @@ steps:
   - {id: ci, wait_for: gh.checks}
 ```
 
+**Wait for the requested reviewer.** The agent answers each review and, when it has pushed its
+fixes, runs `flow failed --note "waiting for re-review"` to wait again; bots, the PR's author and
+other people's comments never wake it. It finishes with `flow done` when the event it was woken
+by is an approval (`{{event.data.state}}` is `APPROVED`).
+
+```yaml
+description: Address the requested reviewer's feedback until they approve
+cwd: ~/code/my-repo
+roles:
+  dev: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: open-pr, role: dev}            # the agent runs `flow set pr=<url>`
+  - {step: address-review, role: dev, wait_for: {on: gh.review, with: {from: requested}}, on_fail: retry, retries: 10}
+  - {step: merge-pr, role: human}
+```
+
+The same with a pure wait on the decision: an approval moves on, requested changes go to a fix
+detour and back. `already: true` also catches an approval that came before the wait armed, and
+never fires twice on the same review.
+
+```yaml
+description: Wait for the requested reviewer's decision; fix and wait again on requested changes
+cwd: ~/code/my-repo
+roles:
+  dev: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: open-pr, role: dev}
+  - {id: approval, wait_for: {on: gh.review, with: {from: requested, only: decisions, already: true}}, on_fail: {goto: fix-review}, retries: 10}
+  - {step: merge-pr, role: human}
+  - {step: fix-review, role: dev, detour: true, after: {goto: approval}}
+```
+
 **Fix main when its CI fails.** `where` keeps only failed runs.
 
 ```yaml
