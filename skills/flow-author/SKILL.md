@@ -49,6 +49,7 @@ From the installed copy of this skill, the repo is
 | a mechanical step without an agent (git, a script) | `{sh: 'git worktree add "$FLOW_VAR_DIR"'}` — run data comes as env `FLOW_VAR_<NAME>`, never `{{…}}` in the command; quote it; hand values back with `flow set --run "$FLOW_RUN" k=v` |
 | let time pass (keep a session a day, then clean up) | `{id: tail, wait: 24h}`; survives flowd restarts |
 | one item per pass, forever | `repeat: true` — vars are cleared between iterations |
+| close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
 
 ## Traps
 
@@ -85,6 +86,14 @@ From the installed copy of this skill, the repo is
   `flow wait --note "<what>"` (`--human` when the user acts) before ending its turn; otherwise
   flowd reminds it and stops the run after the third silent turn end. A waiting step still has
   its `timeout`.
+- An `sh` entry runs in a login `zsh` as you, no sandbox, in its own `cwd:` (a template) or the
+  process `cwd`. Exit 0 is done with the last output line as the note; anything else fails with
+  the exit code and stderr, and `on_fail` decides. Besides `FLOW_VAR_<NAME>` it gets `FLOW_RUN`,
+  `FLOW_PROCESS`, `FLOW_ITERATION` and `FLOW_EVENT_<KEY>`. It is killed after `timeout` (default
+  30 minutes), and a flowd restart mid-command fails it — make commands safe to run again.
+- A trigger that fires while the process already has `max_runs` open runs is skipped, not queued.
+  For work that must not be lost, start from a list that keeps it (cron + an `sh` step that picks
+  the next item, as in the review-queue recipe), not from the event alone.
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
   for the user.
 
