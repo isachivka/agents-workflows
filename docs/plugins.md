@@ -49,16 +49,16 @@ trigger's `where`) and wakes no waiting entry.
 |---|---|
 | `emit({type, data?, outcome?, run?, entry?})` | Sends an event. The plugin name is prefixed if missing (`checks` → `gh.checks`); `source` is set to the plugin name. With `run` and `entry` it goes to that entry only. Without them, from a trigger subscription's `ctx` it starts only that subscription's processes; from `start` it is a broadcast that wakes every matching wait and trigger. `outcome: "failed"` fails a pure wait or a human step; an agent step sees it as `{{event.outcome}}`. |
 | `log(msg)` | A line in flowd's log, prefixed with the plugin name. |
-| `error(err, w?)` | Reports a problem: shown on the Plugins page (and on the watch, with `w`). The waiting entry is not failed. `error(null, w)` clears the watch's error once it works again. |
+| `error(err, w?)` | Reports a problem: shown in Settings → Plugins (and on the watch, with `w`). The waiting entry is not failed. `error(null, w)` clears the watch's error once it works again. |
 | `config` | This plugin's section of `$FLOWS_HOME/plugins.yaml`, or `{}`. |
 
 ## Lifecycle
 
 - **Loading.** At start flowd loads every `*.ts` file of the repo's `plugins/`, then of
   `$FLOWS_HOME/plugins/`, in name order. A later plugin with the same name replaces the earlier
-  one, so yours wins over a built-in. A file that fails to load is listed on the Plugins page
+  one, so yours wins over a built-in. A file that fails to load is listed in Settings → Plugins
   and by `flow check` as `plugin <file>: <error>`.
-- **No hot reload.** Restart flowd after changing a plugin: the Plugins page has a button, or
+- **No hot reload.** Restart flowd after changing a plugin: Settings → Restart flows does it, or
   `launchctl kickstart -k gui/$UID/local.flows`.
 - **`start`** runs once, after the definitions are loaded.
 - **`watch`** runs only while an entry waits or a trigger asks for the type, so a polling plugin

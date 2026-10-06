@@ -3,7 +3,7 @@
 Local agent processes built from reusable steps, run across agterm sessions, with a CLI and a
 web UI.
 
-![Runs](docs/assets/ui-runs.png)
+![Now](docs/assets/ui-runs.png)
 
 ## Why
 

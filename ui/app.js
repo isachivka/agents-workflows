@@ -122,14 +122,13 @@ function Run({ arg: id }) {
     <section class="head">
       <div>
         <div class="title-row"><h1>${runLabel(r.id)}</h1>
-          <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${t(`st.${r.status}`)}<//></div>
+          <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${s ? t("st.needs-human") : t(`st.${r.status}`)}<//></div>
         <${ProcessLine} name=${r.process} />
         <p class="muted small">${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
       </div>
       ${live && html`<div class="acts">
-        ${r.status === "paused"
-          ? html`<button class="btn" onClick=${post("/resume")}>${t("act.resume")}</button>`
-          : html`<button class="btn" onClick=${post("/pause")}>${t("act.pause")}</button>`}
+        ${r.status === "paused" && html`<button class="btn" onClick=${post("/resume")}>${t("act.resume")}</button>`}
+        ${r.status === "running" && html`<button class="btn" onClick=${post("/pause")}>${t("act.pause")}</button>`}
         <button class="btn danger" onClick=${stop}>${t("act.stop")}</button>
       </div>`}
     </section>
@@ -180,11 +179,11 @@ function Decide({ r, s, d, post, setErr, stop }) {
         ${s === "stopped" && cur.kind === "agent" && html`<div class="opt"><h4>${t("act.respawn")}</h4><p class="muted small">${t("why.respawn")}</p>
           <button class="btn" onClick=${() => { if (confirm(t("confirm.respawn", { role: cur.role }))) post(`/roles/${enc(cur.role)}/respawn`)(); }}>${t("act.respawn")}</button></div>`}
         ${terminal && html`<div class="opt"><h4>${t("act.sortYourself")}</h4><p class="muted small">${t("why.terminal")}</p>${terminal}</div>`}
-      </div>
-      <div class="decide-foot">
-        <${OtherOptions} r=${r} cur=${cur} post=${post} />
-        <button class="btn danger" onClick=${stop}>${t("act.stopRun")}</button>
       </div>`}
+    ${cur && html`<div class="decide-foot">
+      <${OtherOptions} r=${r} cur=${cur} post=${post} />
+      <button class="btn danger" onClick=${stop}>${t("act.stopRun")}</button>
+    </div>`}
   </section>`;
 }
 
@@ -293,7 +292,7 @@ function Agents({ r, post, setErr, live }) {
       return html`<div class="agent" key=${role}>
         <div class="agent-row"><b class="who grow">${role}</b>
           ${sid ? html`<${Pill} tone=${status === "active" ? "work" : status === "blocked" ? "you" : "calm"}>${t(`sess.${status}`)}<//>`
-            : html`<span class="muted small">${t("run.noSession")}</span>`}
+            : live && html`<span class="muted small">${t("run.noSession")}</span>`}
           ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}>${t("act.terminal")}</button>`}</div>
         ${live && html`<details class="more small"><summary>${t("run.agentMore")}</summary><div class="ov">
           <div><button class="btn" onClick=${() => { if (confirm(t("confirm.respawn", { role }))) post(`/roles/${enc(role)}/respawn`)(); }}>${t("act.respawn")}</button></div>
@@ -320,10 +319,13 @@ function History({ r, now }) {
   </section>`;
 }
 
-const defErrors = (p) => [...p.errors, ...(p.triggerErrors || []).map((e) => `trigger: ${e}`)];
+const DefErrors = ({ p }) => html`
+  ${p.errors.length > 0 && html`<div class="err-box">${[t("proc.invalid"), ...p.errors].join("\n")}</div>`}
+  ${(p.triggerErrors || []).length > 0 && html`<div class="err-box">${[t("proc.triggerErrors"), ...p.triggerErrors].join("\n")}</div>`}`;
 
 function Processes() {
   const { data, error } = useData("/api/processes");
+  const { data: runs } = useData("/api/runs");
   if (!data) return html`<${Loading} error=${error} />`;
   return html`
     <section class="head"><div><h1>${t("nav.processes")}</h1><p class="lead">${t("procs.lead")}</p></div></section>
@@ -332,11 +334,15 @@ function Processes() {
       <h3><a href="#/process/${enc(p.name)}">${p.name}</a></h3>
       ${p.description && html`<p class="muted">${p.description}</p>`}
       ${p.valid && html`<p class="small muted">${tn("proc.steps", p.entries.length)} · ${processFacts(p).join(" · ")}</p>`}
-      ${defErrors(p).length > 0 && html`<div class="err-box">${[t("proc.invalid"), ...defErrors(p)].join("\n")}</div>`}
+      <${DefErrors} p=${p} />
       <div class="acts">
         ${p.valid && html`<button class="btn primary" onClick=${() => go("start", p.name)}>${t("act.start")}</button>`}
         <a class="btn" href="#/process/${enc(p.name)}">${t("act.details")}</a>
-        ${p.openRuns.map((rid) => html`<a class="btn quiet" href="#/run/${enc(rid)}">${runLabel(rid)}</a>`)}
+        ${p.openRuns.map((rid) => {
+          const r = (runs || []).find((x) => x.id === rid);
+          const d = r && describeRun(r);
+          return html`<a class="btn quiet" href="#/run/${enc(rid)}">${runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+        })}
       </div>
     </article>`)}</div>
     <${NewProcess} />`;
@@ -369,7 +375,7 @@ function ProcessView({ arg: name, sub }) {
         <a class="btn quiet" href="#/process/${enc(p.name)}/edit">${t("act.edit")}</a>
       </div>
     </section>
-    ${defErrors(p).length > 0 && html`<div class="err-box">${[t("proc.invalid"), ...defErrors(p)].join("\n")}</div>`}
+    <${DefErrors} p=${p} />
     ${p.openRuns.length > 0 && html`<section><h2>${t("proc.openRuns")}</h2><div class="acts">
       ${p.openRuns.map((rid) => {
         const r = (runs || []).find((x) => x.id === rid);
@@ -432,7 +438,7 @@ function StartForm({ arg: name }) {
         <option value="">${t("start.newTerminal")}</option>
         ${(sessions || []).map((s) => html`<option value=${s.id}>${sessionLabel(s)}</option>`)}
       </select></label>`)}</div>`}
-    ${!p.valid && html`<div class="err-box">${[t("proc.invalid"), ...defErrors(p)].join("\n")}</div>`}
+    <${DefErrors} p=${p} />
     <${Err} msg=${err} />
     <div class="acts">${p.valid && html`<button class="btn primary" onClick=${start}>${t("act.start")}</button>`}
       <button class="btn quiet" onClick=${() => go("process", name)}>${t("act.cancel")}</button></div>`;

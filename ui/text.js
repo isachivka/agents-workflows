@@ -53,8 +53,8 @@ const EN = {
   "run.howProcess": "How the process works",
   "sess.active": "working", "sess.completed": "free", "sess.idle": "free", "sess.blocked": "asks for permission",
   "sess.closed": "closed", "sess.unknown": "unknown",
-  "branch.back": "If it fails → back to step {i}", "branch.goto": "If it fails → step {i}",
-  "branch.retry": "If it fails → it tries again", "branch.after": "Then → step {i}",
+  "branch.back": "If it fails → back to “{step}”", "branch.goto": "If it fails → “{step}”",
+  "branch.retry": "If it fails → it tries again", "branch.after": "Then → “{step}”",
   "proc.all": "All processes", "proc.repeat": "Repeats in rounds", "proc.oneRun": "One run at a time",
   "proc.maxRuns.one": "Up to {n} run at once", "proc.maxRuns.other": "Up to {n} runs at once",
   "proc.manual": "Started by hand", "proc.trigger": "Starts by itself on {what}", "proc.cron": "Starts on schedule {cron}",
@@ -62,7 +62,7 @@ const EN = {
   "proc.youDo": "does the human steps", "proc.how": "How it goes", "proc.again": "Then it starts again with a new round.",
   "proc.usedIn": "Also used in: {list}.", "proc.usedNowhere": "Used only here.",
   "proc.steps.one": "{n} step", "proc.steps.other": "{n} steps", "proc.new": "New process",
-  "proc.invalid": "This process has errors and cannot start:", "proc.told": "What the agent is told",
+  "proc.invalid": "This process has errors and cannot start:", "proc.triggerErrors": "Its automatic starts do not work:", "proc.told": "What the agent is told",
   "proc.toldHuman": "What is asked of you", "proc.missing": "There is no process {name}.",
   "procs.lead": "What your agents can do. Open a process to see how it goes.", "procs.empty": "No processes yet.",
   "start.title": "Start {name}", "start.newTerminal": "Open a new terminal (recommended)", "start.who": "Terminal for {role}",
@@ -126,8 +126,8 @@ const RU = {
   "run.howProcess": "Как устроен процесс",
   "sess.active": "работает", "sess.completed": "свободен", "sess.idle": "свободен", "sess.blocked": "ждёт разрешения",
   "sess.closed": "закрыт", "sess.unknown": "неизвестно",
-  "branch.back": "Не получилось → обратно к шагу {i}", "branch.goto": "Не получилось → шаг {i}",
-  "branch.retry": "Не получилось → пробует снова", "branch.after": "Потом → шаг {i}",
+  "branch.back": "Не получилось → обратно к «{step}»", "branch.goto": "Не получилось → «{step}»",
+  "branch.retry": "Не получилось → пробует снова", "branch.after": "Потом → «{step}»",
   "proc.all": "Все процессы", "proc.repeat": "Повторяется по кругу", "proc.oneRun": "Один запуск за раз",
   "proc.maxRuns.one": "До {n} запуска одновременно", "proc.maxRuns.few": "До {n} запусков одновременно",
   "proc.maxRuns.many": "До {n} запусков одновременно", "proc.maxRuns.other": "До {n} запуска одновременно",
@@ -136,7 +136,7 @@ const RU = {
   "proc.youDo": "делаешь шаги человека", "proc.how": "Как он идёт", "proc.again": "Потом всё начинается заново — новый круг.",
   "proc.usedIn": "Ещё используется в: {list}.", "proc.usedNowhere": "Больше нигде не используется.",
   "proc.steps.one": "{n} шаг", "proc.steps.few": "{n} шага", "proc.steps.many": "{n} шагов", "proc.steps.other": "{n} шага",
-  "proc.new": "Новый процесс", "proc.invalid": "В процессе ошибки, запустить его нельзя:", "proc.told": "Что поручено агенту",
+  "proc.new": "Новый процесс", "proc.invalid": "В процессе ошибки, запустить его нельзя:", "proc.triggerErrors": "Автозапуск не работает:", "proc.told": "Что поручено агенту",
   "proc.toldHuman": "Что нужно от тебя", "proc.missing": "Процесса {name} нет.",
   "procs.lead": "Что умеют делать твои агенты. Открой процесс, чтобы увидеть, как он идёт.", "procs.empty": "Процессов пока нет.",
   "start.title": "Запустить {name}", "start.newTerminal": "Открыть новый терминал (рекомендуется)", "start.who": "Терминал для {role}",
@@ -208,13 +208,13 @@ export function entryPhrase(e) {
 /** Where an entry leads besides "next": its failure route and its explicit jump. */
 export function entryBranch(e, plan) {
   const num = (id) => plan.findIndex((x) => x.id === id) + 1;
+  const name = (id) => entryPhrase(plan.find((x) => x.id === id));
   const out = [];
   if (e.onFail === "retry") out.push(t("branch.retry"));
   else if (e.onFail && typeof e.onFail === "object") {
-    const to = num(e.onFail.goto);
-    out.push(t(to < num(e.id) ? "branch.back" : "branch.goto", { i: to }));
+    out.push(t(num(e.onFail.goto) < num(e.id) ? "branch.back" : "branch.goto", { step: name(e.onFail.goto) }));
   }
-  if (e.after) out.push(t("branch.after", { i: num(e.after.goto) }));
+  if (e.after) out.push(t("branch.after", { step: name(e.after.goto) }));
   return out;
 }
 
@@ -273,7 +273,8 @@ export function eventSentence(e, plan) {
   const note = e.data && e.data.note;
   switch (e.type) {
     case "entry.delivered": return t("evs.delivered", { role });
-    case "flow.step.done": return t(note ? "evs.doneNote" : "evs.done", { role, note });
+    case "flow.step.done": if (entry && entry.kind === "action") return entryPhrase(entry);
+      return t(note ? "evs.doneNote" : "evs.done", { role, note });
     case "flow.step.failed": return t(note ? "evs.failedNote" : "evs.failed", { role, note });
     case "run.set": return t("evs.set");
     case "run.start": return t("evs.start");

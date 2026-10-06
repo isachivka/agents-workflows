@@ -65,14 +65,21 @@ export function useRoute() {
 
 export const go = (...parts) => { location.hash = `#/${parts.map(enc).join("/")}`; };
 /** Runs an action. A failure goes to `onError` to be shown inline; without one (the editors), to alert(). */
-export const attempt = (fn, onError) => async (...args) => {
-  try {
-    if (onError) onError(null);
-    await fn(...args);
-  } catch (e) {
-    if (onError) onError(e.message);
-    else alert(e.message);
-  }
+export const attempt = (fn, onError) => {
+  let busy = false; // a double click must not post twice
+  return async (...args) => {
+    if (busy) return;
+    busy = true;
+    try {
+      if (onError) onError(null);
+      await fn(...args);
+    } catch (e) {
+      if (onError) onError(e.message);
+      else alert(e.message);
+    } finally {
+      busy = false;
+    }
+  };
 };
 export const focus = (sid, onError) => attempt(() => api("POST", `/api/sessions/${enc(sid)}/focus`), onError);
 export const isUrl = (v) => /^https?:\/\//.test(String(v));

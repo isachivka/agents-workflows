@@ -68,7 +68,7 @@ From the installed copy of this skill, the repo is
   `from: requested` (or logins) to wait for the reviewer. A pure `gh.review` wait (no step) also
   needs `only: decisions`, or a comment closes it as done. See `$REPO/docs/plugins.md`.
 - `gh.checks` and `gh.review` need a PR, so they cannot be triggers: start on CI with `gh.ci`.
-  A trigger that cannot work shows its error under the process (UI) and on the Plugins page.
+  A trigger that cannot work shows its error under the process (UI) and in Settings → Plugins.
 - A trigger's `with` takes plain values, no templates: there is no run yet. A trigger watches a
   repo, never one PR (`with.pr` is refused).
 - PR titles, branches and authors come from whoever opened the PR: on a repo outsiders can open

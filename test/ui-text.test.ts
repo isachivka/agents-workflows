@@ -120,10 +120,10 @@ test("progress counts main entries and places a detour after the last finished o
 
 test("branch lines say where an entry leads besides next", () => {
   T.setLang("en");
-  const plan = [entry("impl"), entry("review", { onFail: { goto: "impl" } }), entry("ci", { kind: "wait", onFail: { goto: "fix" } }),
+  const plan = [entry("impl"), entry("review", { onFail: { goto: "impl" } }), entry("ci", { kind: "wait", waitFor: "gh.checks", onFail: { goto: "fix" } }),
     entry("fix", { detour: true, after: { goto: "ci" } }), entry("x", { onFail: "retry" })];
   assert.deepEqual(plan.map((e) => T.entryBranch(e, plan)),
-    [[], ["If it fails → back to step 1"], ["If it fails → step 4"], ["Then → step 3"], ["If it fails → it tries again"]]);
+    [[], ["If it fails → back to “Do impl”"], ["If it fails → “Do fix”"], ["Then → “Waiting for GitHub checks”"], ["If it fails → it tries again"]]);
 });
 
 test("events become short sentences; the rest stay in the full history", () => {
@@ -133,6 +133,8 @@ test("events become short sentences; the rest stay in the full history", () => {
   assert.equal(T.eventSentence(ev("entry.delivered", { entry: "b" }), plan), "dev got the task");
   assert.equal(T.eventSentence(ev("flow.step.done", { data: { entry: "b", note: "did it" } }), plan), "dev finished: “did it”");
   assert.equal(T.eventSentence(ev("flow.step.done", { data: { entry: "m" } }), plan), "You finished");
+  const act = [entry("lead", { kind: "action", do: "clear", role: "lead" })];
+  assert.equal(T.eventSentence(ev("flow.step.done", { data: { entry: "lead" } }), act), "lead starts fresh");
   assert.equal(T.eventSentence(ev("flow.step.failed", { data: { entry: "b", note: "red" } }), plan), "dev failed: “red”");
   assert.equal(T.eventSentence(ev("gh.checks", { entry: "ci", outcome: "failed" }), plan), "GitHub checks: failed");
   assert.equal(T.eventSentence(ev("run.set"), plan), "Run details updated");

@@ -90,4 +90,4 @@ event afterwards.
 
 ## Static files
 
-Any other `GET` outside `/api/` serves a file from `ui/` (`/` is `index.html`).
+Any other `GET` outside `/api/` serves a file from `ui/` (`/` is `index.html`). Served types: html, js, css, svg, json, png, ico, webmanifest, woff2.

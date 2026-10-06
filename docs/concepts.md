@@ -108,8 +108,8 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   without a report is reminded as usual. Each `flow wait` resets the reminder count, so a step may
   wait legitimately any number of times. A turn agterm never sees (no `active`) does not use the
   wait up.
-- A wait shows on the run: `waiting since <time>: <note>` in the run page's entry panel and in
-  `flow show`, `waiting: <note>` in the runs list and `flow ls`. With `--human` the wait is on a
+- A wait shows on the run: `waiting since <time>: <note>` on the run page (the run's current step) and in
+  `flow show`, `waiting: <note>` on the Now page and in `flow ls`. With `--human` the wait is on a
   person and the run is listed under "Waiting for you".
 - A line that reaches an agent must start its turn. If the session has not gone `active` 2 minutes
   after a nudge or a reminder was delivered (and the step has no `flow wait`), the run stops for
@@ -186,4 +186,4 @@ interest are subscriptions:
   Nothing is caught up after flowd was down: a restart starts from a new baseline.
 - `flow.*` and `signal.*` events need no plugin and no subscription. A trigger whose plugin cannot
   serve it (for example `gh.checks`, which needs a PR) shows its error under the process and on
-  the Plugins page.
+  Settings → Plugins.
