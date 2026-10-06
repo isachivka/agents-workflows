@@ -161,13 +161,28 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .decide-foot { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 20px; }
 @media (max-width: 640px) { .decide { padding: 18px; } }
 
-/* legacy: the old Runs, Run and Processes screens until Tasks 6–8 replace them */
-.st { padding: 1px 7px; border-radius: 10px; background: var(--chip); font-size: 12px; }
-.reason { color: var(--you-text); font-size: 13px; }
-.plan { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.plan li { padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--box); cursor: pointer; }
-.plan li.cur { border-color: var(--accent); }
-.panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--box); margin: 10px 0; }
+/* processes */
+.facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.fact { padding: 6px 12px; border-radius: 10px; background: var(--box); border: 1px solid var(--line); font-size: 14px; }
+.ppl { display: flex; flex-wrap: wrap; gap: 10px; }
+.person { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: var(--box); border: 1px solid var(--line); }
+.person small { display: block; color: var(--muted); font-size: 13px; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pstep { background: var(--box); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; grid-template-columns: 28px 36px minmax(0, 1fr); gap: 12px; align-items: start; }
+.pstep.sys { background: transparent; border-style: dashed; }
+.pstep.det { border-style: dashed; }
+.num { font-weight: 700; color: var(--faint); padding-top: 6px; text-align: right; }
+.dot.ag { background: var(--accent-soft); color: var(--accent-text); }
+.dot.hu { background: var(--you-soft); color: var(--you-text); }
+.dot.wt { background: var(--chip); color: var(--muted); }
+.dot.sy { color: var(--faint); }
+.branch { color: var(--muted); }
+.loop { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 10px 16px; }
+.form { gap: 16px; }
+@media (max-width: 640px) {
+  .pstep { grid-template-columns: 36px minmax(0, 1fr); }
+  .pstep .num { display: none; }
+}
 
 @media (max-width: 640px) {
   h1 { font-size: 26px; }

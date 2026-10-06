@@ -320,52 +320,121 @@ function History({ r, now }) {
   </section>`;
 }
 
+const defErrors = (p) => [...p.errors, ...(p.triggerErrors || []).map((e) => `trigger: ${e}`)];
+
 function Processes() {
   const { data, error } = useData("/api/processes");
-  const [name, setName] = useState("");
   if (!data) return html`<${Loading} error=${error} />`;
   return html`
-    <div class="bar"><h1 style="flex:1">Processes</h1>
-      <input placeholder="new-process-name" value=${name} onInput=${(e) => setName(e.target.value.trim())} />
-      <button disabled=${!/^[a-z0-9][a-z0-9-]*$/.test(name)} onClick=${() => go("process", name, "edit")}>New</button>
+    <section class="head"><div><h1>${t("nav.processes")}</h1><p class="lead">${t("procs.lead")}</p></div></section>
+    ${data.length === 0 && html`<p class="muted">${t("procs.empty")}</p>`}
+    <div class="stack">${data.map((p) => html`<article class="box" key=${p.name}>
+      <h3><a href="#/process/${enc(p.name)}">${p.name}</a></h3>
+      ${p.description && html`<p class="muted">${p.description}</p>`}
+      ${p.valid && html`<p class="small muted">${tn("proc.steps", p.entries.length)} · ${processFacts(p).join(" · ")}</p>`}
+      ${defErrors(p).length > 0 && html`<div class="err-box">${t("proc.invalid")}\n${defErrors(p).join("\n")}</div>`}
+      <div class="acts">
+        ${p.valid && html`<button class="btn primary" onClick=${() => go("start", p.name)}>${t("act.start")}</button>`}
+        <a class="btn" href="#/process/${enc(p.name)}">${t("act.details")}</a>
+        ${p.openRuns.map((rid) => html`<a class="btn quiet" href="#/run/${enc(rid)}">${runLabel(rid)}</a>`)}
+      </div>
+    </article>`)}</div>
+    <${NewProcess} />`;
+}
+
+function NewProcess() {
+  const [name, setName] = useState("");
+  return html`<details class="more"><summary>${t("proc.new")}</summary><div class="acts" style="margin-top:10px">
+    <input placeholder="my-process" value=${name} onInput=${(e) => setName(e.target.value.trim())} />
+    <button class="btn" disabled=${!/^[a-z0-9][a-z0-9-]*$/.test(name)} onClick=${() => go("process", name, "edit")}>${t("act.create")}</button>
+  </div></details>`;
+}
+
+function ProcessView({ arg: name, sub }) {
+  const { data, error } = useData("/api/processes");
+  const { data: steps } = useData("/api/steps", false);
+  const { data: runs } = useData("/api/runs");
+  if (sub === "edit") return html`<${ProcessEditor} arg=${name} />`;
+  if (!data) return html`<${Loading} error=${error} />`;
+  const p = data.find((x) => x.name === name);
+  if (!p) return html`<p class="err-box">${t("proc.missing", { name })}</p>`;
+  const human = p.entries.some((e) => e.role === "human");
+  return html`
+    <a class="back small" href="#/processes">← ${t("proc.all")}</a>
+    <section class="head">
+      <div><h1>${p.name}</h1>${p.description && html`<p class="lead">${p.description}</p>`}
+        ${p.valid && html`<div class="facts">${processFacts(p).map((f) => html`<span class="fact">${f}</span>`)}</div>`}</div>
+      <div class="acts">
+        ${p.valid && html`<button class="btn primary" onClick=${() => go("start", p.name)}>${t("act.start")}</button>`}
+        <a class="btn quiet" href="#/process/${enc(p.name)}/edit">${t("act.edit")}</a>
+      </div>
+    </section>
+    ${defErrors(p).length > 0 && html`<div class="err-box">${t("proc.invalid")}\n${defErrors(p).join("\n")}</div>`}
+    ${p.openRuns.length > 0 && html`<section><h2>${t("proc.openRuns")}</h2><div class="acts">
+      ${p.openRuns.map((rid) => {
+        const r = (runs || []).find((x) => x.id === rid);
+        const d = r && describeRun(r);
+        return html`<a class="btn" href="#/run/${enc(rid)}">${runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+      })}</div></section>`}
+    ${(p.roles.length > 0 || human) && html`<section><h2>${t("proc.who")}</h2><div class="ppl">
+      ${p.roles.map((role) => html`<div class="person"><span class="dot ag"><${Icon} name="agent" /></span><span><b>${role}</b><small>${t("proc.agent")}</small></span></div>`)}
+      ${human && html`<div class="person"><span class="dot hu"><${Icon} name="you" /></span><span><b>${t("You")}</b><small>${t("proc.youDo")}</small></span></div>`}
+    </div></section>`}
+    ${p.entries.length > 0 && html`<section><h2>${t("proc.how")}</h2>
+      <ol class="steps">${p.entries.map((e, i) => html`<${ProcessEntry} e=${e} i=${i} plan=${p.entries} steps=${steps || []} process=${p.name} key=${e.id} />`)}</ol>
+      ${p.repeat && html`<p class="loop"><${Icon} name="again" />${t("proc.again")}</p>`}
+    </section>`}`;
+}
+
+function ProcessEntry({ e, i, plan, steps, process }) {
+  const icon = e.kind === "human" ? "you" : e.kind === "wait" ? "wait" : e.kind === "action" ? "again" : "agent";
+  const dot = e.kind === "human" ? "hu" : e.kind === "agent" ? "ag" : e.kind === "wait" ? "wt" : "sy";
+  const step = e.step && steps.find((s) => s.id === e.step);
+  return html`<li class="pstep ${e.kind === "action" ? "sys" : ""} ${e.detour ? "det" : ""}">
+    <span class="num">${i + 1}</span>
+    <span class="dot ${dot}"><${Icon} name=${icon} /></span>
+    <div class="stp">
+      <span>${roleChip(e)}${entryPhrase(e)}${e.detour ? html` <${Pill} tone="calm">${t("run.onlyIfNeeded")}<//>` : ""}</span>
+      ${entryBranch(e, plan).map((b) => html`<span class="branch small">${b}</span>`)}
+      ${e.step && html`<${StepFold} id=${e.step} human=${e.kind === "human"} usedBy=${step ? step.usedBy.filter((x) => x !== process) : []} />`}
     </div>
-    <table>
-      <thead><tr><th>process</th><th>steps</th><th>triggers</th><th>open runs</th><th></th></tr></thead>
-      <tbody>${data.map((p) => html`<tr>
-        <td><a href="#/process/${enc(p.name)}">${p.name}</a>${p.repeat ? html` <span class="st">repeat</span>` : ""}
-          <div class="muted">${p.description}</div>
-          ${p.errors.length > 0 && html`<div class="err">${p.errors.join("\n")}</div>`}
-          ${(p.triggerErrors || []).length > 0 && html`<div class="err">${p.triggerErrors.map((e) => `trigger: ${e}`).join("\n")}</div>`}</td>
-        <td class="muted">${p.entries.map((e) => e.id).join(" → ")}</td>
-        <td class="muted">${p.triggers.map((t) => t.cron || t.on).join(", ") || "manual"}</td>
-        <td>${p.openRuns.map((rid) => html`<a href="#/run/${enc(rid)}">${rid}</a> `)}</td>
-        <td><button class="primary" disabled=${!p.valid} onClick=${() => go("start", p.name)}>Run…</button></td>
-      </tr>`)}</tbody>
-    </table>`;
+  </li>`;
+}
+
+function StepFold({ id, human, usedBy }) {
+  const [on, setOn] = useState(false);
+  const { data } = useData(on ? `/api/steps/${enc(id)}` : null, false);
+  return html`<details class="more" onToggle=${(ev) => setOn(ev.currentTarget.open)}>
+    <summary>${human ? t("proc.toldHuman") : t("proc.told")}</summary>
+    ${data && html`<pre class="instr">${data.body}</pre>`}
+    <p class="small muted" style="margin-top:8px">${usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")}
+      <a href="#/step/${enc(id)}">${t("act.editText")}</a></p>
+  </details>`;
 }
 
 function StartForm({ arg: name }) {
   const { data: list, error } = useData("/api/processes", false);
   const { data: sessions } = useData("/api/sessions", false);
   const [bind, setBind] = useState({});
+  const [err, setErr] = useState(null);
   if (!list) return html`<${Loading} error=${error} />`;
   const p = list.find((x) => x.name === name);
-  if (!p) return html`<p class="err">no process ${name}</p>`;
+  if (!p) return html`<p class="err-box">${t("proc.missing", { name })}</p>`;
   const start = attempt(async () => {
     const r = await api("POST", "/api/runs", { process: name, bind: clean(bind) });
     go("run", r.run);
-  });
+  }, setErr);
   return html`
-    <h1>Run ${name}</h1>
-    <p class="muted">${p.description}</p>
-    <div class="grid2">${p.roles.map((role) => html`
-      <label>${role}</label>
+    <a class="back small" href="#/process/${enc(name)}">← ${name}</a>
+    <section class="head"><div><h1>${t("start.title", { name })}</h1>${p.description && html`<p class="lead">${p.description}</p>`}</div></section>
+    ${p.roles.length > 0 && html`<div class="box form">${p.roles.map((role) => html`<label class="field">${t("start.who", { role })}
       <select value=${bind[role] || ""} onChange=${(e) => setBind({ ...bind, [role]: e.target.value })}>
-        <option value="">spawn a new session</option>
+        <option value="">${t("start.newTerminal")}</option>
         ${(sessions || []).map((s) => html`<option value=${s.id}>${sessionLabel(s)}</option>`)}
-      </select>`)}</div>
-    ${p.roles.length === 0 && html`<p class="muted">No agent roles to bind.</p>`}
-    <div class="bar"><button class="primary" onClick=${start}>Start</button><button onClick=${() => history.back()}>Cancel</button></div>`;
+      </select></label>`)}</div>`}
+    <${Err} msg=${err} />
+    <div class="acts"><button class="btn primary" onClick=${start}>${t("act.start")}</button>
+      <button class="btn quiet" onClick=${() => history.back()}>${t("act.cancel")}</button></div>`;
 }
 
 const LangSwitch = ({ lang, onLang }) => html`<div class="lang" role="group" aria-label=${t("lang.label")}>
@@ -408,7 +477,7 @@ const MARK = html`<svg class="mark" width="28" height="28" viewBox="0 0 32 32" a
   <path d="M8.5 22.5C8.5 13 23.5 19 23.5 9.5" fill="none" stroke="var(--bg)" stroke-width="2.6" stroke-linecap="round" />
   <circle cx="8.5" cy="22.5" r="3.2" fill="var(--bg)" /><circle cx="23.5" cy="9.5" r="3.2" fill="#8aa6ff" /></svg>`;
 
-const PAGES = { runs: Now, run: Run, processes: Processes, process: ProcessEditor, start: StartForm, steps: Steps, step: StepEditor, settings: Settings, plugins: Settings };
+const PAGES = { runs: Now, run: Run, processes: Processes, process: ProcessView, start: StartForm, steps: Steps, step: StepEditor, settings: Settings, plugins: Settings };
 const TAB = { runs: "now", run: "now", processes: "processes", process: "processes", start: "processes", settings: "settings", plugins: "settings", steps: "settings", step: "settings" };
 const NAV = [["now", "#/runs"], ["processes", "#/processes"], ["settings", "#/settings"]];
 
