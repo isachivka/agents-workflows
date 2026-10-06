@@ -30,8 +30,10 @@ the run's vars, the rendered prompt and how to report. Works for agent and human
 flow done [--note TEXT] [--evidence URL] [--run ID --step ENTRY] [--human]
 ```
 
-Closes the step as done and prints `recorded done`. An agent can close only its own active step,
-and only after its nudge line was typed into its session.
+Closes the step as done and prints `recorded done`. An agent can close only its own current step,
+and only after its nudge line was typed into its session. That includes its own step that failed
+and stopped the run: the agent only gets a turn then because you talked to it, so once it has done
+what you asked, its `flow done` moves the run on.
 
 ### `flow failed`
 
@@ -87,10 +89,6 @@ flow failed --human --run ID --step ENTRY --note TEXT
 Closes any current step, including a human step, from your own terminal. Quote run ids in the
 shell: `--run 'pr-loop#3'`.
 
-From the agent's own session `--run` and `--step` can be left out. That is how an agent carries
-out your decision after its `flow failed` stopped the run: you tell it how to go on, it does that
-and runs `flow done --human --note "…"`. A plain `flow done` on a failed step is refused
-(`step X is not active (failed)`).
 
 ### `flow start`
 

@@ -195,3 +195,10 @@ test("on_fail end in a repeating process starts the next iteration", () => {
   assert.equal(s.run.iteration, 2);
   assert.equal(s.run.current, "b");
 });
+
+test("an agent's done on its own failed step resumes the run: the user steered it in the session", () => {
+  const s = new Sim(LINEAR, STEPS).send({ kind: "start" }).send(rep("b", "failed", "agent", "red"));
+  assert.equal(s.run.status, "needs-human");
+  s.send(rep("b", "done", "agent", "green after the user's fix"));
+  assert.deepEqual([s.run.status, s.run.current, s.run.reason], ["running", "c", undefined]);
+});

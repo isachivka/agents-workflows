@@ -318,7 +318,9 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       const s = st(curId);
       if (input.by === "agent") {
         if (cur!.kind === "human") return fail(`${curId} is the human's step; a human closes it`);
-        if (s.status !== "active") return fail(`step ${curId} is not active (${s.status})`);
+        // its own failed step is still current only when the run stopped on it; the agent gets a
+        // turn then only because the user talks to it, so its report carries the user's decision
+        if (s.status !== "active" && s.status !== "failed") return fail(`step ${curId} is not active (${s.status})`);
         if (s.deliveredAt === undefined) return fail(`step ${curId} has not reached the agent yet`);
       } else if (!["active", "waiting", "failed"].includes(s.status)) {
         return fail(`step ${curId} is ${s.status}`);

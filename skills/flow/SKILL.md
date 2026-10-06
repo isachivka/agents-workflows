@@ -32,19 +32,16 @@ session and stops the run after the third silent turn end.
 
 ## After `flow failed`
 
-Unless the step says otherwise, a failure stops the run for the user: the step stays `failed`,
-nothing new arrives, and your session stays open. The user decides, often by talking to you here.
-Then:
+A failure usually stops the run for the user: nothing new arrives and your session stays open.
+The step is still yours. When the user then talks to you about it — a hint, a different
+approach, "do it this way" — that is their decision. Do the work, and **once the step's goal is
+reached, verified as for any step, report it as usual: `flow done --note "…"`**. The run goes
+on to its next step. Do not ask the user to confirm closing it, and do not wait for them to press
+anything; say in the note what changed after the failure. If it still does not work,
+`flow failed --note "…"` again and the run stays stopped.
 
-- **The user tells you to go on** (re-run something, try another way, accept it as is): do what
-  they asked, then close the step for them with `flow done --human --note "<what was decided and
-  done>"`. The run moves to its next step. If it still fails, `flow failed --human --note "…"`:
-  the run stays stopped. Plain `flow done` is refused here (`step X is not active (failed)`):
-  only the user can reopen a failed step, so `--human` says the user's decision is behind it.
-- **The user wants the whole step again**, from its instructions: they press "Try again" in the
-  flows UI; a new `▶ flow:` line arrives.
-- **Never use `--human` on your own.** Only after the user, in this session, told you how to go
-  on. Say in the note that it was their call.
+Only if the user wants the whole step redone from its instructions do they press "Try again" in
+the flows UI; a new `▶ flow:` line arrives then.
 
 A refusal (`flow: …`, exit 1) is an answer, not a glitch. `step X has not reached the agent yet`
 means you already reported and the next step is on its way — wait for its line.

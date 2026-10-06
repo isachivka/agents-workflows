@@ -175,6 +175,9 @@ From `src/engine.ts`:
   `clear` on a role with no session) stops the run instead of looping.
 - **Human overrides**: mark the current entry done or failed (UI, or `flow done|failed --human`),
   skip it (a skip needs a reason), retry it, or go to any entry (UI or HTTP API).
+- **Back on track by talking to the agent.** An agent step that failed and stopped the run stays
+  the agent's: tell the agent in its session how to go on, and once it is done its own
+  `flow done` resumes the run at the next entry.
 
 ## Validation
 
