@@ -65,7 +65,7 @@ steps:
 
 const home = makeHome(files);
 const agterm = new FakeAgterm().addSession("L1", "D1", "L2", "D2", "L3", "D3", "W1", "W2", "A1", "A2");
-const f = new Flowd({ home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], spawnGraceMs: 0, gapMs: 0, watchDefs: false, log: () => {} });
+const f = new Flowd({ home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], spawnGraceMs: 0, gapMs: 0, watchDefs: false, claudeConfig: join(home, "no-claude.json"), log: () => {} });
 await f.init();
 
 const start = async (proc: string, bind: Record<string, string>) => {
