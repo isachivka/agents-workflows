@@ -91,7 +91,17 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 - An agent that ends its turn (session goes `active` → `completed`/`idle`) without `flow done` or
   `flow failed` gets a reminder line 30 s later. After 2 reminders the next missed turn stops the
   run. A session that is `blocked` (waiting on a permission prompt) has not ended its turn.
-- An entry's `timeout` fails it when it stays `active` or `waiting` that long. `compact` fails
+- An agent that ends its turn **on purpose** (a review runs in the background, the user is reading
+  a PR in a viewer) says so first: `flow wait --note "<what for>"`. The wait covers the end of the
+  turn it was declared in, and any repeat of that turn end (agterm can report a status twice); no
+  reminder follows. When the agent's next turn begins, the wait is used up: a turn that then ends
+  without a report is reminded as usual. Each `flow wait` resets the reminder count, so a step may
+  wait legitimately any number of times. A turn agterm never sees (no `active`) does not use the
+  wait up.
+- A wait shows on the run (`waiting since <time>: <note>` in the UI, `flow ls`, `flow show`). With
+  `--human` the wait is on a person and the run is listed under "Needs you".
+- An entry's `timeout` fails it when it stays `active` or `waiting` that long, whether or not its
+  agent declared a wait. `compact` fails
   after 10 minutes without a report. Timeouts do not run while the run is paused.
 
 ## clear and compact

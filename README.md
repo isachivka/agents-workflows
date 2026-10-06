@@ -118,8 +118,9 @@ An agent sees one line per step:
 ▶ flow: step task-review · pr-loop#3 it.2 — run `flow show` for the instructions
 ```
 
-and works with four commands: `flow show` (the instructions), `flow done --note "…"`,
-`flow failed --note "…"` and `flow set key=value`. The `flow` skill teaches an agent exactly
+and works with a few commands: `flow show` (the instructions), `flow done --note "…"`,
+`flow failed --note "…"`, `flow set key=value`, and `flow wait --note "…"` when it ends its turn
+on purpose to wait for something. The `flow` skill teaches an agent exactly
 that. The `flow-author` skill teaches an agent to write and change steps, processes, triggers and
 plugins, and to check them with `flow check`.
 

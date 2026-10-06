@@ -50,9 +50,10 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
 
 `RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
-waitingOn, roles, vars, needsYou, plan}`, where `plan` lists every entry as
-`{id, kind, role, detour, waitFor, status}` and `needsYou` is true for a `needs-human` run or one
-standing on an open human step.
+waitingOn, roles, vars, needsYou, agentWait, plan}`, where `plan` lists every entry as
+`{id, kind, role, detour, waitFor, status}`, `agentWait` is `{note, human, since}` while the
+current entry's agent declared a wait (else `null`), and `needsYou` is true for a `needs-human`
+run, one standing on an open human step, or one whose agent waits with `human: true`.
 
 ## Agents and events
 
@@ -61,6 +62,7 @@ standing on an open human step.
 | GET | `/api/show` | `?session=` or `?run=&entry=` | `{text}` |
 | POST | `/api/report` | `{session?, run?, entry?, outcome: "done"\|"failed", note?, evidence?, human?}` | `{run}`. Without `run` and `entry` the step is found from `session`. `human: true` reports as the human. |
 | POST | `/api/vars` | `{session? \| run?, vars}` | `{run}` |
+| POST | `/api/wait` | `{session? \| run+entry, note, human?}` | `{run}`. The agent ends its turn on purpose (`flow wait`); refused like `/api/report` for anything but the caller's active, delivered agent step, or without a `note`. |
 | POST | `/api/events` | `{type, run?, entry?, outcome?, data?}` | `{}` or `{run}`. Without `run` the event is a broadcast. |
 
 ## Sessions, plugins, the daemon

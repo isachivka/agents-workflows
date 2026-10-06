@@ -72,6 +72,10 @@ From the installed copy of this skill, the repo is
   PRs in, gate `gh.opened` with a label and do not let a prompt obey `{{vars.title}}`.
 - Plugin triggers fire only on what happens after flowd started watching: history, and anything
   that happened while flowd was down, never fires.
+- A step that makes the agent wait (a background job, the user in a viewer) must tell it to run
+  `flow wait --note "<what>"` (`--human` when the user acts) before ending its turn; otherwise
+  flowd reminds it and stops the run after the third silent turn end. A waiting step still has
+  its `timeout`.
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
   for the user.
 

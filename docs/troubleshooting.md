@@ -69,6 +69,15 @@ The plist and the hooks call node by its absolute path, which nvm changes with e
   `where: {conclusion: failure}` for `gh.ci`.
 - `max_runs` reached: the start is refused and `flow.trigger.skipped` is recorded.
 
+## A run stopped with "the agent ended its turn N times without flow done/failed"
+
+The agent ended its turn three times without reporting. Often it was waiting on purpose (a
+background review, the user reading a PR) but did not say so.
+
+- Fix the step's prompt: before the agent ends its turn to wait, it must run
+  `flow wait --note "<what for>"` (`--human` when the user acts).
+- Then move the run on from the run page: **retry** the step, or **done** if the work is finished.
+
 ## A process shows as invalid
 
 - Check: `flow check <name>` prints every problem, one per line. The messages are explained in

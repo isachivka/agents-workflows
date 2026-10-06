@@ -19,6 +19,14 @@ when a step is yours. Then:
 4. Values later steps need go into run variables: `flow set pr=<url>`, `flow set worktree=<path>`.
 5. After reporting, end your turn. The next step arrives as a new `▶ flow:` line.
 
+Never end a turn without one of `flow done`, `flow failed` or `flow wait`. When the step has you
+wait for something before you can finish it (a job you sent to the background, the user reading
+or picking something in a viewer), run `flow wait --note "<what you are waiting for>"` first, and
+add `--human` when the user has to act. Then end your turn. When you come back, finish with
+`flow done`/`flow failed`, or wait again with a fresh note: each wait covers one turn end. Always
+give the note — it is what the user sees. Without `flow wait`, flowd types reminders into your
+session and stops the run after the third silent turn end.
+
 A refusal (`flow: …`, exit 1) is an answer, not a glitch. `step X has not reached the agent yet`
 means you already reported and the next step is on its way — wait for its line.
 If `flow show` says no step is active for this session, do nothing and tell the user.
