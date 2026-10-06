@@ -42,11 +42,26 @@ Without the new options `gh.review` behaves as today.
 |---|---|---|
 | `from` | `requested`, a login, or several logins separated by commas | Whose activity counts. `requested`: every **user** ever requested as a reviewer on the PR (from its timeline, so it includes people who already reviewed), teams excluded. Absent: anyone (today). |
 | `only` | `decisions` | Count reviews with state `APPROVED` or `CHANGES_REQUESTED`; ignore `COMMENTED` reviews and conversation comments. Absent: reviews of any state and comments count. |
-| `already` | `true` | On the first poll, if the latest review of a counted person is a decision, emit it at once instead of taking it as the baseline. |
+| `already` | `true` | On the first poll, if the latest review of a counted person is a decision, emit it at once instead of taking it as the baseline — unless it is the review that already woke this entry (see below). |
 
 Always, when `from` is set: authors of type `Bot` and the PR's author are ignored. (Without `from`
 nothing is filtered, as today.) A trigger subscription cannot use `gh.review`: it needs a PR, as
 before.
+
+### Not waking twice on the same review
+
+A step that loops on the review (`on_fail: retry`: the agent fixes, pushes, answers, and fails
+with "waiting for re-review" to re-arm) would, with `already`, find the same decision on every
+re-arm and fire at once, until its retries run out. So a watch carries what last woke its entry:
+
+- `Watch` gains `previous?: { type: string; data: Dict }` — the event that last woke this entry in
+  this iteration (the engine keeps it in the entry's state across `retry`; `goto`, a new iteration
+  and a fresh entry start without it). Plugin-agnostic: any plugin can use it to avoid re-firing.
+- gh puts the review's or comment's node `id` in the event data; `already` skips a decision whose
+  `id` equals `previous.data.id`.
+
+The normal baseline needs no help: a re-armed watch takes every existing id as seen and fires only
+on newer activity.
 
 ### What is polled
 
@@ -65,8 +80,8 @@ counts too.
 
 ### The event
 
-`data`: `pr`, `by` (login), `kind` (`review` or `comment`), `state` (review state, empty for a
-comment), `decision` (the PR's `reviewDecision` at that poll), `url` (the review's or comment's
+`data`: `pr`, `id` (the review's or comment's node id), `by` (login), `kind` (`review` or
+`comment`), `state` (review state, empty for a comment), `decision` (the PR's `reviewDecision` at that poll), `url` (the review's or comment's
 URL), plus today's `reviews` and `comments` counts.
 `outcome`: `done` for `APPROVED`, `failed` for `CHANGES_REQUESTED`, none otherwise. A pure wait
 or a human step therefore closes on approval and takes `on_fail` on requested changes; an agent
@@ -87,7 +102,9 @@ the watch arms: `gh.review: only must be "decisions"`.
 Pure functions over recorded GraphQL answers (`test/gh.test.ts`, fake exec): requested users from
 the timeline without teams or bots; bots and the PR author ignored; `only: decisions` skips
 `COMMENTED` and comments; outcome mapping; baseline then the oldest unseen counted item;
-`already` fires on an existing decision and only then; a login list; a reviewer assigned after
+`already` fires on an existing decision and only then, and not on the decision in `previous`
+(the retry loop: changes requested, fix, re-arm → no fire; a new review → fire); the engine hands
+`previous` to a re-armed watch after `retry` and not after `goto`; a login list; a reviewer assigned after
 arming counts; no `from` keeps today's count-based behaviour and its tests unchanged. Docs:
 `plugins.md` gh section (options, data, outcome, the pure-wait note), `processes.md` recipe
 "wait for the requested reviewer", `flow-author` skill trap. Manual: one read-only GraphQL call
