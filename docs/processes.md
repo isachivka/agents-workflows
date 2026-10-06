@@ -340,6 +340,35 @@ steps:
   - {step: fix-main, role: dev}         # the prompt reads {{vars.run}}, {{vars.sha}}
 ```
 
+**Close the agent's terminal when the work is done.** Closing is just the last thing a step
+tells the agent to do, after it reports. Each role is spawned into a workspace named after the
+process, so when the process runs one run at a time the workspace can go entirely:
+
+```yaml
+description: Rescan the docs and push them, then clean up
+cwd: ~/code/my-repo
+roles:
+  writer: {spawn: "claude --dangerously-skip-permissions"}
+steps:
+  - {step: rescan, role: writer}
+  - {step: push-and-close, role: writer}
+```
+
+```markdown
+---
+summary: Push the docs, then close this terminal
+---
+Push the commit. Pushed: `flow done --note "<sha>"`. Could not push: `flow failed --note "<the
+error>"` and leave the session open, so a person can see what happened.
+
+After a successful `flow done`, run as your very last command:
+`agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"`
+```
+
+The run is over by then, so flowd takes the closed session calmly. With `max_runs` above 1 several
+runs share the workspace: close only your own session instead,
+`agtermctl session close --target "$AGTERM_SESSION_ID"`.
+
 The shipped examples are in [`examples/`](../examples/): `demo` (an agent step, compact, clear, a signal wait
 and a human step, for a first run), `pr-loop` (two roles, CI, a human merge, a detour) and
 `merged-followup` (started by a merge into main).
