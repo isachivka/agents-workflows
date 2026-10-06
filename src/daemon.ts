@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, watch as fsWatch, type FSWatcher } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
@@ -24,6 +25,8 @@ export interface FlowdOptions {
   watchDefs?: boolean;
   retryBaseMs?: number;
   log?: (m: string) => void;
+  /** Claude Code's config, read to tell whether a spawn's folder is trusted */
+  claudeConfig?: string;
 }
 
 export interface Result { error?: string; run?: string }
@@ -363,6 +366,8 @@ export class Flowd {
       case "role.failed":
       case "run.halt":
         return this.apply(run, { kind: "halt", reason: String(d.reason ?? "role failed") });
+      case "entry.start-blocked":
+        return this.apply(run, { kind: "start-blocked", entry, reason: String(d.reason ?? "") });
     }
     return this.route(e);
   }
@@ -541,6 +546,14 @@ export class Flowd {
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
       if (row.entry_id) await this.submit({ type: "entry.delivered", run: run.id, entry: row.entry_id, data: {}, source: "flowd" });
+      // Claude stops at its folder-trust dialog before it reads the first line. The user answers
+      // it in the session; the run resumes on the agent's first active.
+      if (row.entry_id && basename(role.spawn.trim().split(/\s+/)[0]) === "claude" && !this.claudeTrusts(cwd)) {
+        await this.submit({
+          type: "entry.start-blocked", run: run.id, entry: row.entry_id, source: "flowd",
+          data: { reason: `${row.entry_id}: Claude Code has not trusted ${cwd} yet — open the session and choose "Yes, I trust this folder"` },
+        });
+      }
     } catch (e) {
       this.log(`spawn ${run.id} ${row.role}: ${msg(e)}`);
       if (this.store.bumpOutbox(row.id) >= 3) {
@@ -550,6 +563,24 @@ export class Flowd {
     } finally {
       this.spawning.delete(key);
     }
+  }
+
+  /** Read-only. No config, or one that cannot be read, is no reason to stop a run. */
+  private claudeTrusts(cwd: string): boolean {
+    const path = this.o.claudeConfig ?? join(process.env.CLAUDE_CONFIG_DIR ?? homedir(), ".claude.json");
+    let projects: Record<string, { hasTrustDialogAccepted?: boolean }>;
+    try {
+      projects = JSON.parse(readFileSync(path, "utf8")).projects ?? {};
+    } catch {
+      return true;
+    }
+    let real = cwd;
+    try {
+      real = realpathSync(cwd);
+    } catch {
+      // a folder that does not exist yet: compare the path as written
+    }
+    return [cwd, real].some((p) => projects[p]?.hasTrustDialogAccepted === true);
   }
 
   show(q: { session?: string; run?: string; entry?: string }): { text: string } | { error: string } {

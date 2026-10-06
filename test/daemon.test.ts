@@ -560,3 +560,44 @@ test("a wait declared while the agent's session is blocked or mid-turn parks on 
   assert.equal(B.f.runSummary(run).needsYou, true);
   await B.f.close();
 });
+
+const TRUST_REASON = 'b: Claude Code has not trusted /tmp yet — open the session and choose "Yes, I trust this folder"';
+const claudeConfig = (home: string, trusted: string[]) => {
+  const path = join(home, "claude.json");
+  writeFileSync(path, JSON.stringify({ projects: Object.fromEntries(trusted.map((p) => [p, { hasTrustDialogAccepted: true }])) }));
+  return path;
+};
+
+test("a claude spawn into a folder Claude has not trusted stops the run with the reason; its first active resumes it", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const { f } = await startFlowd(home, { claudeConfig: claudeConfig(home, ["/elsewhere"]) });
+  await f.submit(start("p"));
+  await settle(f);
+  let run = f.store.getRun("p#1")!;
+  assert.deepEqual([run.status, run.reason, run.startBlocked], ["needs-human", TRUST_REASON, "b"]);
+  await f.submit(status("S1", "active"));
+  run = f.store.getRun("p#1")!;
+  assert.deepEqual([run.status, run.startBlocked], ["running", undefined]);
+  await f.close();
+});
+
+test("a trusted folder, a non-claude spawn, or no Claude config is not stopped", async () => {
+  const trusted = makeHome({ ...STEP_FILES, ...TWO });
+  const a = await startFlowd(trusted, { claudeConfig: claudeConfig(trusted, ["/tmp"]) });
+  await a.f.submit(start("p"));
+  await settle(a.f);
+  assert.equal(a.f.store.getRun("p#1")!.status, "running");
+  await a.f.close();
+  const codex = makeHome({ ...STEP_FILES, "processes/p.yaml": "description: d\ncwd: /tmp\nroles: {pm: {spawn: codex}}\nsteps:\n  - {step: b, role: pm}\n" });
+  const b = await startFlowd(codex, { claudeConfig: claudeConfig(codex, []) });
+  await b.f.submit(start("p"));
+  await settle(b.f);
+  assert.equal(b.f.store.getRun("p#1")!.status, "running");
+  await b.f.close();
+  const none = makeHome({ ...STEP_FILES, ...TWO });
+  const c = await startFlowd(none);
+  await c.f.submit(start("p"));
+  await settle(c.f);
+  assert.equal(c.f.store.getRun("p#1")!.status, "running");
+  await c.f.close();
+});
