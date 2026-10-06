@@ -14,10 +14,6 @@ const Loading = ({ error }) => (error ? html`<p class="err-box">${error.message}
 const Pill = ({ tone, children }) => html`<span class="pill ${tone}">${children}</span>`;
 const isOpen = (r) => r.status !== "done" && r.status !== "stopped";
 
-// the old screens, until Tasks 6-8 replace them
-const ICON = { pending: "·", waiting: "⏳", active: "▶", done: "✓", failed: "✗", skipped: "–" };
-const when = (ts) => new Date(ts).toLocaleString();
-
 /** The PR a human step is about: a var named pr, else the first link among the vars. */
 const firstUrl = (vars) => (vars.pr && isUrl(vars.pr) ? vars.pr : Object.values(vars).find(isUrl) || null);
 
@@ -113,89 +109,215 @@ function FinishedRow({ r, now }) {
 
 function Run({ arg: id }) {
   const { data: r, error } = useData(`/api/runs/${enc(id)}`);
-  const [sel, setSel] = useState(null);
+  const now = useNow();
+  const [err, setErr] = useState(null);
   if (!r) return html`<${Loading} error=${error} />`;
-  const post = (path, body = {}) => attempt(() => api("POST", `/api/runs/${enc(id)}${path}`, body));
-  const ask = (path, question) => attempt(async () => {
-    const note = prompt(question);
-    if (note === null) return;
-    await api("POST", `/api/runs/${enc(id)}${path}`, { note });
-  });
-  const open = r.status !== "done" && r.status !== "stopped";
-  const selected = sel || r.current;
+  const post = (path, body = {}) => attempt(() => api("POST", `/api/runs/${enc(id)}${path}`, body), setErr);
+  const d = describeRun(r);
+  const live = isOpen(r);
+  const s = live ? situation(r) : null;
+  const stop = () => { if (confirm(t("confirm.stop", { run: runLabel(r.id) }))) post("/stop")(); };
   return html`
-    <h1>${r.id} <span class="st ${r.status}">${r.status}</span> <span class="muted">iteration ${r.iteration}</span></h1>
-    ${r.reason && html`<p class="reason">${r.reason}</p>`}
-    ${open && html`<div class="bar">
-      ${r.status === "paused" ? html`<button onClick=${post("/resume")}>resume</button>` : html`<button onClick=${post("/pause")}>pause</button>`}
-      <button class="danger" onClick=${() => { if (confirm(`Stop ${r.id}?`)) post("/stop")(); }}>stop</button>
-    </div>`}
-    <ol class="plan">${r.plan.map((e) => html`
-      <li class="${e.status} ${e.id === r.current ? "cur" : ""} ${e.detour ? "detour" : ""} ${e.id === selected ? "sel" : ""}" onClick=${() => setSel(e.id)}>
-        ${e.id === r.current && r.agentWait ? "⏸" : ICON[e.status]} ${e.id}${e.kind === "human" ? " [you]" : ""}${e.waitFor ? ` ⏳ ${e.waitFor}` : ""}<small>${e.role || e.kind}</small>
-      </li>`)}</ol>
-    ${selected && html`<${EntryPanel} run=${r} id=${selected} post=${post} ask=${ask} open=${open} key=${selected} />`}
-    <h2>Roles</h2>
-    <${Roles} run=${r} post=${post} open=${open} />
-    <h2>Vars</h2>
-    ${Object.keys(r.vars).length === 0
-      ? html`<p class="muted">none</p>`
-      : html`<table><tbody>${Object.entries(r.vars).map(([k, v]) => html`<tr><td>${k}</td><td>${isUrl(v) ? html`<a href=${v} target="_blank" rel="noreferrer">${v}</a>` : v}</td></tr>`)}</tbody></table>`}
-    <h2>Events</h2>
-    <table>
-      <thead><tr><th>when</th><th>type</th><th>step</th><th>outcome</th><th>data</th></tr></thead>
-      <tbody>${r.events.map((e) => html`<tr>
-        <td class="muted">${when(e.ts)}</td><td>${e.type}</td><td>${e.entry || e.data.entry || ""}</td>
-        <td>${e.outcome || ""}</td><td class="muted"><code>${JSON.stringify(e.data).slice(0, 160)}</code></td>
-      </tr>`)}</tbody>
-    </table>`;
+    <a class="back small" href="#/runs">← ${t("nav.now")}</a>
+    <section class="head">
+      <div>
+        <div class="title-row"><h1>${runLabel(r.id)}</h1>
+          <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${t(`st.${r.status}`)}<//></div>
+        <${ProcessLine} name=${r.process} />
+        <p class="muted small">${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
+      </div>
+      ${live && html`<div class="acts">
+        ${r.status === "paused"
+          ? html`<button class="btn" onClick=${post("/resume")}>${t("act.resume")}</button>`
+          : html`<button class="btn" onClick=${post("/pause")}>${t("act.pause")}</button>`}
+        <button class="btn danger" onClick=${stop}>${t("act.stop")}</button>
+      </div>`}
+    </section>
+    <${Err} msg=${err} />
+    ${s && html`<${Decide} r=${r} s=${s} d=${d} post=${post} setErr=${setErr} stop=${stop} />`}
+    <div class="cols">
+      <section class="main-col"><h2>${t("run.howItGoes")}</h2>
+        <${Timeline} r=${r} now=${now} post=${post} setErr=${setErr} live=${live} quiet=${Boolean(s)} /></section>
+      <aside class="side-col">
+        <${Details} vars=${r.vars} />
+        <${Agents} r=${r} post=${post} setErr=${setErr} live=${live} />
+        <${History} r=${r} now=${now} />
+      </aside>
+    </div>`;
 }
 
-function EntryPanel({ run, id, post, ask, open }) {
-  const e = run.plan.find((x) => x.id === id);
-  const s = run.entries[id] || {};
-  const { data: prompt, error } = useData(e && (e.kind === "agent" || e.kind === "human") ? `/api/runs/${enc(run.id)}/entries/${enc(id)}/prompt` : null);
-  if (!e) return null;
-  const path = `/entries/${enc(id)}`;
-  const current = id === run.current;
-  return html`<section class="panel">
-    <h3>${id} <span class="muted">${e.kind}${e.role ? ` · ${e.role}` : ""} · ${s.status || "pending"} · attempts ${s.attempts || 0} · failures ${s.failures || 0}</span></h3>
-    ${s.wait && html`<p>⏸ waiting since ${new Date(s.wait.since).toLocaleString()}: ${s.wait.note}${s.wait.human ? " — on a human" : ""}</p>`}
-    ${s.note && html`<p>note: ${s.note}</p>`}
-    ${s.evidence && html`<p>evidence: ${isUrl(s.evidence) ? html`<a href=${s.evidence} target="_blank" rel="noreferrer">${s.evidence}</a>` : s.evidence}</p>`}
-    ${s.event && html`<p class="muted">woken by ${s.event.type} ${s.event.outcome || ""}</p><pre>${JSON.stringify(s.event.data, null, 2)}</pre>`}
-    ${prompt && html`<pre>${prompt.text}</pre>`}
-    ${error && html`<p class="err">${error.message}</p>`}
-    ${open && html`<div class="bar">
-      ${current && html`
-        <button class="primary" onClick=${post(`${path}/done`)}>done</button>
-        <button onClick=${ask(`${path}/failed`, "What went wrong?")}>failed</button>
-        <button onClick=${ask(`${path}/skip`, "Why skip it?")}>skip</button>
-        <button onClick=${post(`${path}/retry`)}>retry</button>`}
-      ${!current && html`<button onClick=${post(`${path}/goto`)}>go here</button>`}
-    </div>`}
+function ProcessLine({ name }) {
+  const { data } = useData("/api/processes", false);
+  const p = data && data.find((x) => x.name === name);
+  return html`<p class="muted">${p ? `${p.description} ` : ""}<a href="#/process/${enc(name)}">${t("run.howProcess")}</a></p>`;
+}
+
+function Decide({ r, s, d, post, setErr, stop }) {
+  const cur = currentEntry(r);
+  const sid = cur && cur.role && cur.role !== "human" ? r.roles[cur.role] : null;
+  const [skipping, setSkipping] = useState(false);
+  const [why, setWhy] = useState("");
+  const path = cur ? `/entries/${enc(cur.id)}` : "";
+  const terminal = sid && html`<button class=${`btn${s === "agentAsks" ? " primary" : ""}`} onClick=${focus(sid, setErr)}>
+    <${Icon} name="terminal" />${t("act.openTerminalOf", { role: cur.role })}</button>`;
+  return html`<section class="decide" aria-labelledby="decide-h">
+    <div class="decide-head">
+      <span class="decide-ic"><${Icon} name=${s === "human" ? "you" : "alert"} size=${28} /></span>
+      <div><h2 id="decide-h">${d.title}</h2>${s !== "human" && d.detail && html`<blockquote class="quote">${d.detail}</blockquote>`}</div>
+    </div>
+    ${s === "human" && cur && html`<${HumanStep} r=${r} cur=${cur} post=${post} detail=${d.detail} />`}
+    ${s === "agentAsks" && html`<div class="acts">${terminal || html`<p class="muted">${t("run.noSession")}</p>`}</div>`}
+    ${(s === "failed" || s === "stopped") && cur && html`
+      <h3>${t("run.whatToDo")}</h3>
+      <div class="opts">
+        <div class="opt rec"><h4>${t("act.retry")}</h4><p class="muted small">${t("why.retry")}</p>
+          <button class="btn primary" onClick=${post(`${path}/retry`)}>${t("act.retry")}</button></div>
+        ${s === "failed" && html`<div class="opt"><h4>${t("act.skip")}</h4><p class="muted small">${t("why.skip")}</p>
+          ${skipping
+            ? html`<label class="field small">${t("skip.reason")}<textarea rows="2" value=${why} onInput=${(e) => setWhy(e.target.value)}></textarea></label>
+                   <button class="btn" disabled=${!why.trim()} onClick=${post(`${path}/skip`, { note: why.trim() })}>${t("act.skip")}</button>`
+            : html`<button class="btn" onClick=${() => setSkipping(true)}>${t("act.skip")}…</button>`}</div>`}
+        ${s === "stopped" && cur.kind === "agent" && html`<div class="opt"><h4>${t("act.respawn")}</h4><p class="muted small">${t("why.respawn")}</p>
+          <button class="btn" onClick=${post(`/roles/${enc(cur.role)}/respawn`)}>${t("act.respawn")}</button></div>`}
+        ${terminal && html`<div class="opt"><h4>${t("act.sortYourself")}</h4><p class="muted small">${t("why.terminal")}</p>${terminal}</div>`}
+      </div>
+      <div class="decide-foot">
+        <${OtherOptions} r=${r} cur=${cur} post=${post} />
+        <button class="btn danger" onClick=${stop}>${t("act.stopRun")}</button>
+      </div>`}
   </section>`;
 }
 
-function Roles({ run, post, open }) {
+function HumanStep({ r, cur, post, detail }) {
+  const { data } = useData(`/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/prompt`, false);
+  const url = firstUrl(r.vars);
+  return html`
+    ${data && html`<pre class="instr">${data.text}</pre>`}
+    <div class="acts">
+      ${url && html`<a class=${`btn${r.waitingOn ? " primary" : ""}`} href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
+      ${r.waitingOn
+        ? html`<p class="muted">${detail}</p>`
+        : html`<button class="btn primary" onClick=${post(`/entries/${enc(cur.id)}/done`)}>${t("act.done")}</button>`}
+    </div>`;
+}
+
+function OtherOptions({ r, cur, post }) {
+  const { data: sessions } = useData("/api/sessions", false);
+  const [target, setTarget] = useState("");
+  const [sess, setSess] = useState("");
+  return html`<details class="more"><summary>${t("run.otherOptions")}</summary><div class="ov">
+    <div><button class="btn" onClick=${post(`/entries/${enc(cur.id)}/done`)}>${t("act.markDone")}</button><span class="muted small">${t("why.markDone")}</span></div>
+    <div><select value=${target} onChange=${(e) => setTarget(e.target.value)}>
+        <option value="">${t("act.goto")}</option>
+        ${r.plan.map((e, i) => html`<option value=${e.id}>${i + 1}. ${entryPhrase(e)}</option>`)}</select>
+      <button class="btn" disabled=${!target} onClick=${post(`/entries/${enc(target)}/goto`)}>${t("act.go")}</button></div>
+    ${cur.role && cur.role !== "human" && html`<div><select value=${sess} onChange=${(e) => setSess(e.target.value)}>
+        <option value="">${t("act.rebind")}</option>
+        ${(sessions || []).map((x) => html`<option value=${x.id}>${sessionLabel(x)}</option>`)}</select>
+      <button class="btn" disabled=${!sess} onClick=${post(`/roles/${enc(cur.role)}/rebind`, { session: sess })}>${t("act.go")}</button></div>`}
+  </div></details>`;
+}
+
+const roleChip = (e) => (e.role && e.kind !== "action" ? html`<b class="who">${e.role === "human" ? t("You") : e.role}</b> · ` : "");
+
+function Timeline({ r, now, post, setErr, live, quiet }) {
+  // a detour shows once it has been entered
+  const shown = r.plan.filter((e) => !e.detour || e.status !== "pending");
+  return html`<ol class="tl">${shown.map((e) => {
+    const cur = e.id === r.current;
+    const finished = e.status === "done" || e.status === "skipped";
+    const icon = finished ? "check" : e.status === "failed" ? "cross" : e.kind === "human" ? "you" : e.kind === "wait" ? "wait" : e.kind === "action" ? "again" : "agent";
+    const dot = cur ? (e.kind === "human" || e.status === "failed" ? "you" : "cur")
+      : finished ? "done" : e.status === "failed" ? "bad" : e.kind === "human" ? "you-next" : "next";
+    return html`<li key=${e.id}>
+      <span class="dot ${dot}"><${Icon} name=${icon} /></span>
+      ${cur
+        ? html`<${Current} r=${r} e=${e} now=${now} post=${post} setErr=${setErr} live=${live} quiet=${quiet} />`
+        : html`<div class="stp ${e.status === "pending" ? "next" : ""}">
+            <span>${roleChip(e)}${entryPhrase(e)}${e.status === "skipped" ? html` <span class="pill">${t("run.skipped")}</span>` : ""}</span>
+            ${e.status !== "pending" && (e.startedAt || e.note) && html`<span class="small muted">${e.startedAt ? moment(e.startedAt, now) : ""}${e.note ? ` · “${e.note}”` : ""}</span>`}
+            ${e.status === "pending" && entryBranch(e, r.plan).map((b) => html`<span class="small">${b}</span>`)}
+          </div>`}
+    </li>`;
+  })}</ol>`;
+}
+
+function Current({ r, e, now, post, setErr, live, quiet }) {
+  const [why, setWhy] = useState("");
+  const st = r.entries[e.id] || {};
+  const sid = e.role && e.role !== "human" ? r.roles[e.role] : null;
+  const since = r.agentWait ? r.agentWait.since : e.startedAt;
+  const path = `/entries/${enc(e.id)}`;
+  return html`<div class="box cur">
+    <div class="meta"><${Pill} tone="work">${t("run.now")}<//>
+      <span class="muted small">${since ? t("run.running", { d: duration(now - since) }) : ""}${st.attempts > 1 ? ` · ${t("run.attempt", { n: st.attempts })}` : ""}</span></div>
+    <h3>${roleChip(e)}${entryPhrase(e)}</h3>
+    ${r.agentWait ? html`<p class="muted">${t("run.agentWaitNote", { note: r.agentWait.note })}</p>`
+      : r.waitingOn ? html`<p class="muted">${t("wait.for", { what: eventPhrase(r.waitingOn) })}</p>`
+      : e.kind === "agent" && html`<p class="muted">${t("run.agentSilent")}</p>`}
+    ${sid && html`<div class="acts"><button class="btn primary" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: e.role })}</button></div>`}
+    ${(e.kind === "agent" || e.kind === "human") && html`<${PromptFold} run=${r.id} entry=${e.id} label=${e.kind === "agent" ? t("run.toldAgent") : t("proc.toldHuman")} />`}
+    ${live && !quiet && html`<details class="more"><summary>${t("run.stepIn")}</summary><div class="ov">
+      <div><button class="btn" onClick=${post(`${path}/done`)}>${t("act.markDone")}</button><span class="muted small">${t("why.markDone")}</span></div>
+      <div><button class="btn" onClick=${post(`${path}/retry`)}>${t("run.startAgain")}</button><span class="muted small">${t("why.restart")}</span></div>
+      <div><input class="grow" placeholder=${t("skip.reason")} value=${why} onInput=${(ev) => setWhy(ev.target.value)} />
+        <button class="btn" disabled=${!why.trim()} onClick=${post(`${path}/skip`, { note: why.trim() })}>${t("act.skip")}</button></div>
+    </div></details>`}
+  </div>`;
+}
+
+function PromptFold({ run, entry, label }) {
+  const [on, setOn] = useState(false);
+  const { data, error } = useData(on ? `/api/runs/${enc(run)}/entries/${enc(entry)}/prompt` : null, false);
+  return html`<details class="more" onToggle=${(ev) => setOn(ev.currentTarget.open)}><summary>${label}</summary>
+    ${data ? html`<pre class="instr">${data.text}</pre>` : error ? html`<p class="err-box">${error.message}</p>` : on && html`<p class="muted">${t("loading")}</p>`}
+  </details>`;
+}
+
+function Details({ vars }) {
+  const rows = Object.entries(vars);
+  return html`<section class="box"><h2>${t("run.details")}</h2>
+    ${rows.length === 0 ? html`<p class="muted small">${t("run.noDetails")}</p>`
+      : html`<dl class="dl">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${isUrl(v) ? html`<a href=${v} target="_blank" rel="noreferrer">${v}</a>` : v}</dd>`)}</dl>`}
+  </section>`;
+}
+
+function Agents({ r, post, setErr, live }) {
   const { data: sessions } = useData("/api/sessions", false);
   const [pick, setPick] = useState({});
-  return html`<table><tbody>${Object.entries(run.roles).map(([role, sid]) => html`<tr>
-    <td>${role}</td>
-    <td>${sid
-      ? html`<code>${sid.slice(0, 8)}</code> <span class="muted">${run.sessions[sid] || "unknown"}</span>`
-      : html`<span class="muted">no session — one is spawned on its next step</span>`}</td>
-    <td><div class="bar">
-      ${sid && html`<button class="jump" onClick=${focus(sid)}>open ↗</button>`}
-      ${open && html`
-        <button onClick=${post(`/roles/${enc(role)}/respawn`)}>respawn</button>
-        <select value=${pick[role] || ""} onChange=${(ev) => setPick({ ...pick, [role]: ev.target.value })}>
-          <option value="">rebind to…</option>
-          ${(sessions || []).map((x) => html`<option value=${x.id}>${sessionLabel(x)}</option>`)}
-        </select>
-        <button disabled=${!pick[role]} onClick=${post(`/roles/${enc(role)}/rebind`, { session: pick[role] })}>rebind</button>`}
-    </div></td>
-  </tr>`)}</tbody></table>`;
+  const roles = Object.entries(r.roles);
+  if (roles.length === 0) return null;
+  return html`<section class="box"><h2>${t("run.agents")}</h2>
+    ${roles.map(([role, sid]) => {
+      const status = sid ? r.sessions[sid] || "unknown" : null;
+      return html`<div class="agent" key=${role}>
+        <div class="agent-row"><b class="who grow">${role}</b>
+          ${sid ? html`<${Pill} tone=${status === "active" ? "work" : status === "blocked" ? "you" : "calm"}>${t(`sess.${status}`)}<//>`
+            : html`<span class="muted small">${t("run.noSession")}</span>`}
+          ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}>${t("act.terminal")}</button>`}</div>
+        ${live && html`<details class="more small"><summary>${t("run.agentMore")}</summary><div class="ov">
+          <div><button class="btn" onClick=${post(`/roles/${enc(role)}/respawn`)}>${t("act.respawn")}</button></div>
+          <div><select value=${pick[role] || ""} onChange=${(e) => setPick({ ...pick, [role]: e.target.value })}>
+              <option value="">${t("act.rebind")}</option>
+              ${(sessions || []).map((x) => html`<option value=${x.id}>${sessionLabel(x)}</option>`)}</select>
+            <button class="btn" disabled=${!pick[role]} onClick=${post(`/roles/${enc(role)}/rebind`, { session: pick[role] })}>${t("act.go")}</button></div>
+        </div></details>`}
+      </div>`;
+    })}
+  </section>`;
+}
+
+function History({ r, now }) {
+  const lines = r.events.map((e) => [e, eventSentence(e, r.plan)]).filter(([, s]) => s).slice(0, 5);
+  return html`<section class="box"><h2>${t("run.happened")}</h2>
+    ${lines.length === 0 ? html`<p class="muted small">${t("run.nothingYet")}</p>`
+      : html`<ul class="feed">${lines.map(([e, s]) => html`<li><span class="muted">${moment(e.ts, now)}</span><span>${s}</span></li>`)}</ul>`}
+    <details class="more small"><summary>${t("run.fullHistory")}</summary><div class="scroll"><table class="tech">
+      <thead><tr><th>${t("tech.when")}</th><th>${t("tech.type")}</th><th>${t("tech.step")}</th><th>${t("tech.outcome")}</th><th>${t("tech.data")}</th></tr></thead>
+      <tbody>${r.events.map((e) => html`<tr><td class="muted">${new Date(e.ts).toLocaleString(getLang())}</td><td>${e.type}</td>
+        <td>${e.entry || e.data.entry || ""}</td><td>${e.outcome || ""}</td><td class="muted"><code>${JSON.stringify(e.data).slice(0, 160)}</code></td></tr>`)}</tbody>
+    </table></div></details>
+  </section>`;
 }
 
 function Processes() {
