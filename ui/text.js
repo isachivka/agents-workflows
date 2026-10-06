@@ -17,7 +17,7 @@ const EN = {
   "You": "You", "someone": "Someone",
   "dur.lt1m": "less than a minute", "dur.m": "{m} min", "dur.h": "{h} h", "dur.hm": "{h} h {m} min", "dur.d": "{d} d", "ago": "{d} ago",
   "ev.gh.checks": "GitHub checks", "ev.gh.merged": "the PR merge", "ev.gh.review": "a PR review", "ev.gh.opened": "the PR opening",
-  "ev.gh.ci": "GitHub CI", "ev.signal": "signal {name}", "wait.for": "Waiting for {what}",
+  "ev.gh.ci": "GitHub CI", "ev.signal": "signal {name}", "wait.for": "Waiting for {what}", "wait.pause": "Pause {d}", "wait.until": "Pause until {when}",
   "do.clear": "{role} starts fresh", "do.compact": "{role} compacts its context", "do.type": "flows types into {role}'s terminal",
   "do.plugin": "Action {name}",
   "evs.delivered": "{role} got the task", "evs.done": "{role} finished", "evs.doneNote": "{role} finished: “{note}”",
@@ -87,7 +87,7 @@ const RU = {
   "You": "Ты", "someone": "Кто-то",
   "dur.lt1m": "меньше минуты", "dur.m": "{m} мин", "dur.h": "{h} ч", "dur.hm": "{h} ч {m} мин", "dur.d": "{d} дн", "ago": "{d} назад",
   "ev.gh.checks": "проверки GitHub", "ev.gh.merged": "мёрдж PR", "ev.gh.review": "ревью PR", "ev.gh.opened": "открытие PR",
-  "ev.gh.ci": "CI на GitHub", "ev.signal": "сигнал {name}", "wait.for": "Ждём: {what}",
+  "ev.gh.ci": "CI на GitHub", "ev.signal": "сигнал {name}", "wait.for": "Ждём: {what}", "wait.pause": "Пауза {d}", "wait.until": "Пауза до {when}",
   "do.clear": "{role} начинает с чистого листа", "do.compact": "{role} сжимает контекст", "do.type": "flows печатает в терминал {role}",
   "do.plugin": "Действие {name}",
   "evs.delivered": "{role} получил задание", "evs.done": "{role} закончил", "evs.doneNote": "{role} закончил: «{note}»",
@@ -201,6 +201,7 @@ const roleName = (role) => (role === "human" ? t("You") : role);
 
 export function entryPhrase(e) {
   if (e.kind === "wait") return t("wait.for", { what: eventPhrase(e.waitFor || "") });
+  if (e.kind === "delay") return t("wait.pause", { d: duration(e.waitMs || 0) });
   if (e.kind === "action") return ["clear", "compact", "type"].includes(e.do) ? t(`do.${e.do}`, { role: e.role }) : t("do.plugin", { name: e.do });
   return e.summary || e.step || e.id;
 }
@@ -243,6 +244,7 @@ export function describeRun(r) {
   if (r.status === "stopped") return { tone: "calm", tag: t("st.stopped"), title: t("run.stopped"), detail: null };
   if (r.status === "paused") return { tone: "calm", tag: t("st.paused"), title: what, detail: null };
   if (r.agentWait) return { tone: "wait", tag: t("tag.agentWaits"), title: what, detail: t("run.agentWaitNote", { note: r.agentWait.note }) };
+  if (r.waitUntil) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.until", { when: moment(r.waitUntil, Date.now()) }), detail: null };
   if (r.waitingOn) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.for", { what: eventPhrase(r.waitingOn) }), detail: null };
   return { tone: "work", tag: t("tag.working"), title: what, detail: null };
 }

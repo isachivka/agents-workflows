@@ -37,6 +37,8 @@ export interface PlanItem {
   id: string; kind: string; role: string | null; detour: boolean; waitFor: string | null; status: string;
   step: string | null; summary: string | null; do: string | null; startedAt: number | null; note: string | null;
   onFail: OnFail; after: { goto: string } | null;
+  /** a pause entry's length (ms) */
+  waitMs: number | null;
 }
 
 export interface RunSummary {
@@ -44,6 +46,8 @@ export interface RunSummary {
   current: string | null; currentStatus: string | null; currentKind: string | null; waitingOn: string | null;
   roles: Record<string, string | null>; vars: Record<string, string>; needsYou: boolean;
   agentWait: { note: string; human: boolean; since: number } | null;
+  /** the current entry is a pause: when it ends (ms) */
+  waitUntil: number | null;
   created: number; updated: number;
   plan: PlanItem[];
 }
@@ -704,6 +708,7 @@ export class Flowd {
       roles: run.roles, vars: run.vars,
       needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human),
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
+      waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined ? s.startedAt + cur.delayMs! : null,
       created: times?.created ?? 0, updated: times?.updated ?? 0,
       plan: (p?.entries ?? []).map((e) => {
         const st = run.entries[e.id];
@@ -712,6 +717,7 @@ export class Flowd {
           status: st?.status ?? "pending", step: e.step ?? null,
           summary: e.step ? this.defs.steps[e.step]?.summary ?? null : null, do: e.do ?? null,
           startedAt: st?.startedAt ?? null, note: st?.note ?? null, onFail: e.onFail, after: e.after ?? null,
+          waitMs: e.delayMs ?? null,
         };
       }),
     };

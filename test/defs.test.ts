@@ -80,7 +80,7 @@ steps:
     /role pm: spawn is required/, /cron not a cron/, /unknown event type nope\.thing/,
     /steps\/missing\.md is missing or invalid/, /undeclared role ghost/, /do: compact needs a declared agent role/,
     /do: type needs text/, /unknown event type nope\.event/, /goto target nowhere does not exist/,
-    /a detour needs after\.goto/, /duplicate entry id pick/, /needs step, do or wait_for/,
+    /a detour needs after\.goto/, /duplicate entry id pick/, /needs step, do, wait_for or wait/,
     /wait_for\.where must be a mapping/, /wait_for\.with must be a mapping/, /steps\[\d+\]: with must be a mapping/,
   ]) assert.ok(errs.some((e) => want.test(e)), `missing error ${want}: ${errs.join(" | ")}`);
 });
@@ -146,4 +146,13 @@ test("an on: trigger takes a with mapping; cron does not", () => {
   const errs = errorsOf(() => parseProcess("t", `description: d\ncwd: /tmp\ntriggers:\n  - {on: gh.merged, with: main}\n  - {cron: "0 10 * * *", with: {a: 1}}\nsteps:\n  - {wait_for: signal.x}\n`, ctx));
   assert.ok(errs.includes("trigger 1: with must be a mapping"), errs.join(" | "));
   assert.ok(errs.includes("trigger 2: with only applies to on: triggers"), errs.join(" | "));
+});
+
+test("a pause entry: wait with a duration, on its own", () => {
+  const p = parseProcess("w", "description: d\ncwd: /tmp\nsteps:\n  - {wait: 2h}\n  - {id: tail, wait: 30s}\n", ctx);
+  assert.deepEqual(p.entries.map((e) => [e.id, e.kind, e.delayMs]), [["wait", "delay", 7_200_000], ["tail", "delay", 30_000]]);
+  const errs = errorsOf(() => parseProcess("w", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {wait: soon}\n  - {id: x, wait: 1m, step: pick, role: pm}\n  - {id: y, wait: 1m, wait_for: gh.merged}\n", ctx));
+  assert.ok(errs.some((e) => /steps\[1\]: bad duration "soon"/.test(e)), errs.join(" | "));
+  assert.ok(errs.includes("steps[2]: wait is a pause on its own; it cannot go with step, do or wait_for"), errs.join(" | "));
+  assert.ok(errs.includes("steps[3]: wait is a pause on its own; it cannot go with step, do or wait_for"), errs.join(" | "));
 });

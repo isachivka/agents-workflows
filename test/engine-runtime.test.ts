@@ -408,3 +408,39 @@ test("a new iteration starts its waits with nothing that woke them before", () =
   assert.ok(w, "iteration 2 armed its wait");
   assert.equal(w!.previous, undefined);
 });
+
+const PAUSE = `description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: b, role: pm}\n  - {id: tail, wait: 1h}\n  - {step: c, role: pm}\n`;
+
+test("a pause waits for its time, arms no watch, then moves on", () => {
+  const s = new Sim(PAUSE, STEPS, { pm: "S1" }).send({ kind: "start" }).send(rep("b"));
+  assert.equal(s.status("tail"), "waiting");
+  assert.ok(!s.kinds().includes("watch"));
+  s.now += 3_599_999;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("tail"), "waiting");
+  s.now += 1;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("tail"), "done");
+  assert.equal(s.run.entries.tail.note, "waited 1h");
+  assert.equal(s.run.current, "c");
+});
+
+test("a human can end a pause early or restart it", () => {
+  const s = new Sim(PAUSE, STEPS, { pm: "S1" }).send({ kind: "start" }).send(rep("b"));
+  s.now += 1_800_000;
+  s.send({ kind: "retry", entry: "tail" });
+  s.now += 3_000_000;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("tail"), "waiting", "retry restarted the clock");
+  s.send(rep("tail", "done", "human"));
+  assert.equal(s.run.current, "c");
+});
+
+test("a pause that ran out while the run was paused closes on the first tick after resume", () => {
+  const s = new Sim(PAUSE, STEPS, { pm: "S1" }).send({ kind: "start" }).send(rep("b")).send({ kind: "pause" });
+  s.now += 7_200_000;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("tail"), "waiting");
+  s.send({ kind: "resume" }).send({ kind: "tick" });
+  assert.equal(s.status("tail"), "done");
+});

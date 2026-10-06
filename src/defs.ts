@@ -71,7 +71,7 @@ export function splitStep(text: string): { summary: string; body: string } {
 }
 
 export const PROCESS_KEYS = new Set(["description", "cwd", "repeat", "max_runs", "triggers", "roles", "steps"]);
-export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "on_fail", "retries", "after", "detour", "timeout"]);
+export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "on_fail", "retries", "after", "detour", "timeout"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
 const knownEvent = (type: string, ctx: DefCtx) => ctx.eventTypes.has(type) || /^signal\.[a-z0-9.-]+$/.test(type);
@@ -165,8 +165,18 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       } else if (!ctx.actionNames.has(r.do)) {
         err(`${at}: unknown action ${r.do}`);
       }
-    } else if (!waitFor) {
-      err(`${at}: needs step, do or wait_for`);
+    } else if (!waitFor && r.wait === undefined) {
+      err(`${at}: needs step, do, wait_for or wait`);
+    }
+    let delayMs: number | undefined;
+    if (r.wait !== undefined) {
+      if (r.step !== undefined || r.do !== undefined || waitFor) err(`${at}: wait is a pause on its own; it cannot go with step, do or wait_for`);
+      else kind = "delay";
+      try {
+        delayMs = parseDuration(r.wait);
+      } catch (e) {
+        err(`${at}: ${message(e)}`);
+      }
     }
 
     let onFail: OnFail = "human";
@@ -194,7 +204,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       }
     }
 
-    const id = typeof r.id === "string" ? r.id : String(r.step ?? r.do ?? waitFor?.on ?? `entry-${i + 1}`);
+    const id = typeof r.id === "string" ? r.id : String(r.step ?? r.do ?? waitFor?.on ?? (r.wait !== undefined ? "wait" : `entry-${i + 1}`));
     entries.push({
       id, kind,
       step: typeof r.step === "string" ? r.step : undefined,
@@ -202,7 +212,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       do: typeof r.do === "string" ? r.do : undefined,
       text: typeof r.text === "string" ? r.text : undefined,
       with: isObj(r.with) ? r.with : {},
-      waitFor, onFail, retries: retries as number, after, detour: detour === true, timeoutMs,
+      waitFor, onFail, retries: retries as number, after, detour: detour === true, timeoutMs, delayMs,
     });
   }
 

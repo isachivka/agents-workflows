@@ -7,6 +7,14 @@ export const MAX_REMINDERS = 2;
 export const COMPACT_TIMEOUT_MS = 600_000;
 export const START_TIMEOUT_MS = 120_000;
 
+/** 86400000 → "1d", 5400000 → "90m": the largest whole unit, as `wait:` and `timeout:` take it. */
+export function formatDuration(ms: number): string {
+  for (const [unit, size] of [["d", 86_400_000], ["h", 3_600_000], ["m", 60_000]] as const) {
+    if (ms % size === 0) return `${ms / size}${unit}`;
+  }
+  return `${Math.round(ms / 1000)}s`;
+}
+
 export const notStartedText = (entry: string) =>
   `${entry}: the agent has not started 2 min after its line was delivered — look at its terminal (a trust or login prompt, an error)`;
 
@@ -127,6 +135,10 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const s = st(id);
     run.current = id;
     Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined });
+    if (e.kind === "delay") {
+      s.status = "waiting"; // the tick closes it once startedAt + delayMs has passed
+      return;
+    }
     if (e.waitFor) {
       let w: WaitFor;
       try {
@@ -393,6 +405,10 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       if (run.status !== "running" || !cur) return done();
       const s = st(cur.id);
       if (s.status !== "active" && s.status !== "waiting") return done();
+      if (cur.kind === "delay" && s.status === "waiting" && s.startedAt !== undefined && now - s.startedAt >= cur.delayMs!) {
+        finish(cur.id, "done", { note: `waited ${formatDuration(cur.delayMs!)}`, by: "system" });
+        return done();
+      }
       const timeout = cur.timeoutMs ?? (cur.do === "compact" ? COMPACT_TIMEOUT_MS : undefined);
       if (timeout !== undefined && s.startedAt !== undefined && now - s.startedAt >= timeout) {
         finish(cur.id, "failed", { note: `timed out after ${timeout / 1000}s`, by: "system" });

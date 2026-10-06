@@ -3,7 +3,7 @@ export type Outcome = "done" | "failed";
 
 export interface WaitFor { on: string; where: Dict; with: Dict }
 export type OnFail = "retry" | "human" | { goto: string };
-export type EntryKind = "agent" | "human" | "action" | "wait";
+export type EntryKind = "agent" | "human" | "action" | "wait" | "delay";
 
 export interface Entry {
   id: string;
@@ -19,6 +19,8 @@ export interface Entry {
   after?: { goto: string };
   detour: boolean;
   timeoutMs?: number;
+  /** a pause entry (`wait: 24h`): how long it waits before it is done */
+  delayMs?: number;
 }
 
 export interface Role { spawn: string; cwd?: string }

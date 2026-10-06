@@ -700,3 +700,16 @@ test("a wait re-armed by retry is handed the event that woke it; after a restart
   assert.deepEqual(previouses(), [{ type: "test.ping", data: { id: "R1" } }]);
   await B.f.close();
 });
+
+test("a run on a pause says until when, and the plan says how long", async () => {
+  const { f, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n  - {id: tail, wait: 2h}\n") }));
+  await f.submit(start("p"));
+  await f.submit(report({ run: "p#1", entry: "c", outcome: "done", by: "human" }));
+  const sum = f.runSummary(f.store.getRun("p#1")!);
+  assert.equal(sum.waitUntil, clock.t + 7_200_000);
+  assert.equal(sum.plan.find((e) => e.id === "tail")!.waitMs, 7_200_000);
+  clock.t += 7_200_000;
+  await f.tickNow();
+  assert.equal(f.store.getRun("p#1")!.status, "done");
+  await f.close();
+});

@@ -44,6 +44,7 @@ From the installed copy of this skill, the repo is
 | a fix-up branch | `{step: <id>, role: <role>, detour: true, after: {goto: <id>}}` after the main line; reached only by a `goto` |
 | start on a schedule or an event | `triggers: [{cron: "0 10 * * 1-5"}]`, `[{on: flow.run.done, where: {process: other}}]` |
 | start on a plugin event (GitHub) | `triggers: [{on: gh.opened, with: {label: ready-for-agent}}]`; also `{on: gh.merged, with: {base: main}}`, `{on: gh.ci, with: {branch: main}, where: {conclusion: failure}}`. The run starts with the event's data as vars: `{{vars.pr}}`, `{{vars.number}}`, … |
+| let time pass (keep a session a day, then clean up) | `{id: tail, wait: 24h}`; survives flowd restarts |
 | one item per pass, forever | `repeat: true` — vars are cleared between iterations |
 
 ## Traps

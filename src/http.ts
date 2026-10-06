@@ -69,7 +69,7 @@ function listProcesses(f: Flowd) {
       entries: (p?.entries ?? []).map((e) => ({
         id: e.id, kind: e.kind, role: e.role ?? null, waitFor: e.waitFor?.on ?? null, detour: e.detour,
         step: e.step ?? null, summary: e.step ? f.defs.steps[e.step]?.summary ?? null : null,
-        do: e.do ?? null, onFail: e.onFail, after: e.after ?? null,
+        do: e.do ?? null, onFail: e.onFail, after: e.after ?? null, waitMs: e.delayMs ?? null,
       })),
       openRuns: open.filter((r) => r.process === name).map((r) => r.id),
       triggerErrors: f.triggerErrors(name),

@@ -134,12 +134,13 @@ Each item of `steps:` is one of these kinds:
 | typed line | `{do: type, role: <role>, text: "..."}` | flowd types a literal line (a template) into the role's session. |
 | plugin action | `{do: <plugin>.<action>, with: {...}}` | flowd calls the plugin; a throw fails the entry. No action ships with flows yet. |
 | pure wait | `{wait_for: <type>}` | Waits for an event; its `outcome` closes the entry (`failed` fails it). |
+| pause | `{wait: 24h}` | Waits that long, then is done and the run moves on. The clock is kept in the database, so a flowd restart does not reset it. A human can end it early (`done`, `skip`) or restart it (`retry`). |
 
 Keys on any entry:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `id` | string | the `step`, else the `do`, else the `wait_for` type | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
+| `id` | string | the `step`, else the `do`, else the `wait_for` type, else `wait` | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
 | `step` | string | | A step id (a file in `steps/`). |
 | `role` | string | | A declared role, or `human`. |
 | `do` | string | | `clear`, `compact`, `type`, or `<plugin>.<action>`. |
@@ -150,6 +151,7 @@ Keys on any entry:
 | `retries` | integer ≥ 0 | `3` | Failures of this entry allowed per iteration. One more stops the run for a human, whatever `on_fail` says. |
 | `after` | `{goto: <id>}` | | When the entry is done, jump there instead of advancing. |
 | `detour` | boolean | `false` | Normal advancing skips this entry; only a `goto` reaches it. A detour needs `after`. |
+| `wait` | duration | | A pause: `30s`, `10m`, `2h`, `1d`. Only on its own (no `step`, `do`, `wait_for`). |
 | `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. |
 
 ## How a run moves
@@ -184,7 +186,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1` |
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
 | triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping`, `trigger N: with must be a mapping`, `trigger N: with only applies to on: triggers` |
-| entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do or wait_for`, `steps[N]: step and do are exclusive` |
+| entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do, wait_for or wait`, `steps[N]: wait is a pause on its own; it cannot go with step, do or wait_for`, `steps[N]: step and do are exclusive` |
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
 | events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `steps[N]: wait_for.where must be a mapping`, `steps[N]: wait_for.with must be a mapping`, `X: step Y uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
@@ -338,6 +340,16 @@ roles:
   dev: {spawn: "claude --dangerously-skip-permissions"}
 steps:
   - {step: fix-main, role: dev}         # the prompt reads {{vars.run}}, {{vars.sha}}
+```
+
+**Keep the session for a day after the merge, then clean up.** A pause survives flowd restarts.
+
+```yaml
+steps:
+  - {step: review, role: reviewer}
+  - {id: merged, wait_for: gh.merged}
+  - {id: tail, wait: 24h}                # late findings still reach the reviewer's session
+  - {step: reap, role: reviewer}         # git worktree remove, then close the terminal
 ```
 
 **Close the agent's terminal when the work is done.** Closing is just the last thing a step
