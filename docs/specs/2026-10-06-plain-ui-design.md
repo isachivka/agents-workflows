@@ -1,8 +1,7 @@
 # A web UI anyone can follow: see what runs, see what needs you, act
 
 Status: design, awaiting approval.
-Mockups: Claude Design canvas https://claude.ai/artifact/GdybqeYojiEijcYFnBdtCN (private to the
-owner) — boards Main, Run, RunNeedsYou, Process, Brand.
+Mockups: a private Claude Design canvas — boards Main, Run, RunNeedsYou, Process, Brand.
 
 ## Problem
 
