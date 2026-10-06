@@ -27,6 +27,8 @@ export interface FlowdOptions {
   log?: (m: string) => void;
   /** Claude Code's config, read to tell whether a spawn's folder is trusted */
   claudeConfig?: string;
+  /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
+  trustPollMs?: number;
 }
 
 export interface Result { error?: string; run?: string }
@@ -73,6 +75,8 @@ export class Flowd {
   private o: FlowdOptions;
   private log: (m: string) => void;
   private chain: Promise<unknown> = Promise.resolve();
+  /** work started beside the event chain (answering a trust dialog); idle() and close() wait for it */
+  private side = new Set<Promise<unknown>>();
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
   private spawning = new Set<string>();
@@ -145,7 +149,13 @@ export class Flowd {
     do {
       seen = this.chain;
       await seen;
-    } while (seen !== this.chain);
+      await Promise.all([...this.side]);
+    } while (seen !== this.chain || this.side.size > 0);
+  }
+
+  private background(p: Promise<unknown>): void {
+    const tracked = p.catch((e) => this.log(msg(e))).finally(() => this.side.delete(tracked));
+    this.side.add(tracked);
   }
 
   on(fn: (what: "runs" | "defs") => void): () => void {
@@ -563,13 +573,10 @@ export class Flowd {
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
       if (row.entry_id) await this.submit({ type: "entry.delivered", run: run.id, entry: row.entry_id, data: {}, source: "flowd" });
-      // Claude stops at its folder-trust dialog before it reads the first line. The user answers
-      // it in the session; the run resumes on the agent's first active.
+      // Claude stops at its folder-trust dialog before it reads the first line: answer it,
+      // beside delivery so other sessions are not held up
       if (row.entry_id && basename(role.spawn.trim().split(/\s+/)[0]) === "claude" && !this.claudeTrusts(cwd)) {
-        await this.submit({
-          type: "entry.start-blocked", run: run.id, entry: row.entry_id, source: "flowd",
-          data: { reason: `${row.entry_id}: Claude Code has not trusted ${cwd} yet — open the session and choose "Yes, I trust this folder"` },
-        });
+        this.background(this.answerTrust(run.id, row.entry_id, session, cwd));
       }
     } catch (e) {
       this.log(`spawn ${run.id} ${row.role}: ${msg(e)}`);
@@ -595,6 +602,40 @@ export class Flowd {
       return (await this.agterm.cursorColumn(info.surface)) > EMPTY_INPUT_COLUMN;
     } catch {
       return false; // cannot tell: deliver as before
+    }
+  }
+
+  /**
+   * The process spawned an agent into this folder, so it trusts it: select "Yes, I trust this
+   * folder" (Down, then Enter once the marker is on it). Never writes ~/.claude.json.
+   */
+  private async answerTrust(run: string, entry: string, session: string, cwd: string): Promise<void> {
+    const pause = () => new Promise((r) => setTimeout(r, this.o.trustPollMs ?? 1_000));
+    const yesSelected = (screen: string) => /❯\s*(\d+\.\s*)?Yes, I trust this folder/.test(screen);
+    const stop = (why: string) => this.submit({
+      type: "entry.start-blocked", run, entry, source: "flowd",
+      data: { reason: `${entry}: Claude Code asks whether to trust ${cwd} and flowd could not ${why} — open the session and choose "Yes, I trust this folder"` },
+    });
+    try {
+      let screen = "";
+      for (let i = 0; i < 30 && !screen.includes("Yes, I trust this folder"); i++) {
+        if (i) await pause();
+        screen = await this.agterm.text(session);
+      }
+      if (!screen.includes("Yes, I trust this folder")) return; // no dialog: the start watchdog covers any other hang
+      if (!yesSelected(screen)) {
+        await this.agterm.press(session, "\x1b[B");
+        await pause();
+        screen = await this.agterm.text(session);
+      }
+      if (!yesSelected(screen)) {
+        await stop('select "Yes"');
+        return;
+      }
+      await this.agterm.press(session, "\r");
+      this.log(`answered Claude's folder-trust dialog for ${cwd}`);
+    } catch (e) {
+      await stop(`answer it (${msg(e)})`);
     }
   }
 

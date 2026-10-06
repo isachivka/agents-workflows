@@ -32,6 +32,13 @@ export class FakeAgterm implements Agterm {
     return c ?? 2;
   }
   async reloadHooks(): Promise<void> { this.calls.push("hooks reload"); }
+  screens = new Map<string, string>();
+  onPress: ((session: string, keys: string) => void) | undefined;
+  async text(session: string): Promise<string> { return this.screens.get(session) ?? ""; }
+  async press(session: string, keys: string): Promise<void> {
+    this.calls.push(`press ${session} ${JSON.stringify(keys)}`);
+    this.onPress?.(session, keys);
+  }
   typed(): string[] { return this.calls.filter((c) => c.startsWith("type ")); }
   addSession(...ids: string[]): this {
     for (const id of ids) this.sessions.push({ id, name: id, cwd: "/", workspace: "W", surface: `surface:${id}:left` });

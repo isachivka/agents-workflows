@@ -113,10 +113,15 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   person and the run is listed under "Waiting for you".
 - A line that reaches an agent must start its turn. If the session has not gone `active` 2 minutes
   after a nudge or a reminder was delivered (and the step has no `flow wait`), the run stops for
-  the user: "the agent has not started 2 min after its line was delivered". Before spawning
-  `claude`, flowd also checks Claude's config (`~/.claude.json`) and, when the folder is not
-  trusted yet, stops the run at once with "Claude Code has not trusted <folder> yet". Both stops
-  clear themselves: the agent's first `active` on that step resumes the run.
+  the user: "the agent has not started 2 min after its line was delivered". It clears itself:
+  the agent's first `active` on that step resumes the run.
+- Claude Code asks "Is this a project you trust?" in every folder it has not been told to trust
+  (it does not inherit trust from a parent folder). When flowd spawns `claude` into such a folder
+  (per `~/.claude.json`), it answers: it watches the new session's screen for up to 30 s,
+  moves the selection to "Yes, I trust this folder" and presses Enter. A process that spawns an
+  agent into a folder has already decided to trust it. If flowd cannot select "Yes", the run stops
+  with the reason and resumes on the agent's first `active`. flowd never writes `~/.claude.json`;
+  Claude records the answer itself.
 - An entry's `timeout` fails it when it stays `active` or `waiting` that long, whether or not its
   agent declared a wait. `compact` fails
   after 10 minutes without a report. Timeouts do not run while the run is paused.

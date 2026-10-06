@@ -56,11 +56,11 @@ not submit, an agent that crashed on start.
 - Fix: deal with whatever is on the screen. As soon as the agent starts its turn the run resumes
   by itself. If the session is gone, use **respawn** on the run page.
 
-## A run stopped with "Claude Code has not trusted <folder> yet"
+## A run stopped with "Claude Code asks whether to trust <folder> and flowd could not …"
 
-flowd spawned Claude in a folder Claude has not been told to trust, so Claude shows its "Is this a
-project you trust?" dialog before reading the step. flowd reads `~/.claude.json` (or
-`$CLAUDE_CONFIG_DIR/.claude.json`) to notice this; it never answers the dialog or edits that file.
+flowd answers Claude's folder-trust dialog by itself (Down, then Enter on "Yes, I trust this
+folder"). This stop means it could not: the dialog looked different, the selection did not move,
+or `agtermctl` failed.
 
 - Fix: open the session (`↗`), choose "Yes, I trust this folder". The agent starts and the run
   resumes by itself. Claude remembers the folder, so the next spawn there does not ask.

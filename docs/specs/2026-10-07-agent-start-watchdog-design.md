@@ -1,6 +1,7 @@
 # A step whose agent never starts: the start watchdog
 
 Status: approved 2026-10-07 by the user ("short spec/plan/fix").
+Decision 2 is superseded by `2026-10-07-answer-trust-dialog-design.md`: flowd now answers the dialog.
 
 ## Problem
 

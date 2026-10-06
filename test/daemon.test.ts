@@ -582,23 +582,58 @@ test("a wait declared while the agent's session is blocked or mid-turn parks on 
   await B.f.close();
 });
 
-const TRUST_REASON = 'b: Claude Code has not trusted /tmp yet — open the session and choose "Yes, I trust this folder"';
+const TRUST_REASON = 'b: Claude Code asks whether to trust /tmp and flowd could not select "Yes" — open the session and choose "Yes, I trust this folder"';
 const claudeConfig = (home: string, trusted: string[]) => {
   const path = join(home, "claude.json");
   writeFileSync(path, JSON.stringify({ projects: Object.fromEntries(trusted.map((p) => [p, { hasTrustDialogAccepted: true }])) }));
   return path;
 };
 
-test("a claude spawn into a folder Claude has not trusted stops the run with the reason; its first active resumes it", async () => {
+const DIALOG = (yesSelected: boolean) => ["Accessing workspace:", " /tmp", "Is this a project you trust?",
+  yesSelected ? "   No, exit" : " ❯ No, exit", yesSelected ? " ❯ Yes, I trust this folder" : "   Yes, I trust this folder",
+  "Enter to confirm · Esc to cancel"].join("\n");
+const pressed = (a: FakeAgterm) => a.calls.filter((c) => c.startsWith("press "));
+
+test("flowd answers Claude's folder-trust dialog: Down, then Enter once Yes is selected", async () => {
   const home = makeHome({ ...STEP_FILES, ...TWO });
-  const { f } = await startFlowd(home, { claudeConfig: claudeConfig(home, ["/elsewhere"]) });
+  const agterm = new FakeAgterm();
+  agterm.screens.set("S1", DIALOG(false));
+  agterm.onPress = (s, k) => {
+    if (k === "\x1b[B") agterm.screens.set(s, DIALOG(true));
+    if (k === "\r") agterm.screens.set(s, "claude is up");
+  };
+  const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
   await f.submit(start("p"));
   await settle(f);
+  assert.deepEqual(pressed(agterm), ['press S1 "\\u001b[B"', 'press S1 "\\r"']);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
+  await f.close();
+});
+
+test("when Yes cannot be selected, the run stops with the reason and resumes on the agent's first active", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const agterm = new FakeAgterm();
+  agterm.screens.set("S1", DIALOG(false)); // Down changes nothing
+  const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm), ['press S1 "\\u001b[B"']);
   let run = f.store.getRun("p#1")!;
   assert.deepEqual([run.status, run.reason, run.startBlocked], ["needs-human", TRUST_REASON, "b"]);
   await f.submit(status("S1", "active"));
   run = f.store.getRun("p#1")!;
   assert.deepEqual([run.status, run.startBlocked], ["running", undefined]);
+  await f.close();
+});
+
+test("no dialog within the window: nothing is pressed and the run goes on", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const agterm = new FakeAgterm();
+  const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm), []);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
   await f.close();
 });
 

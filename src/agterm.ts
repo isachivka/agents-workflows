@@ -12,6 +12,10 @@ export interface Agterm {
   reloadHooks(): Promise<void>;
   /** zero-based caret column of a surface (`agtermctl surface cursor`) */
   cursorColumn(surface: string): Promise<number>;
+  /** the session's screen as plain text */
+  text(session: string): Promise<string>;
+  /** raw keystrokes, no Enter added (e.g. `\x1b[B` for Down, `\r` for Enter) */
+  press(session: string, keys: string): Promise<void>;
 }
 
 /** The caret column at an empty input box: right after `❯ ` (Claude Code) or `› ` (Codex). */
@@ -76,6 +80,12 @@ export function realAgterm(
       } catch {
         // the session is selected; failing to raise the app is no reason to report an error
       }
+    },
+    async text(session) {
+      return run(bin, ["session", "text", "--target", session]);
+    },
+    async press(session, keys) {
+      await run(bin, ["session", "type", "--stdin", "--target", session], keys);
     },
     async cursorColumn(surface) {
       const column = Number(JSON.parse(await run(bin, ["surface", "cursor", "--target", surface, "--json"]))?.result?.cursor?.column);
