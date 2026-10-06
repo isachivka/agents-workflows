@@ -98,8 +98,9 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   without a report is reminded as usual. Each `flow wait` resets the reminder count, so a step may
   wait legitimately any number of times. A turn agterm never sees (no `active`) does not use the
   wait up.
-- A wait shows on the run (`waiting since <time>: <note>` in the UI, `flow ls`, `flow show`). With
-  `--human` the wait is on a person and the run is listed under "Needs you".
+- A wait shows on the run: `waiting since <time>: <note>` in the run page's entry panel and in
+  `flow show`, `waiting: <note>` in the runs list and `flow ls`. With `--human` the wait is on a
+  person and the run is listed under "Needs you".
 - An entry's `timeout` fails it when it stays `active` or `waiting` that long, whether or not its
   agent declared a wait. `compact` fails
   after 10 minutes without a report. Timeouts do not run while the run is paused.
