@@ -122,3 +122,19 @@ test("flow ls --process and --where find runs by a variable; no match exits 1", 
   assert.equal((await flow(["ls", "--all", "--process", "nope"], env)).code, 1);
   await s.close();
 });
+
+test("after its flow failed stopped the run, the agent closes the step for the user with --human", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  const env = { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1" };
+  assert.equal((await flow(["failed", "--note", "red"], env)).code, 0);
+  assert.equal(s.f.store.getRun("p#1")!.status, "needs-human");
+  const again = await flow(["done"], env);
+  assert.deepEqual([again.code, again.stderr], [1, "flow: step b is not active (failed)\n"]);
+  assert.equal((await flow(["done", "--human", "--note", "the user re-ran it: green"], env)).code, 0);
+  await settle(s.f);
+  const run = s.f.store.getRun("p#1")!;
+  assert.deepEqual([run.status, run.current], ["running", "c"]);
+  await s.close();
+});

@@ -87,6 +87,11 @@ flow failed --human --run ID --step ENTRY --note TEXT
 Closes any current step, including a human step, from your own terminal. Quote run ids in the
 shell: `--run 'pr-loop#3'`.
 
+From the agent's own session `--run` and `--step` can be left out. That is how an agent carries
+out your decision after its `flow failed` stopped the run: you tell it how to go on, it does that
+and runs `flow done --human --note "…"`. A plain `flow done` on a failed step is refused
+(`step X is not active (failed)`).
+
 ### `flow start`
 
 ```

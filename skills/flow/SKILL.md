@@ -30,6 +30,22 @@ add `--human` when the user has to act. Then end your turn. When you come back, 
 give the note — it is what the user sees. Without `flow wait`, flowd types reminders into your
 session and stops the run after the third silent turn end.
 
+## After `flow failed`
+
+Unless the step says otherwise, a failure stops the run for the user: the step stays `failed`,
+nothing new arrives, and your session stays open. The user decides, often by talking to you here.
+Then:
+
+- **The user tells you to go on** (re-run something, try another way, accept it as is): do what
+  they asked, then close the step for them with `flow done --human --note "<what was decided and
+  done>"`. The run moves to its next step. If it still fails, `flow failed --human --note "…"`:
+  the run stays stopped. Plain `flow done` is refused here (`step X is not active (failed)`):
+  only the user can reopen a failed step, so `--human` says the user's decision is behind it.
+- **The user wants the whole step again**, from its instructions: they press "Try again" in the
+  flows UI; a new `▶ flow:` line arrives.
+- **Never use `--human` on your own.** Only after the user, in this session, told you how to go
+  on. Say in the note that it was their call.
+
 A refusal (`flow: …`, exit 1) is an answer, not a glitch. `step X has not reached the agent yet`
 means you already reported and the next step is on its way — wait for its line.
 If `flow show` says no step is active for this session, do nothing and tell the user.
