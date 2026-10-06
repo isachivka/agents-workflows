@@ -18,36 +18,97 @@ const isOpen = (r) => r.status !== "done" && r.status !== "stopped";
 const ICON = { pending: "·", waiting: "⏳", active: "▶", done: "✓", failed: "✗", skipped: "–" };
 const when = (ts) => new Date(ts).toLocaleString();
 
-function Runs() {
+/** The PR a human step is about: a var named pr, else the first link among the vars. */
+const firstUrl = (vars) => (vars.pr && isUrl(vars.pr) ? vars.pr : Object.values(vars).find(isUrl) || null);
+
+function Now() {
   const { data, error } = useData("/api/runs?all=1");
+  const now = useNow();
+  const [older, setOlder] = useState(false);
   if (!data) return html`<${Loading} error=${error} />`;
-  const open = data.filter((r) => r.status !== "done" && r.status !== "stopped");
-  const groups = [
-    ["Needs you", open.filter((r) => r.needsYou)],
-    ["Running", open.filter((r) => !r.needsYou)],
-    ["Finished", data.filter((r) => !open.includes(r)).slice(0, 30)],
-  ];
+  const live = data.filter(isOpen);
+  const waiting = live.filter((r) => r.needsYou).sort((a, b) => waitingSince(a) - waitingSince(b));
+  const working = live.filter((r) => !r.needsYou);
+  const finished = data.filter((r) => !isOpen(r));
+  const today = finished.filter((r) => r.updated >= new Date(now).setHours(0, 0, 0, 0));
+  const shown = older ? finished.slice(0, 50) : today;
+  const lead = waiting.length
+    ? `${tn("now.lead.waiting", waiting.length)}${working.length ? ` ${tn("now.lead.more", working.length)}` : ""}`
+    : working.length ? tn("now.lead.working", working.length) : t("now.lead.calm");
   return html`
-    <div class="bar"><h1 style="flex:1">Runs</h1><button class="primary" onClick=${() => go("processes")}>Start a process…</button></div>
-    ${data.length === 0 && html`<p class="muted">Nothing has run yet. Start one from <a href="#/processes">processes</a>.</p>`}
-    ${groups.map(([title, rows]) => rows.length > 0 && html`
-      <h2>${title} (${rows.length})</h2>
-      <table><tbody>${rows.map((r) => html`<${RunRow} r=${r} />`)}</tbody></table>`)}`;
+    <section class="head">
+      <div><h1>${t("now.title")}</h1><p class="lead">${data.length ? lead : t("now.empty")}</p></div>
+      <a class="btn" href="#/processes">${t("now.start")}</a>
+    </section>
+    ${waiting.length > 0 && html`<section>
+      <h2><${Icon} name="you" />${t("now.waiting")} · ${waiting.length}</h2>
+      <div class="stack">${waiting.map((r) => html`<${WaitingCard} r=${r} now=${now} key=${r.id} />`)}</div>
+    </section>`}
+    ${working.length > 0 && html`<section>
+      <h2><${Icon} name="agent" />${t("now.working")} · ${working.length}</h2>
+      <div class="grid">${working.map((r) => html`<${WorkingCard} r=${r} now=${now} key=${r.id} />`)}</div>
+    </section>`}
+    ${finished.length > 0 && html`<section>
+      <h2><${Icon} name="check" />${older ? t("now.recent") : t("now.finished")}</h2>
+      ${shown.length > 0 && html`<div class="box rows">${shown.map((r) => html`<${FinishedRow} r=${r} now=${now} key=${r.id} />`)}</div>`}
+      ${!older && finished.length > today.length && html`<button class="btn quiet" onClick=${() => setOlder(true)}>${t("now.older")}</button>`}
+    </section>`}`;
 }
 
-function RunRow({ r }) {
-  return html`<tr>
-    <td><a href="#/run/${enc(r.id)}">${r.id}</a><div class="muted">it.${r.iteration}</div></td>
-    <td><span class="st ${r.status}">${r.status}</span></td>
-    <td>
-      ${r.current ? html`<b>${r.current}</b> <span class="muted">${r.currentStatus}${r.waitingOn ? ` · ⏳ ${r.waitingOn}` : ""}${r.agentWait ? ` · waiting: ${r.agentWait.note}` : ""}</span>` : "—"}
-      ${r.reason && html`<div class="reason">${r.reason}</div>`}
-    </td>
-    <td>${Object.entries(r.vars).filter(([, v]) => isUrl(v)).map(([k, v]) => html`<a href=${v} target="_blank" rel="noreferrer">${k}</a> `)}</td>
-    <td>${Object.entries(r.roles).map(([role, sid]) => (sid
-      ? html`<button class="jump" title=${sid} onClick=${focus(sid)}>${role} ↗</button> `
-      : html`<span class="muted">${role}: — </span>`))}</td>
-  </tr>`;
+function WaitingCard({ r, now }) {
+  const [err, setErr] = useState(null);
+  const d = describeRun(r);
+  const s = situation(r);
+  const cur = currentEntry(r);
+  const url = firstUrl(r.vars);
+  const sid = cur && cur.role && cur.role !== "human" ? r.roles[cur.role] : null;
+  const post = (path) => attempt(() => api("POST", `/api/runs/${enc(r.id)}${path}`, {}), setErr);
+  return html`<article class="box you">
+    <div class="meta"><${Pill} tone="you">${d.tag}<//><span class="muted small">${runLabel(r.id)}</span>
+      <span class="muted small when">${t("now.waitedFor", { d: duration(now - waitingSince(r)) })}</span></div>
+    <h3>${d.title}</h3>
+    ${d.detail && html`<p class="muted">${d.detail}</p>`}
+    <${Err} msg=${err} />
+    <div class="acts">
+      ${s === "human" && url && html`<a class="btn primary" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
+      ${s === "human" && !r.waitingOn && html`<button class="btn ${url ? "" : "primary"}" onClick=${post(`/entries/${enc(cur.id)}/done`)}>${t("act.done")}</button>`}
+      ${(s === "failed" || s === "stopped") && html`<a class="btn primary" href="#/run/${enc(r.id)}">${t("act.sortOut")}</a>`}
+      ${s === "failed" && html`<button class="btn" onClick=${post(`/entries/${enc(cur.id)}/retry`)}>${t("act.retry")}</button>`}
+      ${s === "agentAsks" && sid && html`<button class="btn primary" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: cur.role })}</button>`}
+      <a class="btn quiet" href="#/run/${enc(r.id)}">${t("act.details")}</a>
+    </div>
+  </article>`;
+}
+
+function WorkingCard({ r, now }) {
+  const [err, setErr] = useState(null);
+  const d = describeRun(r);
+  const cur = currentEntry(r);
+  const p = progress(r);
+  const sid = cur && cur.kind === "agent" ? r.roles[cur.role] : null;
+  const since = r.agentWait ? r.agentWait.since : cur && cur.startedAt;
+  return html`<article class="box">
+    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//><span class="muted small">${runLabel(r.id)}</span></div>
+    <h3>${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</h3>
+    ${d.detail && html`<p class="muted small">${d.detail}</p>`}
+    <div class="prog" role="img" aria-label=${t("now.stepOf", { i: p.i, n: p.n })}>${p.segs.map((s) => html`<span class=${s}></span>`)}</div>
+    <p class="muted small">${t("now.stepOf", { i: p.i, n: p.n })}${since ? ` · ${duration(now - since)}` : ""}</p>
+    <${Err} msg=${err} />
+    <div class="acts">
+      <a class="btn" href="#/run/${enc(r.id)}">${t("act.details")}</a>
+      ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.terminal")}</button>`}
+    </div>
+  </article>`;
+}
+
+function FinishedRow({ r, now }) {
+  const last = [...r.plan].reverse().find((e) => e.note);
+  return html`<div class="row">
+    <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
+    <a href="#/run/${enc(r.id)}"><b>${runLabel(r.id)}</b></a>
+    ${last && html`<span class="muted grow">— ${last.note}</span>`}
+    <span class="muted small" style="margin-left:auto">${ago(r.updated, now)}</span>
+  </div>`;
 }
 
 function Run({ arg: id }) {
@@ -225,7 +286,7 @@ const MARK = html`<svg class="mark" width="28" height="28" viewBox="0 0 32 32" a
   <path d="M8.5 22.5C8.5 13 23.5 19 23.5 9.5" fill="none" stroke="var(--bg)" stroke-width="2.6" stroke-linecap="round" />
   <circle cx="8.5" cy="22.5" r="3.2" fill="var(--bg)" /><circle cx="23.5" cy="9.5" r="3.2" fill="#8aa6ff" /></svg>`;
 
-const PAGES = { runs: Runs, run: Run, processes: Processes, process: ProcessEditor, start: StartForm, steps: Steps, step: StepEditor, settings: Settings, plugins: Settings };
+const PAGES = { runs: Now, run: Run, processes: Processes, process: ProcessEditor, start: StartForm, steps: Steps, step: StepEditor, settings: Settings, plugins: Settings };
 const TAB = { runs: "now", run: "now", processes: "processes", process: "processes", start: "processes", settings: "settings", plugins: "settings", steps: "settings", step: "settings" };
 const NAV = [["now", "#/runs"], ["processes", "#/processes"], ["settings", "#/settings"]];
 
