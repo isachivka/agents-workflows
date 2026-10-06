@@ -66,6 +66,11 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   between them. Claude's composer treats a newline typed together with the text as text.
 - Lines to one session are at least 2 s apart. Nothing is typed into a freshly spawned session
   for 15 s.
+- flowd never types over the user. A line waits while the session has an overlay open (agterm's
+  `overlay`), or while its input box holds a draft: text after the prompt mark between the
+  screen's last two horizontal rules, where Claude Code and Codex draw their input box. Send or
+  clear the draft and the line goes out within a second. When the screen cannot be read, the
+  line goes out as before.
 - A line whose step moved on before it went out is dropped.
 - An agent can close a step only after its line was typed: an early `flow done` is refused with
   `step <id> has not reached the agent yet`. This stops a double `flow done` from closing the next
@@ -88,7 +93,11 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 
 ## Reminders and timeouts
 
-- An agent that ends its turn (session goes `active` → `completed`/`idle`) without `flow done` or
+- A turn ends when the session reports `completed` (Claude's and Codex's `Stop` hooks). `idle` is
+  not a turn end: agterm sets it when it clears a status, for example on the user's first
+  keystroke in the session. One exception: a session that was `active` before flowd restarted
+  and is cleared afterwards counts as `completed`, because its turn ended while flowd was down.
+- An agent that ends its turn (session goes `active` → `completed`) without `flow done` or
   `flow failed` gets a reminder line 30 s later. After 2 reminders the next missed turn stops the
   run. A session that is `blocked` (waiting on a permission prompt) has not ended its turn.
 - An agent that ends its turn **on purpose** (a review runs in the background, the user is reading
