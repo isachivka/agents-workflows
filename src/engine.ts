@@ -135,7 +135,10 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
         return halt(`${id}: ${errMsg(err)}`);
       }
       s.status = "waiting";
-      actions.push({ kind: "watch", entry: id, waitFor: w });
+      // a re-armed wait (retry keeps the entry's event; goto and a new iteration start blank) learns
+      // what last woke it, so a plugin can avoid firing again on that same thing
+      const prev = s.event?.type === w.on ? { type: s.event.type, data: s.event.data } : undefined;
+      actions.push(prev ? { kind: "watch", entry: id, waitFor: w, previous: prev } : { kind: "watch", entry: id, waitFor: w });
       return;
     }
     begin(id);

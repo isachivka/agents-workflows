@@ -14,6 +14,8 @@ export interface Watch {
   entry?: string;
   vars: Record<string, string>;
   processes?: string[];
+  /** A wait re-armed in the same iteration: the event that last woke its entry. */
+  previous?: { type: string; data: Dict };
 }
 export interface PluginCtx {
   emit(e: PluginEvent): void;

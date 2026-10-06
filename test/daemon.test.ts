@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
+import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, previouses, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
 const start = (process: string, bind?: Record<string, string>) => ({ type: "run.start", data: { process, bind }, source: "test" });
@@ -625,4 +625,22 @@ test("an unreadable caret does not hold the line", async () => {
   await settle(f);
   assert.equal(agterm.typed().length, 1);
   await f.close();
+});
+
+test("a wait re-armed by retry is handed the event that woke it; after a restart too", async () => {
+  resetWatches();
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm, wait_for: test.ping, on_fail: retry}\n  - {step: c, role: human}\n") });
+  const A = await startFlowd(home, { agterm: new FakeAgterm().addSession("S1") });
+  await A.f.submit(start("p", { pm: "S1" }));
+  await A.f.submit({ type: "test.ping", data: { id: "R1" }, source: "test" });
+  await settle(A.f);
+  await A.f.submit(status("S1", "active"));
+  await A.f.submit(report({ session: "S1", outcome: "failed", note: "waiting for re-review" }));
+  assert.deepEqual(previouses(), [null, { type: "test.ping", data: { id: "R1" } }]);
+  await A.f.close();
+  resetWatches();
+  const B = await startFlowd(home, { agterm: new FakeAgterm().addSession("S1") });
+  await settle(B.f);
+  assert.deepEqual(previouses(), [{ type: "test.ping", data: { id: "R1" } }]);
+  await B.f.close();
 });

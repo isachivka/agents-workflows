@@ -123,7 +123,7 @@ export type Input =
 
 export type Action =
   | { kind: "deliver"; role: string; text: string; entry?: string }
-  | { kind: "watch"; entry: string; waitFor: WaitFor }
+  | { kind: "watch"; entry: string; waitFor: WaitFor; previous?: { type: string; data: Dict } }
   | { kind: "unwatch"; entry: string }
   | { kind: "plugin-action"; entry: string; name: string; with: Dict }
   | { kind: "emit"; event: FlowEvent };

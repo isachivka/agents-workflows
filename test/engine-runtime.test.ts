@@ -376,3 +376,15 @@ test("idle is not a turn end: it arms no reminder and parks no wait", () => {
   turn(s, "completed");
   assert.equal(s.run.entries.b.wait?.parked, true);
 });
+
+test("a re-armed wait carries the event that last woke its entry; a first arm and goto do not", () => {
+  const s = new Sim(ONE_ROLE("  - {step: b, role: pm, wait_for: test.ping, on_fail: retry}\n  - {step: c, role: pm}\n"), STEPS, { pm: "S1" }).send({ kind: "start" });
+  const watchOf = () => s.actions.find((a) => a.kind === "watch") as { previous?: unknown } | undefined;
+  assert.equal(watchOf()?.previous, undefined);
+  s.send(ev("test.ping", { id: "R1", by: "alice" }));
+  assert.equal(s.status("b"), "active");
+  s.send(rep("b", "failed", "agent", "waiting for re-review"));
+  assert.deepEqual(watchOf()?.previous, { type: "test.ping", data: { id: "R1", by: "alice" } });
+  s.send({ kind: "goto", entry: "b" });
+  assert.equal(watchOf()?.previous, undefined);
+});

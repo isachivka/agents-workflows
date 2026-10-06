@@ -52,6 +52,7 @@ export default {
       return () => { g.__flowsSubs = g.__flowsSubs.filter((x: any) => x !== w); };
     }
     (g.__flowsWatches ??= []).push(w.run + "/" + w.entry);
+    (g.__flowsPrevious ??= []).push(w.previous ?? null);
     return () => {};
   },
   actions: { post(args: any) { if (args.fail) throw new Error("post failed"); } },
@@ -104,4 +105,6 @@ export async function settle(f: Flowd): Promise<void> {
 }
 
 export const watches = (): string[] => ((globalThis as any).__flowsWatches ??= []);
-export const resetWatches = () => { (globalThis as any).__flowsWatches = []; };
+export const resetWatches = () => { (globalThis as any).__flowsWatches = []; (globalThis as any).__flowsPrevious = []; };
+/** What each wait's watch was given as `previous`, in arming order. */
+export const previouses = (): unknown[] => ((globalThis as any).__flowsPrevious ??= []);
