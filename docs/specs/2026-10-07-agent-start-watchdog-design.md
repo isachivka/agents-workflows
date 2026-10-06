@@ -4,7 +4,7 @@ Status: approved 2026-10-07 by the user ("short spec/plan/fix").
 
 ## Problem
 
-The first run of `my-process` spawned Claude Code in `~/code/my-repo`, a folder
+The first run of a real process spawned Claude Code in a repository checkout, a folder
 Claude had not trusted yet. Claude stopped at its "Is this a project you trust?" dialog with the
 step's first line waiting behind it. flowd saw nothing wrong: the line counted as delivered, the
 session never went `active`, and reminders only start after an `active`. The run sat "running"
