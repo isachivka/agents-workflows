@@ -30,11 +30,30 @@ Symptom, what to check, what to do. flowd's log is `~/.local/state/flows/flowd.l
 ## A line was typed but not submitted
 
 The line sits in the agent's input box and nothing happens. flowd sends the text and the Enter
-separately with a 500 ms pause; a slow terminal can still miss the Enter, and flowd does not
-notice (see [backlog/silent-submit-stuck-step.md](backlog/silent-submit-stuck-step.md)).
+separately with a 500 ms pause; a slow terminal can still miss the Enter. Two minutes later the
+start watchdog stops the run with "the agent has not started" (next section).
 
 - Fix: press Enter in that session, or `printf '\n' | agtermctl session type --stdin --target <session>`.
-  The agent then runs `flow show` and carries on.
+  The agent then runs `flow show` and carries on, and the run resumes by itself.
+
+## A run stopped with "the agent has not started 2 min after its line was delivered"
+
+flowd typed (or spawned with) the step's line, and the agent's session never went `active`.
+Something in that terminal holds the agent: a dialog, a login or update prompt, a line that did
+not submit, an agent that crashed on start.
+
+- Check: open the session (`↗` on the run page) and look.
+- Fix: deal with whatever is on the screen. As soon as the agent starts its turn the run resumes
+  by itself. If the session is gone, use **respawn** on the run page.
+
+## A run stopped with "Claude Code has not trusted <folder> yet"
+
+flowd spawned Claude in a folder Claude has not been told to trust, so Claude shows its "Is this a
+project you trust?" dialog before reading the step. flowd reads `~/.claude.json` (or
+`$CLAUDE_CONFIG_DIR/.claude.json`) to notice this; it never answers the dialog or edits that file.
+
+- Fix: open the session (`↗`), choose "Yes, I trust this folder". The agent starts and the run
+  resumes by itself. Claude remembers the folder, so the next spawn there does not ask.
 
 ## `compact` never finishes
 

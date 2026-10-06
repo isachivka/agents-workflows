@@ -101,6 +101,12 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 - A wait shows on the run: `waiting since <time>: <note>` in the run page's entry panel and in
   `flow show`, `waiting: <note>` in the runs list and `flow ls`. With `--human` the wait is on a
   person and the run is listed under "Needs you".
+- A line that reaches an agent must start its turn. If the session has not gone `active` 2 minutes
+  after a nudge or a reminder was delivered (and the step has no `flow wait`), the run stops for
+  the user: "the agent has not started 2 min after its line was delivered". Before spawning
+  `claude`, flowd also checks Claude's config (`~/.claude.json`) and, when the folder is not
+  trusted yet, stops the run at once with "Claude Code has not trusted <folder> yet". Both stops
+  clear themselves: the agent's first `active` on that step resumes the run.
 - An entry's `timeout` fails it when it stays `active` or `waiting` that long, whether or not its
   agent declared a wait. `compact` fails
   after 10 minutes without a report. Timeouts do not run while the run is paused.
