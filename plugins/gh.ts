@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { Plugin } from "../src/plugins.ts";
+import type { Plugin, PluginCtx, Watch } from "../src/plugins.ts";
 import type { Dict } from "../src/types.ts";
 
 /** Runs gh with these args, in `cwd` when given (a repo-mode watch without with.repo uses the process cwd). */
@@ -87,6 +87,66 @@ export async function pollRepo(kind: "merged" | "opened" | "ci", w: { with: Dict
   }));
 }
 
+// --- gh.review from the reviewer (with.from / only / already): one GraphQL call per poll ---
+
+const REVIEW_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      author { login }
+      reviewDecision
+      timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], first: 100) {
+        nodes { ... on ReviewRequestedEvent { requestedReviewer { __typename ... on User { login } } } }
+      }
+      reviews(last: 50) { nodes { id url state submittedAt author { __typename login } } }
+      comments(last: 50) { nodes { id url createdAt author { __typename login } } }
+    }
+  }
+}`;
+
+export interface ReviewItem { id: string; kind: "review" | "comment"; by: string; bot: boolean; state: string; at: string; url: string }
+export interface ReviewAnswer { author: { login: string }; reviewDecision: string | null; requested: string[]; items: ReviewItem[] }
+
+/** The PR's author, decision, every user ever review-requested (teams and bots dropped), its reviews and comments. */
+export function parseReviewAnswer(json: unknown): ReviewAnswer {
+  const j = json as { errors?: { message: string }[]; data?: { repository?: { pullRequest?: Record<string, any> | null } | null } };
+  if (j.errors?.length) throw new Error(`gh api graphql: ${j.errors.map((e) => e.message).join("; ")}`);
+  const pr = j.data?.repository?.pullRequest;
+  if (!pr) throw new Error("gh api graphql: no such pull request");
+  const requested = (pr.timelineItems?.nodes ?? [])
+    .map((n: any) => n?.requestedReviewer)
+    .filter((r: any) => r?.__typename === "User" && r.login)
+    .map((r: any) => String(r.login));
+  const who = (a: any) => ({ by: String(a?.login ?? ""), bot: a?.__typename === "Bot" });
+  const items: ReviewItem[] = [
+    ...(pr.reviews?.nodes ?? []).map((r: any) => ({ id: String(r.id), kind: "review" as const, ...who(r.author), state: String(r.state ?? ""), at: String(r.submittedAt ?? ""), url: String(r.url ?? "") })),
+    ...(pr.comments?.nodes ?? []).map((c: any) => ({ id: String(c.id), kind: "comment" as const, ...who(c.author), state: "", at: String(c.createdAt ?? ""), url: String(c.url ?? "") })),
+  ];
+  return { author: { login: String(pr.author?.login ?? "") }, reviewDecision: pr.reviewDecision ?? null, requested: [...new Set<string>(requested)], items };
+}
+
+const DECISIONS = new Set(["APPROVED", "CHANGES_REQUESTED"]);
+
+/** The items that count, oldest first. With `from`, bots and the PR's author never count. */
+export function countedItems(a: ReviewAnswer, o: { from?: string; only?: string }): ReviewItem[] {
+  const people = o.from === undefined ? null : o.from === "requested" ? a.requested : o.from.split(",").map((s) => s.trim()).filter(Boolean);
+  return a.items
+    .filter((i) => !people || (i.by && !i.bot && i.by !== a.author.login && people.includes(i.by)))
+    .filter((i) => o.only !== "decisions" || (i.kind === "review" && DECISIONS.has(i.state)))
+    .sort((x, y) => x.at.localeCompare(y.at));
+}
+
+export const reviewOutcome = (state: string): "done" | "failed" | undefined =>
+  state === "APPROVED" ? "done" : state === "CHANGES_REQUESTED" ? "failed" : undefined;
+
+/** owner, name and number from a PR URL, or a bare number with `repo` (owner/name). */
+function prCoordinates(pr: string, repo: unknown): { owner: string; name: string; number: string } {
+  const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pr);
+  if (m) return { owner: m[1], name: m[2], number: m[3] };
+  const r = /^([^/\s]+)\/([^/\s]+)$/.exec(String(repo ?? ""));
+  if (/^\d+$/.test(pr) && r) return { owner: r[1], name: r[2], number: pr };
+  throw new Error(`gh.review with from/only/already needs a PR URL, or with.repo (owner/name) for PR number ${pr}`);
+}
+
 export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin {
   return {
     name: "gh",
@@ -139,6 +199,9 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
           clearInterval(timer);
         };
       }
+      if (kind === "review" && pr && ["from", "only", "already"].some((k) => w.with[k] !== undefined)) {
+        return watchReviewers(w, ctx, pr, exec, every);
+      }
       if (!pr) {
         throw new Error(kind === "checks"
           ? "gh.checks needs a PR (vars.pr or with.pr); to start on CI results use gh.ci"
@@ -174,3 +237,55 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
 }
 
 export default makeGhPlugin();
+
+/**
+ * gh.review limited to people (with.from), to decisions (with.only), optionally firing at once on an
+ * existing decision (with.already) unless it is the one that last woke this entry (w.previous).
+ */
+function watchReviewers(w: Watch, ctx: PluginCtx, pr: string, exec: Exec, every: number): () => void {
+  const only = w.with.only === undefined ? undefined : String(w.with.only);
+  if (only !== undefined && only !== "decisions") throw new Error('gh.review: only must be "decisions"');
+  const from = w.with.from === undefined ? undefined : String(w.with.from);
+  const already = w.with.already === true || w.with.already === "true";
+  const { owner, name, number } = prCoordinates(pr, w.with.repo);
+  const args = ["api", "graphql", "-f", `query=${REVIEW_QUERY}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`];
+  let seen: Set<string> | null = null;
+  let finished = false;
+  let failing = false;
+  const emit = (a: ReviewAnswer, i: ReviewItem) => {
+    finished = Boolean(w.run); // a wait takes one event
+    ctx.emit({
+      type: w.type, run: w.run, entry: w.entry, outcome: reviewOutcome(i.state),
+      data: { pr, id: i.id, by: i.by, kind: i.kind, state: i.state, decision: a.reviewDecision ?? "", url: i.url,
+        reviews: a.items.filter((x) => x.kind === "review").length, comments: a.items.filter((x) => x.kind === "comment").length },
+    });
+  };
+  const poll = async () => {
+    if (finished) return;
+    try {
+      const a = parseReviewAnswer(json(await exec(args, w.cwd), "api graphql"));
+      if (finished) return;
+      if (failing) { ctx.error(null, w); failing = false; }
+      const counted = countedItems(a, { from, only });
+      if (!seen) {
+        seen = new Set(a.items.map((i) => i.id)); // the baseline: what is there now never fires...
+        const latest = [...counted].reverse().find((i) => i.kind === "review" && DECISIONS.has(i.state));
+        // ...except, with already, a decision that is there now and did not wake this entry before
+        if (already && latest && latest.id !== w.previous?.data.id) emit(a, latest);
+        return;
+      }
+      const fresh = counted.filter((i) => !seen!.has(i.id));
+      for (const i of a.items) seen.add(i.id);
+      if (fresh.length) emit(a, fresh[0]);
+    } catch (e) {
+      failing = true;
+      ctx.error(e, w);
+    }
+  };
+  void poll();
+  const timer = setInterval(poll, every);
+  return () => {
+    finished = true;
+    clearInterval(timer);
+  };
+}
