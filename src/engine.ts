@@ -20,7 +20,7 @@ export const nudgeText = (run: RunState, entry: string) =>
   `▶ flow: step ${entry} · ${run.id} it.${run.iteration} — run \`flow show\` for the instructions`;
 
 export const reminderText = (entry: string) =>
-  `▶ flow: step ${entry} is not closed — \`flow done\` or \`flow failed --note "…"\``;
+  `▶ flow: step ${entry} is not closed — \`flow done\`, \`flow failed --note "…"\`, or \`flow wait --note "…"\` if you are waiting on purpose`;
 
 export function renderData(run: RunState, event?: FlowEvent): Dict {
   return {
@@ -115,7 +115,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const e = byId(id)!;
     const s = st(id);
     run.current = id;
-    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0 });
+    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined });
     if (e.waitFor) {
       let w: WaitFor;
       try {
@@ -178,6 +178,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     s.status = outcome;
     s.by = info.by;
     s.remindAt = undefined;
+    s.wait = undefined;
     if (info.note !== undefined) s.note = info.note;
     if (info.evidence !== undefined) s.evidence = info.evidence;
     emit(outcome === "done" ? "flow.step.done" : "flow.step.failed", { entry: id, note: info.note ?? "" });
@@ -234,6 +235,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     s.sawActive = false;
     s.reminded = 0;
     s.remindAt = undefined;
+    s.wait = undefined;
     deliver(role, nudgeText(run, cur.id), cur.id);
   }
 
@@ -273,6 +275,20 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       if (input.outcome === "failed" && !input.note && input.by !== "system") return fail("a failure needs --note");
       resume();
       finish(curId, input.outcome, { note: input.note, evidence: input.evidence, by: input.by });
+      return done();
+    }
+    case "wait": {
+      if (input.entry !== curId) return fail(`step ${input.entry} is not the current step (current: ${curId ?? "none"})`);
+      const s = st(curId);
+      if (cur!.kind !== "agent") return fail(`flow wait is for an agent's step; ${curId} is a ${cur!.kind} step`);
+      if (s.status !== "active") return fail(`step ${curId} is not active (${s.status})`);
+      if (s.deliveredAt === undefined) return fail(`step ${curId} has not reached the agent yet`);
+      if (!input.note) return fail("flow wait needs --note saying what you are waiting for");
+      // declared mid-turn it parks on the turn end; declared after the turn (or from another
+      // terminal) no turn end will follow, so it is parked already
+      s.wait = { note: input.note, human: input.human, since: now, parked: !input.sessionActive };
+      s.reminded = 0;
+      s.remindAt = undefined;
       return done();
     }
     case "skip": {
@@ -331,10 +347,16 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       const s = st(cur!.id);
       if (!s.deliveredAt) return done();
       if (input.status === "active") {
+        if (s.wait?.parked) s.wait = undefined; // the agent's next turn began: the wait is used up
         s.sawActive = true;
         s.remindAt = undefined;
-      } else if ((input.status === "completed" || input.status === "idle") && s.sawActive) {
-        s.remindAt = now + REMIND_AFTER_MS;
+      } else if (input.status === "completed" || input.status === "idle") {
+        if (s.wait) {
+          s.wait.parked = true; // the turn the wait was declared in ended; repeats change nothing
+          s.remindAt = undefined;
+        } else if (s.sawActive) {
+          s.remindAt = now + REMIND_AFTER_MS;
+        }
       }
       return done();
     }

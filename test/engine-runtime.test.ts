@@ -206,3 +206,102 @@ test("a missing process or a removed current entry stops the run for the human",
   assert.equal(s.run.status, "running");
   assert.equal(s.status("c"), "active");
 });
+const wait = (note = "review running", extra: Partial<{ human: boolean; sessionActive: boolean; entry: string }> = {}): Input =>
+  ({ kind: "wait", entry: "b", note, human: false, sessionActive: true, ...extra });
+const turn = (s: Sim, status: "active" | "completed" | "idle") => s.send({ kind: "session", session: "S1", status });
+
+test("a wait declared mid-turn survives a repeated active, parks on the turn end, and is never reminded", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  turn(s, "active");
+  s.send(wait());
+  turn(s, "active");
+  assert.equal(s.run.entries.b.wait?.parked, false);
+  turn(s, "completed");
+  assert.equal(s.run.entries.b.wait?.parked, true);
+  assert.equal(s.run.entries.b.remindAt, undefined);
+  turn(s, "idle");
+  s.now += 600_000;
+  s.send({ kind: "tick" });
+  assert.deepEqual(s.delivered(), []);
+  assert.equal(s.run.status, "running");
+  assert.equal(s.run.entries.b.wait?.note, "review running");
+});
+
+test("the next turn uses the wait up; a later forgotten report is reminded as before", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  turn(s, "active");
+  s.send(wait());
+  turn(s, "completed");
+  turn(s, "active");
+  assert.equal(s.run.entries.b.wait, undefined);
+  turn(s, "completed");
+  assert.equal(s.run.entries.b.remindAt, s.now + 30_000);
+  s.now += 30_000;
+  s.send({ kind: "tick" });
+  assert.deepEqual(s.delivered(), [`pm: ${reminderText("b")}`]);
+});
+
+test("waits reset the reminder count, so legitimate waits never halt a step", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  for (let i = 0; i < 2; i++) {
+    turn(s, "active");
+    turn(s, "completed");
+    s.now += 30_000;
+    s.send({ kind: "tick" });
+  }
+  assert.equal(s.run.entries.b.reminded, 2);
+  for (let i = 0; i < 5; i++) {
+    turn(s, "active");
+    s.send(wait(`wait ${i}`));
+    assert.equal(s.run.entries.b.reminded, 0);
+    turn(s, "completed");
+    s.now += 60_000;
+    s.send({ kind: "tick" });
+  }
+  assert.equal(s.run.status, "running");
+  assert.deepEqual(s.delivered(), []);
+});
+
+test("a wait from an idle session starts parked", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.send(wait("from my terminal", { sessionActive: false }));
+  assert.equal(s.run.entries.b.wait?.parked, true);
+  turn(s, "active");
+  assert.equal(s.run.entries.b.wait, undefined);
+});
+
+test("the step's timeout still runs while its agent waits", () => {
+  const s = new Sim("description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: b, role: pm, timeout: 1m}\n", STEPS, { pm: "S1" }).send({ kind: "start" });
+  turn(s, "active");
+  s.send(wait());
+  turn(s, "completed");
+  s.now += 60_000;
+  s.send({ kind: "tick" });
+  assert.equal(s.run.entries.b.status, "failed");
+});
+
+test("done, goto and retry leave no wait behind", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" }).send({ kind: "start" });
+  s.send(wait());
+  s.send({ kind: "retry", entry: "b" });
+  assert.equal(s.run.entries.b.wait, undefined);
+  s.send(wait());
+  s.send(rep("b"));
+  assert.equal(s.run.entries.b.wait, undefined);
+});
+
+test("flow wait is refused where a report would be, and needs a note", () => {
+  const h = new Sim("description: d\ncwd: /tmp\nsteps:\n  - {step: c, role: human}\n", STEPS).send({ kind: "start" });
+  assert.equal(h.send({ ...wait(), entry: "c" } as Input).error, "flow wait is for an agent's step; c is a human step");
+  const s = new Sim(LINEAR, STEPS, { pm: "S1" });
+  s.autoDeliver = false;
+  s.send({ kind: "start" });
+  assert.equal(s.send(wait()).error, "step b has not reached the agent yet");
+  s.send({ kind: "delivered", entry: "b" });
+  assert.equal(s.send(wait("")).error, "flow wait needs --note saying what you are waiting for");
+  assert.match(s.send(wait("x", { entry: "c" })).error!, /not the current step/);
+});
+
+test("the reminder tells a forgetful agent about flow wait", () => {
+  assert.match(reminderText("b"), /`flow wait --note "…"` if you are waiting on purpose/);
+});

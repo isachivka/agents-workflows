@@ -72,7 +72,12 @@ export interface EntryState {
   sawActive: boolean;
   remindAt?: number;
   reminded: number;
+  /** The agent ended (or will end) its turn on purpose: `flow wait`. */
+  wait?: AgentWait;
 }
+
+/** Declared mid-turn it parks on that turn's end; the agent's next turn uses it up. */
+export interface AgentWait { note: string; human: boolean; since: number; parked: boolean }
 
 export type RunStatus = "running" | "paused" | "needs-human" | "done" | "stopped";
 export const TERMINAL: RunStatus[] = ["done", "stopped"];
@@ -108,7 +113,8 @@ export type Input =
   | { kind: "bind"; role: string; session: string | null; by: "spawn" | "human" }
   | { kind: "respawn"; role: string }
   | { kind: "halt"; reason: string }
-  | { kind: "delivered"; entry: string };
+  | { kind: "delivered"; entry: string }
+  | { kind: "wait"; entry: string; note: string; human: boolean; sessionActive: boolean };
 
 export type Action =
   | { kind: "deliver"; role: string; text: string; entry?: string }
