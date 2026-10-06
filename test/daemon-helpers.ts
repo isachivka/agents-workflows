@@ -24,12 +24,17 @@ export class FakeAgterm implements Agterm {
   }
   async focus(session: string): Promise<void> { this.calls.push(`focus ${session}`); }
   async tree(): Promise<SessionInfo[]> { return this.sessions; }
-  screens = new Map<string, string>();
-  async text(session: string): Promise<string> { return this.screens.get(session) ?? ""; }
+  /** caret column per surface; a missing surface reads as an empty input box */
+  columns = new Map<string, number>();
+  async cursorColumn(surface: string): Promise<number> {
+    const c = this.columns.get(surface);
+    if (c === -1) throw new Error("hidden surface");
+    return c ?? 2;
+  }
   async reloadHooks(): Promise<void> { this.calls.push("hooks reload"); }
   typed(): string[] { return this.calls.filter((c) => c.startsWith("type ")); }
   addSession(...ids: string[]): this {
-    for (const id of ids) this.sessions.push({ id, name: id, cwd: "/", workspace: "W" });
+    for (const id of ids) this.sessions.push({ id, name: id, cwd: "/", workspace: "W", surface: `surface:${id}:left` });
     return this;
   }
 }

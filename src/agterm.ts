@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export interface SessionInfo { id: string; name: string; cwd: string; workspace: string; status?: string; title?: string; overlay?: boolean }
+export interface SessionInfo { id: string; name: string; cwd: string; workspace: string; status?: string; title?: string; overlay?: boolean; surface?: string }
 
 export interface Agterm {
   spawn(o: { cwd: string; command: string; workspace: string; name: string }): Promise<string>;
@@ -10,21 +10,12 @@ export interface Agterm {
   focus(session: string): Promise<void>;
   tree(): Promise<SessionInfo[]>;
   reloadHooks(): Promise<void>;
-  /** the session's screen as plain text */
-  text(session: string): Promise<string>;
+  /** zero-based caret column of a surface (`agtermctl surface cursor`) */
+  cursorColumn(surface: string): Promise<number>;
 }
 
-/**
- * What the user has typed into the agent's input box: the text between the screen's last two
- * horizontal rules (Claude Code and Codex draw their composer that way), without the prompt mark.
- */
-export function composerDraft(screen: string): string {
-  const lines = screen.split("\n");
-  const rules = lines.flatMap((l, i) => ((l.match(/─/g)?.length ?? 0) >= 20 ? [i] : []));
-  if (rules.length < 2) return "";
-  const [from, to] = rules.slice(-2);
-  return lines.slice(from + 1, to).join("\n").replace(/^\s*[❯›>]\s?/, "").trim();
-}
+/** The caret column at an empty input box: right after `❯ ` (Claude Code) or `› ` (Codex). */
+export const EMPTY_INPUT_COLUMN = 2;
 
 export const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -73,15 +64,18 @@ export function realAgterm(bin = process.env.FLOWS_AGTERMCTL || "agtermctl", sub
     async focus(session) {
       await run(bin, ["session", "select", "--target", session]);
     },
-    async text(session) {
-      return run(bin, ["session", "text", "--target", session]);
+    async cursorColumn(surface) {
+      const column = Number(JSON.parse(await run(bin, ["surface", "cursor", "--target", surface, "--json"]))?.result?.cursor?.column);
+      if (!Number.isInteger(column)) throw new Error(`agtermctl surface cursor: no column for ${surface}`);
+      return column;
     },
     async tree() {
       const out = JSON.parse(await run(bin, ["tree", "--json"]));
       const sessions: SessionInfo[] = [];
       for (const ws of out?.result?.tree?.workspaces ?? []) {
         for (const s of ws.sessions ?? []) {
-          sessions.push({ id: s.id, name: s.name ?? "", cwd: s.cwd ?? "", workspace: ws.name ?? "", status: s.status, title: s.title, overlay: s.overlay === true });
+          sessions.push({ id: s.id, name: s.name ?? "", cwd: s.cwd ?? "", workspace: ws.name ?? "", status: s.status, title: s.title, overlay: s.overlay === true,
+            surface: (s.surfaces ?? []).find((x: { kind?: string }) => x.kind === "left")?.id });
         }
       }
       return sessions;

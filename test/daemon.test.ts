@@ -602,18 +602,26 @@ test("a trusted folder, a non-claude spawn, or no Claude config is not stopped",
   await c.f.close();
 });
 
-test("a line waits while the user has a draft in the input box or an overlay is open, then goes out", async () => {
+test("a line waits while the caret is past the prompt or an overlay is open; a suggestion does not hold it", async () => {
   const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
-  const RULE = "─".repeat(60);
-  agterm.screens.set("S1", [RULE, "❯ half a message", RULE].join("\n"));
+  agterm.columns.set("surface:S1:left", 17); // the user is typing
   await f.submit(start("p", { pm: "S1" }));
   await settle(f);
   assert.deepEqual(agterm.typed(), []);
-  agterm.screens.set("S1", [RULE, "❯ ", RULE].join("\n"));
+  agterm.columns.set("surface:S1:left", 2); // empty input box, whatever suggestion is drawn
   agterm.sessions[0].overlay = true;
   await settle(f);
   assert.deepEqual(agterm.typed(), []);
   agterm.sessions[0].overlay = false;
+  await settle(f);
+  assert.equal(agterm.typed().length, 1);
+  await f.close();
+});
+
+test("an unreadable caret does not hold the line", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }), { agterm: new FakeAgterm().addSession("S1") });
+  agterm.columns.set("surface:S1:left", -1);
+  await f.submit(start("p", { pm: "S1" }));
   await settle(f);
   assert.equal(agterm.typed().length, 1);
   await f.close();

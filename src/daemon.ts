@@ -5,7 +5,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { composerDraft, expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
+import { EMPTY_INPUT_COLUMN, expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -573,11 +573,17 @@ export class Flowd {
     }
   }
 
-  /** The user has a draft in the session's input box, or an overlay open in it: typing now would land on top. */
+  /**
+   * The user is typing in the session (the caret is past the prompt), or an overlay is open in it:
+   * typing now would land on top. The caret, not the screen: Claude Code draws a greyed suggestion
+   * in an empty input box that the screen text cannot tell from typed text.
+   */
   private async userInSession(session: string): Promise<boolean> {
     try {
-      if ((await this.agterm.tree()).find((s) => s.id === session)?.overlay) return true;
-      return composerDraft(await this.agterm.text(session)) !== "";
+      const info = (await this.agterm.tree()).find((s) => s.id === session);
+      if (info?.overlay) return true;
+      if (!info?.surface) return false;
+      return (await this.agterm.cursorColumn(info.surface)) > EMPTY_INPUT_COLUMN;
     } catch {
       return false; // cannot tell: deliver as before
     }

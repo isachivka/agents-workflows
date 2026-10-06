@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { realAgterm, shq, spawnCommand, expandHome, composerDraft } from "../src/agterm.ts";
+import { realAgterm, shq, spawnCommand, expandHome } from "../src/agterm.ts";
 
 function fakeAgtermctl() {
   const dir = mkdtempSync(join(tmpdir(), "flows-agterm-"));
@@ -17,7 +17,8 @@ echo >> '${log}'
 if [ -n "$FAKE_FAIL" ]; then echo boom >&2; exit 3; fi
 case "$1 $2" in
   "session new") echo '{"ok":true,"result":{"id":"S-NEW"}}' ;;
-  "tree --json") echo '{"ok":true,"result":{"tree":{"workspaces":[{"name":"W","sessions":[{"id":"S1","name":"one","cwd":"/x","status":"active","title":"t"},{"id":"S2","name":"two","cwd":"/y"}]}]}}}' ;;
+  "surface cursor") echo '{"ok":true,"result":{"id":"surface:S1:left","cursor":{"column":7}}}' ;;
+  "tree --json") echo '{"ok":true,"result":{"tree":{"workspaces":[{"name":"W","sessions":[{"id":"S1","name":"one","cwd":"/x","status":"active","title":"t","surfaces":[{"id":"surface:S1:right","kind":"right"},{"id":"surface:S1:left","kind":"left"}]},{"id":"S2","name":"two","cwd":"/y"}]}]}}}' ;;
 esac
 `);
   chmodSync(bin, 0o755);
@@ -46,8 +47,8 @@ test("type sends the text, then Enter on its own, both on stdin; focus selects",
 test("tree flattens workspaces into sessions", async () => {
   const f = fakeAgtermctl();
   assert.deepEqual(await realAgterm(f.bin).tree(), [
-    { id: "S1", name: "one", cwd: "/x", workspace: "W", status: "active", title: "t", overlay: false },
-    { id: "S2", name: "two", cwd: "/y", workspace: "W", status: undefined, title: undefined, overlay: false },
+    { id: "S1", name: "one", cwd: "/x", workspace: "W", status: "active", title: "t", overlay: false, surface: "surface:S1:left" },
+    { id: "S2", name: "two", cwd: "/y", workspace: "W", status: undefined, title: undefined, overlay: false, surface: undefined },
   ]);
 });
 
@@ -79,15 +80,8 @@ test("expandHome", () => {
   assert.equal(expandHome("/abs", "/h"), "/abs");
 });
 
-const RULE = "─".repeat(60);
-const screen = (composer: string[], top = RULE) =>
-  ["⏺ earlier output", "", top, ...composer, RULE, "  ➜ repo (main) Opus 5.5 ctx:6%", "  ⏵⏵ bypass permissions on"].join("\n");
-
-test("composerDraft reads what sits in the input box between the last two rules", () => {
-  assert.equal(composerDraft(screen(["❯ "])), "");
-  assert.equal(composerDraft(screen(["❯ уже второй раз сегодня"])), "уже второй раз сегодня");
-  assert.equal(composerDraft(screen(["❯ first line", "  second line"])), "first line\n  second line");
-  assert.equal(composerDraft(screen(["› codex draft"])), "codex draft");
-  assert.equal(composerDraft(screen(["❯ "], `${"─".repeat(40)} Agent Workflows Executor ─`)), "");
-  assert.equal(composerDraft("no rules at all\n❯ text"), "");
+test("cursorColumn reads a surface's caret column", async () => {
+  const f = fakeAgtermctl();
+  assert.equal(await realAgterm(f.bin).cursorColumn("surface:S1:left"), 7);
+  assert.match(f.calls(), /\[surface\]\[cursor\]\[--target\]\[surface:S1:left\]\[--json\]/);
 });
