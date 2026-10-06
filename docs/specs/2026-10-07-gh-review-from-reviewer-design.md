@@ -1,6 +1,6 @@
 # `gh.review` that waits for the reviewer, not for any comment
 
-Status: proposed 2026-10-07 (a request from a live process). Awaiting the user's approval.
+Status: approved 2026-10-07 by the user (a request from a live process).
 
 ## Problem
 
