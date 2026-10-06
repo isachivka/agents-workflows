@@ -228,7 +228,8 @@ function HumanStep({ r, cur, post, detail }) {
   const { data, error } = useData(`/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/prompt`, false);
   const url = prUrl(r.vars);
   return html`
-    ${data ? html`<pre class="instr">${data.text}</pre>` : error && html`<p class="err-box">${error.message}</p>`}
+    ${error && html`<p class="err-box">${error.message}</p>`}
+    ${data && html`<details class="more"><summary>${t("proc.toldHuman")}</summary><pre class="instr">${data.text}</pre></details>`}
     <div class="acts">
       ${url && html`<a class=${`btn${r.waitingOn ? " primary" : ""}`} href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
       ${r.waitingOn
@@ -503,7 +504,7 @@ function Settings({ lang, onLang }) {
         <div class="scroll"><table class="tech">
           <thead><tr><th>${t("set.plugin")}</th><th>${t("set.events")}</th><th>${t("set.actions")}</th><th>${t("set.watching")}</th><th>${t("set.lastError")}</th></tr></thead>
           <tbody>${data.plugins.map((p) => html`<tr>
-            <td>${p.name}<div class="muted"><code>${p.source}</code></div></td>
+            <td>${p.name}<div class="muted src"><code>${p.source}</code></div></td>
             <td>${p.events.map((e) => `${p.name}.${e}`).join(", ")}</td>
             <td>${p.actions.join(", ") || "—"}</td>
             <td>${p.watches.length === 0 ? "—" : p.watches.map((w) => html`<div>${w.run === null

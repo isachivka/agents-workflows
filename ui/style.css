@@ -74,6 +74,7 @@ textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monosp
 .btn.danger { border-color: transparent; background: transparent; color: var(--bad); }
 .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; }
+.field select { width: 100%; }
 .err-box { background: var(--bad-soft); color: var(--bad-text); border-radius: 10px; padding: 10px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .err { color: var(--bad); white-space: pre-wrap; }
 details.more { border-top: 1px solid var(--line); padding-top: 10px; }
@@ -161,7 +162,12 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .opt p { flex: 1; }
 .opt.rec { border: 2px solid var(--accent); }
 .decide-foot { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 20px; }
-@media (max-width: 640px) { .decide { padding: 18px; } }
+@media (max-width: 640px) {
+  .decide { padding: 18px; }
+  /* the warning icon would indent the headline and the quote by a column a phone cannot spare */
+  .decide-ic { display: none; }
+  .decide h2 { font-size: 20px; }
+}
 
 /* processes */
 .facts { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -188,8 +194,23 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 
 @media (max-width: 640px) {
   h1 { font-size: 26px; }
-  .wrap { padding: 0 16px; }
-  .topin > .lang { display: none; }
+  /* sides only: the shorthand would also wipe .page's top and bottom padding */
+  .wrap { padding-left: 16px; padding-right: 16px; }
+  .page { padding-top: 20px; }
+  /* one row on a phone: the mark without the word, tighter tabs, the language in Settings */
+  .topin { flex-wrap: nowrap; gap: 8px; min-height: 56px; }
+  .logo span, .topin > .lang { display: none; }
+  /* a plugin's file path is for debugging; on a phone it only widens the table */
+  .src { display: none; }
+  .nav { flex-wrap: nowrap; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .nav a { padding: 0 10px; font-size: 15px; white-space: nowrap; }
+}
+@media (max-width: 380px) {
+  .nav a { padding: 0 8px; font-size: 14px; }
+}
+@media (max-width: 340px) {
+  .topin { gap: 4px; }
+  .nav a { padding: 0 6px; }
   .box { padding: 18px; }
   .meta .when { margin-left: 0; }
   .grid2 { grid-template-columns: 1fr; }
