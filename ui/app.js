@@ -134,7 +134,7 @@ function Run({ arg: id }) {
       </div>`}
     </section>
     <${Err} msg=${err} />
-    ${s && html`<${Decide} r=${r} s=${s} d=${d} post=${post} setErr=${setErr} stop=${stop} />`}
+    ${s && html`<${Decide} key=${r.current} r=${r} s=${s} d=${d} post=${post} setErr=${setErr} stop=${stop} />`}
     <div class="cols">
       <section class="main-col"><h2>${t("run.howItGoes")}</h2>
         <${Timeline} r=${r} now=${now} post=${post} setErr=${setErr} live=${live} quiet=${Boolean(s)} /></section>
@@ -178,7 +178,7 @@ function Decide({ r, s, d, post, setErr, stop }) {
                    <button class="btn" disabled=${!why.trim()} onClick=${post(`${path}/skip`, { note: why.trim() })}>${t("act.skip")}</button>`
             : html`<button class="btn" onClick=${() => setSkipping(true)}>${t("act.skip")}…</button>`}</div>`}
         ${s === "stopped" && cur.kind === "agent" && html`<div class="opt"><h4>${t("act.respawn")}</h4><p class="muted small">${t("why.respawn")}</p>
-          <button class="btn" onClick=${post(`/roles/${enc(cur.role)}/respawn`)}>${t("act.respawn")}</button></div>`}
+          <button class="btn" onClick=${() => { if (confirm(t("confirm.respawn", { role: cur.role }))) post(`/roles/${enc(cur.role)}/respawn`)(); }}>${t("act.respawn")}</button></div>`}
         ${terminal && html`<div class="opt"><h4>${t("act.sortYourself")}</h4><p class="muted small">${t("why.terminal")}</p>${terminal}</div>`}
       </div>
       <div class="decide-foot">
@@ -189,10 +189,10 @@ function Decide({ r, s, d, post, setErr, stop }) {
 }
 
 function HumanStep({ r, cur, post, detail }) {
-  const { data } = useData(`/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/prompt`, false);
+  const { data, error } = useData(`/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/prompt`, false);
   const url = firstUrl(r.vars);
   return html`
-    ${data && html`<pre class="instr">${data.text}</pre>`}
+    ${data ? html`<pre class="instr">${data.text}</pre>` : error && html`<p class="err-box">${error.message}</p>`}
     <div class="acts">
       ${url && html`<a class=${`btn${r.waitingOn ? " primary" : ""}`} href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
       ${r.waitingOn
@@ -249,13 +249,13 @@ function Current({ r, e, now, post, setErr, live, quiet }) {
   const since = r.agentWait ? r.agentWait.since : e.startedAt;
   const path = `/entries/${enc(e.id)}`;
   return html`<div class="box cur">
-    <div class="meta"><${Pill} tone="work">${t("run.now")}<//>
-      <span class="muted small">${since ? t("run.running", { d: duration(now - since) }) : ""}${st.attempts > 1 ? ` · ${t("run.attempt", { n: st.attempts })}` : ""}</span></div>
+    <div class="meta"><${Pill} tone=${quiet ? "you" : "work"}>${quiet ? describeRun(r).tag : t("run.now")}<//>
+      <span class="muted small">${[!quiet && r.status !== "paused" && since ? t("run.running", { d: duration(now - since) }) : "", st.attempts > 1 ? t("run.attempt", { n: st.attempts }) : ""].filter(Boolean).join(" · ")}</span></div>
     <h3>${roleChip(e)}${entryPhrase(e)}</h3>
     ${r.agentWait ? html`<p class="muted">${t("run.agentWaitNote", { note: r.agentWait.note })}</p>`
       : r.waitingOn ? html`<p class="muted">${t("wait.for", { what: eventPhrase(r.waitingOn) })}</p>`
-      : e.kind === "agent" && html`<p class="muted">${t("run.agentSilent")}</p>`}
-    ${sid && html`<div class="acts"><button class="btn primary" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: e.role })}</button></div>`}
+      : e.kind === "agent" && !quiet && html`<p class="muted">${t("run.agentSilent")}</p>`}
+    ${sid && html`<div class="acts"><button class=${`btn${quiet ? "" : " primary"}`} onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: e.role })}</button></div>`}
     ${(e.kind === "agent" || e.kind === "human") && html`<${PromptFold} run=${r.id} entry=${e.id} label=${e.kind === "agent" ? t("run.toldAgent") : t("proc.toldHuman")} />`}
     ${live && !quiet && html`<details class="more"><summary>${t("run.stepIn")}</summary><div class="ov">
       <div><button class="btn" onClick=${post(`${path}/done`)}>${t("act.markDone")}</button><span class="muted small">${t("why.markDone")}</span></div>
@@ -296,7 +296,7 @@ function Agents({ r, post, setErr, live }) {
             : html`<span class="muted small">${t("run.noSession")}</span>`}
           ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}>${t("act.terminal")}</button>`}</div>
         ${live && html`<details class="more small"><summary>${t("run.agentMore")}</summary><div class="ov">
-          <div><button class="btn" onClick=${post(`/roles/${enc(role)}/respawn`)}>${t("act.respawn")}</button></div>
+          <div><button class="btn" onClick=${() => { if (confirm(t("confirm.respawn", { role }))) post(`/roles/${enc(role)}/respawn`)(); }}>${t("act.respawn")}</button></div>
           <div><select value=${pick[role] || ""} onChange=${(e) => setPick({ ...pick, [role]: e.target.value })}>
               <option value="">${t("act.rebind")}</option>
               ${(sessions || []).map((x) => html`<option value=${x.id}>${sessionLabel(x)}</option>`)}</select>
@@ -311,7 +311,7 @@ function History({ r, now }) {
   const lines = r.events.map((e) => [e, eventSentence(e, r.plan)]).filter(([, s]) => s).slice(0, 5);
   return html`<section class="box"><h2>${t("run.happened")}</h2>
     ${lines.length === 0 ? html`<p class="muted small">${t("run.nothingYet")}</p>`
-      : html`<ul class="feed">${lines.map(([e, s]) => html`<li><span class="muted">${moment(e.ts, now)}</span><span>${s}</span></li>`)}</ul>`}
+      : html`<ul class="feed">${lines.map(([e, s]) => html`<li><span class="muted tm">${moment(e.ts, now)}</span><span>${s}</span></li>`)}</ul>`}
     <details class="more small"><summary>${t("run.fullHistory")}</summary><div class="scroll"><table class="tech">
       <thead><tr><th>${t("tech.when")}</th><th>${t("tech.type")}</th><th>${t("tech.step")}</th><th>${t("tech.outcome")}</th><th>${t("tech.data")}</th></tr></thead>
       <tbody>${r.events.map((e) => html`<tr><td class="muted">${new Date(e.ts).toLocaleString(getLang())}</td><td>${e.type}</td>

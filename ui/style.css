@@ -146,7 +146,8 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .agent { display: flex; flex-direction: column; gap: 6px; }
 .agent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
-.feed li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; overflow-wrap: anywhere; }
+.feed li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; overflow-wrap: anywhere; }
+.feed .tm { white-space: nowrap; }
 .decide { background: var(--you-bg); border: 2px solid var(--you); border-radius: 18px; padding: 24px 26px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .decide-head { display: flex; gap: 14px; align-items: flex-start; }
 .decide-head > div { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
