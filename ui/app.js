@@ -69,6 +69,7 @@ function Now() {
     </section>`}
     ${(finished.length > 0 || rounds.length > 0) && html`<section>
       <h2><${Icon} name="check" />${older ? t("now.recent") : t("now.finished")}</h2>
+      ${rows.length === 0 && html`<p class="muted">${t("now.noneToday")}</p>`}
       ${rows.length > 0 && html`<div class="box rows">${rows.map((x) => (x.r
         ? html`<${FinishedRow} r=${x.r} now=${now} key=${x.r.id} />`
         : html`<${RoundRow} round=${x.round} now=${now} key=${`${x.round.run}/${x.round.iteration}`} />`))}</div>`}
@@ -88,7 +89,7 @@ function WaitingCard({ r, now }) {
   return html`<article class="box you">
     <div class="meta"><${Pill} tone="you">${d.tag}<//>${about && html`<span class="muted small">${runName(r)}</span>`}
       <span class="muted small when">${t("now.waitedFor", { d: duration(now - waitingSince(r)) })}</span></div>
-    <h3>${about || runName(r)}</h3>
+    <h3 class="about" title=${about ? r.vars.title : undefined}>${about || runName(r)}</h3>
     <p class="step">${d.title}</p>
     ${d.detail && html`<p class="muted">${d.detail}</p>`}
     <${Err} msg=${err} />
@@ -114,7 +115,7 @@ function WorkingCard({ r, now }) {
   const about = runTitle(r);
   return html`<article class="box">
     <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//>${about && html`<span class="muted small">${runName(r)}</span>`}</div>
-    <h3>${about || runName(r)}</h3>
+    <h3 class="about" title=${about ? r.vars.title : undefined}>${about || runName(r)}</h3>
     <p class="step">${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</p>
     ${d.detail && html`<p class="muted small">${d.detail}</p>`}
     <div class="prog" role="img" aria-label=${t("now.stepOf", { i: p.i, n: p.n })}>${p.segs.map((s) => html`<span class=${s}></span>`)}</div>
@@ -163,7 +164,7 @@ function Run({ arg: id }) {
     <a class="back small" href="#/runs">← ${t("nav.now")}</a>
     <section class="head">
       <div>
-        <div class="title-row"><h1>${runTitle(r) || runLabel(r.id)}</h1>
+        <div class="title-row"><h1 title=${runTitle(r) ? r.vars.title : undefined}>${runTitle(r) || runLabel(r.id)}</h1>
           <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${s ? t("st.needs-human") : t(`st.${r.status}`)}<//></div>
         <${ProcessLine} name=${r.process} />
         <p class="muted small">${runTitle(r) ? `${runLabel(r.id)} · ` : ""}${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>

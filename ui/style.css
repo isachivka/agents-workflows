@@ -93,6 +93,7 @@ details.more > summary { cursor: pointer; color: var(--accent); font-weight: 600
 /* a card's headline says what the run works on; the step it stands on reads second */
 .step { font-weight: 500; overflow-wrap: anywhere; }
 .box h3 { overflow-wrap: anywhere; }
+.box h3.about { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .run-chip { max-width: 100%; }
 .run-chip .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--chip); color: var(--muted); }

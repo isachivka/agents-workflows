@@ -174,4 +174,9 @@ test("runTitle: what a run works on is its title var, trimmed; nothing when it i
   assert.equal(T.runTitle(run({ vars: { title: "  Fix the login timeout " } })), "Fix the login timeout");
   assert.equal(T.runTitle(run({ vars: { title: "   " } })), null);
   assert.equal(T.runTitle(run({ vars: {} })), null);
+  // a conventional-commit PR title reads as plain words; the full one stays in the tooltip
+  assert.equal(T.runTitle(run({ vars: { title: "fix(login): [ABC-123] stop the session timing out early" } })), "Stop the session timing out early");
+  assert.equal(T.runTitle(run({ vars: { title: "refactor(store)!: [ABC-9] wave 61 — type the actions" } })), "Wave 61 — type the actions");
+  assert.equal(T.runTitle(run({ vars: { title: "Fix the login timeout" } })), "Fix the login timeout");
+  assert.equal(T.runTitle(run({ vars: { title: "fix: [ABC-1]" } })), "fix: [ABC-1]");
 });

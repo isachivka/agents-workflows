@@ -29,7 +29,7 @@ const EN = {
   "now.lead.more.one": "One more works on its own — no need to look.", "now.lead.more.other": "{n} more work on their own — no need to look.",
   "now.lead.working.one": "One run works on its own — nothing needs you.", "now.lead.working.other": "{n} runs work on their own — nothing needs you.",
   "now.start": "Start a process…", "now.waiting": "Waiting for you", "now.working": "Working on their own",
-  "now.finished": "Finished today", "now.recent": "Finished lately", "now.older": "Show older", "now.empty": "Nothing has run yet.",
+  "now.finished": "Finished today", "now.recent": "Finished lately", "now.older": "Show older", "now.noneToday": "Nothing finished today.", "now.empty": "Nothing has run yet.",
   "now.waitedFor": "waiting {d}", "now.stepOf": "Step {i} of {n}",
   "act.details": "Details", "act.terminal": "Agent terminal", "act.openTerminalOf": "Open {role}'s terminal",
   "act.openPr": "Open the PR on GitHub", "act.sortOut": "Sort it out", "act.sortYourself": "Look yourself",
@@ -102,7 +102,7 @@ const RU = {
   "now.lead.working.one": "{n} запуск работает сам — ты сейчас не нужен.", "now.lead.working.few": "{n} запуска работают сами — ты сейчас не нужен.",
   "now.lead.working.many": "{n} запусков работают сами — ты сейчас не нужен.", "now.lead.working.other": "{n} запуска работают сами — ты сейчас не нужен.",
   "now.start": "Запустить процесс…", "now.waiting": "Ждут тебя", "now.working": "Работают сами",
-  "now.finished": "Сегодня закончились", "now.recent": "Недавно закончились", "now.older": "Показать раньше",
+  "now.finished": "Сегодня закончились", "now.recent": "Недавно закончились", "now.older": "Показать раньше", "now.noneToday": "Сегодня ничего не закончилось.",
   "now.empty": "Пока ничего не запускалось.", "now.waitedFor": "ждёт {d}", "now.stepOf": "Шаг {i} из {n}",
   "act.details": "Подробнее", "act.terminal": "Терминал агента", "act.openTerminalOf": "Открыть терминал {role}",
   "act.openPr": "Открыть PR на GitHub", "act.sortOut": "Разобраться", "act.sortYourself": "Разобраться самому",
@@ -320,5 +320,11 @@ export function roundsEnded(events) {
 }
 
 /** What a run works on — its `title` var (flowd fills it from the PR title; an agent may set it) —
- * or null, and the UI falls back to "process · run N". */
-export const runTitle = (r) => (r.vars && typeof r.vars.title === "string" && r.vars.title.trim()) || null;
+ * or null, and the UI falls back to "process · run N". A conventional-commit title loses its
+ * "type(scope):" prefix and [TICKET] tags here; the full one is the tooltip (`r.vars.title`). */
+export function runTitle(r) {
+  const full = (r.vars && typeof r.vars.title === "string" && r.vars.title.trim()) || null;
+  if (!full) return null;
+  const plain = full.replace(/^[a-z]+(\([^)]*\))?!?:\s*/i, "").replace(/\[[A-Z][A-Z0-9]*-\d+\]\s*/g, "").trim();
+  return plain ? plain[0].toUpperCase() + plain.slice(1) : full;
+}
