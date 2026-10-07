@@ -87,7 +87,7 @@ const files15 = Array.from({ length: 15 }, (_, i) => `src/features/reports/expor
 // waiting for you: a human step that closes by itself once the PR merges
 const r1 = await start("review-loop", { lead: "L1", dev: "D1" });
 await report(r1, "pick", "Took docs/backlog/csv-export.md");
-await f.submit({ type: "run.set", run: r1, data: { vars: { task: "CSV export", pr: "https://github.com/acme/app/pull/142", files: files15 } }, source: "preview" });
+await f.submit({ type: "run.set", run: r1, data: { vars: { task: "CSV export", title: "Export the monthly report as CSV", pr: "https://github.com/acme/app/pull/142", files: files15 } }, source: "preview" });
 await report(r1, "implement", "4 commits, tests green");
 await report(r1, "review", "Looks good");
 await report(r1, "open-pr", "https://github.com/acme/app/pull/142");
@@ -95,12 +95,16 @@ await report(r1, "ci", "checks green");
 // an agent at work
 const r2 = await start("review-loop", { lead: "L2", dev: "D2" });
 await report(r2, "pick", "Took docs/backlog/xlsx-import.md");
+await f.submit({ type: "run.set", run: r2, data: { vars: { title: "Import customers from an XLSX file" } }, source: "preview" });
+await settle(f);
 await status("D2", "active");
 // waiting for GitHub checks
 const r3 = await start("review-loop", { lead: "L3", dev: "D3" });
 for (const e of ["pick", "implement", "review", "open-pr"]) await report(r3, e, `${e} done`);
 // a step that did not work out, with a long reason
 const r4 = await start("changelog", { writer: "W1" });
+await f.submit({ type: "run.set", run: r4, data: { vars: { title: "Fix the login timeout", pr: "https://github.com/acme/app/pull/136" } }, source: "preview" });
+await settle(f);
 await report(r4, "draft", "no permission to push to main — git push was rejected by the protected-branch rule on acme/app; "
   + "the writer's token has contents:read only. Either grant contents:write or let the draft go to a branch.", "failed");
 // an agent asking for you

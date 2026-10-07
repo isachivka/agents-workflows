@@ -2,7 +2,7 @@ import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
 import { prUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
-  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, duration, ago, clock, moment, runLabel, holdPhrase } from "./text.js";
+  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, runTitle, duration, ago, clock, moment, runLabel, holdPhrase } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
 
 const LANG_KEY = "flows.lang";
@@ -84,10 +84,12 @@ function WaitingCard({ r, now }) {
   const url = prUrl(r.vars);
   const sid = cur && cur.role && cur.role !== "human" ? r.roles[cur.role] : null;
   const post = (path) => attempt(() => api("POST", `/api/runs/${enc(r.id)}${path}`, {}), setErr);
+  const about = runTitle(r);
   return html`<article class="box you">
-    <div class="meta"><${Pill} tone="you">${d.tag}<//><span class="muted small">${runName(r)}</span>
+    <div class="meta"><${Pill} tone="you">${d.tag}<//>${about && html`<span class="muted small">${runName(r)}</span>`}
       <span class="muted small when">${t("now.waitedFor", { d: duration(now - waitingSince(r)) })}</span></div>
-    <h3>${d.title}</h3>
+    <h3>${about || runName(r)}</h3>
+    <p class="step">${d.title}</p>
     ${d.detail && html`<p class="muted">${d.detail}</p>`}
     <${Err} msg=${err} />
     <div class="acts">
@@ -109,9 +111,11 @@ function WorkingCard({ r, now }) {
   const sid = cur && cur.kind === "agent" ? r.roles[cur.role] : null;
   const since = r.agentWait ? r.agentWait.since : cur && cur.startedAt;
   const url = prUrl(r.vars);
+  const about = runTitle(r);
   return html`<article class="box">
-    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//><span class="muted small">${runName(r)}</span></div>
-    <h3>${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</h3>
+    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//>${about && html`<span class="muted small">${runName(r)}</span>`}</div>
+    <h3>${about || runName(r)}</h3>
+    <p class="step">${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</p>
     ${d.detail && html`<p class="muted small">${d.detail}</p>`}
     <div class="prog" role="img" aria-label=${t("now.stepOf", { i: p.i, n: p.n })}>${p.segs.map((s) => html`<span class=${s}></span>`)}</div>
     <p class="muted small">${t("now.stepOf", { i: p.i, n: p.n })}${since ? ` · ${duration(now - since)}` : ""}</p>
@@ -128,7 +132,8 @@ function FinishedRow({ r, now }) {
   const last = [...r.plan].reverse().find((e) => e.note);
   return html`<div class="row">
     <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
-    <a href="#/run/${enc(r.id)}"><b>${runLabel(r.id)}</b></a>
+    <a href="#/run/${enc(r.id)}"><b>${runTitle(r) || runLabel(r.id)}</b></a>
+    ${runTitle(r) && html`<span class="muted small">${runLabel(r.id)}</span>`}
     ${last && html`<span class="muted grow note" title=${last.note}>— ${last.note}</span>`}
     ${prUrl(r.vars) && html`<a class="small" href=${prUrl(r.vars)} target="_blank" rel="noreferrer">PR<${Icon} name="external" /></a>`}
     <span class="muted small" style="margin-left:auto">${ago(r.updated, now)}</span>
@@ -158,10 +163,10 @@ function Run({ arg: id }) {
     <a class="back small" href="#/runs">← ${t("nav.now")}</a>
     <section class="head">
       <div>
-        <div class="title-row"><h1>${runLabel(r.id)}</h1>
+        <div class="title-row"><h1>${runTitle(r) || runLabel(r.id)}</h1>
           <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${s ? t("st.needs-human") : t(`st.${r.status}`)}<//></div>
         <${ProcessLine} name=${r.process} />
-        <p class="muted small">${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
+        <p class="muted small">${runTitle(r) ? `${runLabel(r.id)} · ` : ""}${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
       </div>
       ${live && html`<div class="acts">
         ${r.status === "paused" && html`<button class="btn" onClick=${post("/resume")}>${t("act.resume")}</button>`}
@@ -380,7 +385,7 @@ function Processes() {
         ${p.openRuns.map((rid) => {
           const r = (runs || []).find((x) => x.id === rid);
           const d = r && describeRun(r);
-          return html`<a class="btn quiet" href="#/run/${enc(rid)}">${r ? runName(r) : runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+          return html`<a class="btn quiet run-chip" href="#/run/${enc(rid)}"><span class="clip">${r ? runTitle(r) || runName(r) : runLabel(rid)}</span>${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
         })}
       </div>
     </article>`)}</div>
@@ -419,7 +424,7 @@ function ProcessView({ arg: name, sub }) {
       ${p.openRuns.map((rid) => {
         const r = (runs || []).find((x) => x.id === rid);
         const d = r && describeRun(r);
-        return html`<a class="btn" href="#/run/${enc(rid)}">${r ? runName(r) : runLabel(rid)}${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+        return html`<a class="btn run-chip" href="#/run/${enc(rid)}"><span class="clip">${r ? runTitle(r) || runName(r) : runLabel(rid)}</span>${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
       })}</div></section>`}
     ${(p.roles.length > 0 || human) && html`<section><h2>${t("proc.who")}</h2><div class="ppl">
       ${p.roles.map((role) => html`<div class="person"><span class="dot ag"><${Icon} name="agent" /></span><span><b>${role}</b><small>${t("proc.agent")}</small></span></div>`)}
@@ -527,8 +532,11 @@ const PAGES = { runs: Now, run: Run, processes: Processes, process: ProcessView,
 const TAB = { runs: "now", run: "now", processes: "processes", process: "processes", start: "processes", settings: "settings", plugins: "settings", steps: "settings", step: "settings" };
 const NAV = [["now", "#/runs"], ["processes", "#/processes"], ["settings", "#/settings"]];
 
-function pageTitle(page, arg) {
-  if (page === "run" && arg) return runLabel(arg);
+function pageTitle(page, arg, runs) {
+  if (page === "run" && arg) {
+    const r = (runs || []).find((x) => x.id === arg);
+    return (r && runTitle(r)) || runLabel(arg);
+  }
   if ((page === "process" || page === "start" || page === "step") && arg) return arg;
   return t(`nav.${TAB[page] || "now"}`);
 }
@@ -541,7 +549,7 @@ function App() {
   const tab = TAB[page] || "now";
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.title = waiting > 0 ? t("title.waiting", { n: waiting }) : t("title.page", { page: pageTitle(page, arg) });
+    document.title = waiting > 0 ? t("title.waiting", { n: waiting }) : t("title.page", { page: pageTitle(page, arg, openRuns) });
     const icon = document.getElementById("favicon");
     if (icon) icon.href = waiting > 0 ? "/icons/favicon-attention.svg" : "/icons/favicon.svg";
   });

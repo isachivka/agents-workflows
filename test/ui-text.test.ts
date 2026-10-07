@@ -169,3 +169,9 @@ test("roundsEnded reads a run's events: rounds that ended, newest first, with th
   ]);
   assert.deepEqual(T.roundsEnded([]), []);
 });
+
+test("runTitle: what a run works on is its title var, trimmed; nothing when it is missing or blank", () => {
+  assert.equal(T.runTitle(run({ vars: { title: "  Fix the login timeout " } })), "Fix the login timeout");
+  assert.equal(T.runTitle(run({ vars: { title: "   " } })), null);
+  assert.equal(T.runTitle(run({ vars: {} })), null);
+});

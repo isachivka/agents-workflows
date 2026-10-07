@@ -318,3 +318,7 @@ export function roundsEnded(events) {
   }
   return out.reverse();
 }
+
+/** What a run works on — its `title` var (flowd fills it from the PR title; an agent may set it) —
+ * or null, and the UI falls back to "process · run N". */
+export const runTitle = (r) => (r.vars && typeof r.vars.title === "string" && r.vars.title.trim()) || null;

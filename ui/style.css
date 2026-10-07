@@ -90,6 +90,11 @@ details.more > summary { cursor: pointer; color: var(--accent); font-weight: 600
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 14px; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .meta .when { margin-left: auto; }
+/* a card's headline says what the run works on; the step it stands on reads second */
+.step { font-weight: 500; overflow-wrap: anywhere; }
+.box h3 { overflow-wrap: anywhere; }
+.run-chip { max-width: 100%; }
+.run-chip .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--chip); color: var(--muted); }
 .pill.you { background: var(--you-soft); color: var(--you-text); }
 .pill.work { background: var(--accent-soft); color: var(--accent-text); }

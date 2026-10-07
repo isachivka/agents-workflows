@@ -22,9 +22,10 @@ watch and take over at any time.
 - **flowd**, a local daemon that types each step into the right [agterm](https://github.com/umputun/agterm)
   session (spawning it when needed), clears or compacts between steps, never interrupts a turn,
   and reminds an agent that went quiet without reporting.
-- **A web UI** that says what waits for you and what each run is doing, which round a repeating
-  run is on and what finished today, in English or Russian; close human steps, retry, skip or step in by hand; read each process as a story; edit processes
-  and steps; jump to an agent's terminal in one click.
+- **A web UI** that names what each run works on (its PR or task title), says what waits for you
+  and what each run is doing, which round a repeating run is on and what finished today, in
+  English or Russian; close human steps, retry, skip or step in by hand; read each process as a
+  story; edit processes and steps; jump to an agent's terminal in one click.
 - **Plugins** for event sources and actions, as waits or as triggers that start a process. `gh`
   is built in: required checks, reviews, and per repo merged PRs, newly opened or labelled PRs
   and CI runs on a branch.
