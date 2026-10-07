@@ -202,3 +202,33 @@ test("an agent's done on its own failed step resumes the run: the user steered i
   s.send(rep("b", "done", "agent", "green after the user's fix"));
   assert.deepEqual([s.run.status, s.run.current, s.run.reason], ["running", "c", undefined]);
 });
+
+const DESK = ONE_ROLE("  - {step: a, role: pm}\n  - {step: b, role: pm, hold: desk, timeout: 1h}\n  - {step: c, role: pm, hold: desk}\n  - {id: d, step: a, role: pm}\n");
+
+test("an entry whose hold another run has queues: waiting, nothing delivered, no timeout", () => {
+  const s = new Sim(DESK, STEPS).send({ kind: "set", vars: { dir: "/w" } }).send({ kind: "start" });
+  s.holders = { desk: "p#9" };
+  s.send(rep("a"));
+  assert.equal(s.status("b"), "waiting");
+  assert.deepEqual(s.run.entries.b.queued, { hold: "desk", since: s.now });
+  assert.deepEqual(s.delivered(), []);
+  s.now += 2 * 3600_000;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("b"), "waiting");
+  s.holders = {};
+  s.send({ kind: "hold-free" });
+  assert.equal(s.status("b"), "active");
+  assert.equal(s.run.entries.b.queued, undefined);
+  assert.equal(s.run.entries.b.startedAt, s.now);
+  assert.deepEqual(s.delivered(), [nudge("pm", "b")]);
+});
+
+test("the holder keeps its hold across consecutive holding entries; hold-free on a non-queued step is refused", () => {
+  const s = new Sim(DESK, STEPS).send({ kind: "set", vars: { dir: "/w" } }).send({ kind: "start" }).send(rep("a"));
+  assert.equal(s.status("b"), "active");
+  s.holders = { desk: "p#1" };
+  s.send(rep("b"));
+  assert.equal(s.status("c"), "active");
+  s.send({ kind: "hold-free" });
+  assert.ok(s.error);
+});

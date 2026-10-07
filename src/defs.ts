@@ -71,7 +71,7 @@ export function splitStep(text: string): { summary: string; body: string } {
 }
 
 export const PROCESS_KEYS = new Set(["description", "cwd", "repeat", "max_runs", "triggers", "roles", "steps"]);
-export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout"]);
+export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
 const knownEvent = (type: string, ctx: DefCtx) => ctx.eventTypes.has(type) || /^signal\.[a-z0-9.-]+$/.test(type);
@@ -206,6 +206,8 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     if (typeof detour !== "boolean") err(`${at}: detour must be true or false`);
     if (detour === true && !after) err(`${at}: a detour needs after.goto`);
 
+    if (r.hold !== undefined && (typeof r.hold !== "string" || !NAME_RE.test(r.hold))) err(`${at}: hold must be a name: lowercase letters, digits, dashes`);
+
     let timeoutMs: number | undefined;
     if (r.timeout !== undefined) {
       try {
@@ -225,6 +227,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       with: isObj(r.with) ? r.with : {},
       waitFor, onFail, retries: retries as number, after, detour: detour === true, timeoutMs, delayMs,
       sh, cwd: sh !== undefined && typeof r.cwd === "string" ? r.cwd : undefined,
+      hold: typeof r.hold === "string" ? r.hold : undefined,
     });
   }
 

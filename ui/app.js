@@ -2,7 +2,7 @@ import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
 import { prUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
-  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, duration, ago, clock, moment, runLabel } from "./text.js";
+  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, duration, ago, clock, moment, runLabel, holdPhrase } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
 
 const LANG_KEY = "flows.lang";
@@ -290,6 +290,7 @@ function Current({ r, e, now, post, setErr, live, quiet }) {
       <span class="muted small">${[!quiet && r.status !== "paused" && since ? t("run.running", { d: duration(now - since) }) : "", st.attempts > 1 ? t("run.attempt", { n: st.attempts }) : ""].filter(Boolean).join(" · ")}</span></div>
     <h3>${roleChip(e)}${entryPhrase(e)}</h3>
     ${r.agentWait ? html`<p class="muted">${t("run.agentWaitNote", { note: r.agentWait.note })}</p>`
+      : r.heldBy ? html`<p class="muted">${holdPhrase(r.heldBy)}</p>`
       : r.waitingOn ? html`<p class="muted">${t("wait.for", { what: eventPhrase(r.waitingOn) })}</p>`
       : e.kind === "agent" && !quiet && html`<p class="muted">${t("run.agentSilent")}</p>`}
     ${sid && html`<div class="acts"><button class=${`btn${quiet ? "" : " primary"}`} onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: e.role })}</button></div>`}

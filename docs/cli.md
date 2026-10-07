@@ -120,6 +120,7 @@ flow ls --all --process review --where pr=https://github.com/o/r/pull/7 >/dev/nu
 ```
 pr-loop#3  it.2  running  ci (waiting)  waits gh.checks
 demo#1  it.1  needs-human  demo-hello (active)  role agent session closed
+pr-loop#4  it.1  running  deploy (waiting)  waits hold desk-1 (pr-loop#3)
 ```
 
 ### `flow signal`

@@ -23,6 +23,8 @@ export class Sim {
   now = 1_000_000;
   /** The daemon reports `delivered` once a nudge is typed; the simulator does it at once. */
   autoDeliver = true;
+  /** Which run holds which name, as the daemon would compute it. */
+  holders: Record<string, string> = {};
 
   constructor(yaml: string, steps: Record<string, string> = {}, bind: Record<string, string> = {}) {
     const { process, defs } = mkDefs(yaml, steps);
@@ -32,7 +34,7 @@ export class Sim {
   }
 
   send(input: Input): this {
-    const ctx = { process: this.process, defs: this.defs, now: this.now };
+    const ctx = { process: this.process, defs: this.defs, now: this.now, holders: this.holders };
     const r = step(this.run, input, ctx);
     this.run = r.run;
     this.actions = r.actions;

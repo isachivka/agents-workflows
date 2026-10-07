@@ -165,7 +165,7 @@ export async function main(argv: string[]): Promise<number> {
         if (!runs.length) out("no runs");
         for (const r of runs) {
           out([r.id, `it.${r.iteration}`, r.status, r.current ? `${r.current} (${r.currentStatus}${r.agentWait ? `, waiting: ${r.agentWait.note}` : ""})` : "-",
-            r.waitingOn ? `waits ${r.waitingOn}` : "", r.reason ?? ""].filter(Boolean).join("  "));
+            r.waitingOn ? `waits ${r.waitingOn}` : "", r.heldBy ? `waits hold ${r.heldBy.hold}${r.heldBy.run ? ` (${r.heldBy.run})` : ""}` : "", r.reason ?? ""].filter(Boolean).join("  "));
         }
         // a filtered ls is a question a script asks: exit 1 is "no such run"
         return !runs.length && (a.process || where.length) ? 1 : 0;

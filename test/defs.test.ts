@@ -171,3 +171,10 @@ test("on_fail accepts end", () => {
   const ok = parseProcess("p", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm, on_fail: end}\n", ctx);
   assert.equal(ok.entries[0].onFail, "end");
 });
+
+test("hold is a name", () => {
+  const ok = parseProcess("p", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm, hold: desk-1}\n", ctx);
+  assert.equal(ok.entries[0].hold, "desk-1");
+  assert.deepEqual(errorsOf(() => parseProcess("p", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm, hold: Desk 9}\n", ctx)),
+    ["steps[1]: hold must be a name: lowercase letters, digits, dashes"]);
+});

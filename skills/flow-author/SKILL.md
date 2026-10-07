@@ -48,6 +48,7 @@ From the installed copy of this skill, the repo is
 | start on a plugin event (GitHub) | `triggers: [{on: gh.opened, with: {label: ready-for-agent}}]`; also `{on: gh.merged, with: {base: main}}`, `{on: gh.ci, with: {branch: main}, where: {conclusion: failure}}`. The run starts with the event's data as vars: `{{vars.pr}}`, `{{vars.number}}`, … |
 | a mechanical step without an agent (git, a script) | `{sh: 'git worktree add "$FLOW_VAR_DIR"'}` — run data comes as env `FLOW_VAR_<NAME>`, never `{{…}}` in the command; quote it; hand values back with `flow set --run "$FLOW_RUN" k=v` |
 | let time pass (keep a session a day, then clean up) | `{id: tail, wait: 24h}`; survives flowd restarts |
+| one shared thing (a test environment) for several runs | `hold: <name>` on each entry that uses it: `{step: deploy, role: dev, hold: desk-1}`, `{step: autotests, role: dev, hold: desk-1}`. One run at a time stands on those entries; others queue in front, the rest runs in parallel. Not `max_runs: 1`, which blocks the whole process |
 | one item per pass, forever | `repeat: true` — vars are cleared between iterations |
 | close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
 

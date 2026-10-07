@@ -53,12 +53,13 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
 
 `RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
-waitingOn, roles, vars, needsYou, agentWait, created, updated, plan}`, where `created` and
+waitingOn, roles, vars, needsYou, agentWait, waitUntil, heldBy, created, updated, plan}`, where `created` and
 `updated` are ms, when the run was created and last saved, `plan` lists every entry as
 `{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after}`
-(`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"` or
-`{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the
-current entry's agent declared a wait (else `null`), and `needsYou` is true for a `needs-human`
+(`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"`,
+`"end"` or `{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the
+current entry's agent declared a wait (else `null`), `waitUntil` is when a pause entry ends (ms),
+`heldBy` is `{hold, run}` while the current entry queues for a `hold` (`run`: who has it), and `needsYou` is true for a `needs-human`
 run, one standing on an open human step, or one whose agent waits with `human: true`.
 
 ## Agents and events

@@ -53,6 +53,8 @@ export interface RunSummary {
   agentWait: { note: string; human: boolean; since: number } | null;
   /** the current entry is a pause: when it ends (ms) */
   waitUntil: number | null;
+  /** queued for a hold: its name and the run that has it */
+  heldBy: { hold: string; run: string | null } | null;
   created: number; updated: number;
   plan: PlanItem[];
 }
@@ -135,6 +137,7 @@ export class Flowd {
         }
       }
       for (const run of this.store.openRuns()) this.rearm(run);
+      this.grantHolds();
       this.subscribing = true;
       this.syncSubscriptions();
     });
@@ -210,6 +213,7 @@ export class Flowd {
         this.rearm(run);
       }
     }
+    if (this.loaded) void this.enqueue(async () => this.grantHolds());
     this.loaded = true;
     for (const c of this.crons) c.stop();
     this.crons = [];
@@ -288,7 +292,7 @@ export class Flowd {
 
   private rearm(run: RunState): void {
     const cur = run.current ? this.defs.processes[run.process]?.entries.find((x) => x.id === run.current) : undefined;
-    if (!cur?.waitFor || run.entries[cur.id]?.status !== "waiting") return;
+    if (!cur?.waitFor || run.entries[cur.id]?.status !== "waiting" || run.entries[cur.id]?.queued) return;
     let w: Dict;
     try {
       w = renderWith(cur.waitFor.with, run);
@@ -481,10 +485,42 @@ export class Flowd {
   private async apply(runId: string, input: Input): Promise<Result> {
     const run = this.store.getRun(runId);
     if (!run) return { error: `no run ${runId}` };
-    const res = step(run, input, { process: this.defs.processes[run.process], defs: this.defs, now: this.now() });
+    const res = step(run, input, this.ctxFor(run));
     if (res.error) return { error: res.error, run: runId };
     this.commit(res);
+    this.grantHolds();
     return { run: runId };
+  }
+
+  private ctxFor(run: RunState) {
+    return { process: this.defs.processes[run.process], defs: this.defs, now: this.now(), holders: this.holders() };
+  }
+
+  /** Each hold name and the open run standing on an entry that holds it (not queued for it). */
+  holders(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const run of this.store.openRuns()) {
+      const hold = this.currentEntry(run)?.hold;
+      if (hold && !run.entries[run.current!]?.queued) out[hold] = run.id;
+    }
+    return out;
+  }
+
+  /** Hands every free hold to the running run that queued for it first. */
+  private grantHolds(): void {
+    const held = this.holders();
+    const queued = this.store.openRuns()
+      .filter((r) => r.status === "running" && r.current && r.entries[r.current]?.queued)
+      .sort((a, b) => a.entries[a.current!].queued!.since - b.entries[b.current!].queued!.since);
+    for (const run of queued) {
+      const hold = run.entries[run.current!].queued!.hold;
+      if (held[hold]) continue;
+      const res = step(run, { kind: "hold-free" }, { ...this.ctxFor(run), holders: held });
+      if (res.error) continue;
+      this.commit(res);
+      held[hold] = run.id;
+      this.changed("runs");
+    }
   }
 
   private commit(res: StepResult): void {
@@ -524,7 +560,7 @@ export class Flowd {
     return this.enqueue(async () => {
       for (const run of this.store.openRuns()) {
         if (run.status !== "running") continue;
-        const res = step(run, { kind: "tick" }, { process: this.defs.processes[run.process], defs: this.defs, now: this.now() });
+        const res = step(run, { kind: "tick" }, this.ctxFor(run));
         if (res.error) continue;
         if (res.actions.length || JSON.stringify(res.run) !== JSON.stringify(run)) {
           this.commit(res);
@@ -739,11 +775,12 @@ export class Flowd {
     return {
       id: run.id, process: run.process, iteration: run.iteration, status: run.status, reason: run.reason ?? null,
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
-      waitingOn: s?.status === "waiting" ? cur?.waitFor?.on ?? null : null,
+      waitingOn: s?.status === "waiting" && !s.queued ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,
       needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human),
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
-      waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined ? s.startedAt + cur.delayMs! : null,
+      waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
+      heldBy: s?.queued ? { hold: s.queued.hold, run: this.holders()[s.queued.hold] ?? null } : null,
       created: times?.created ?? 0, updated: times?.updated ?? 0,
       plan: (p?.entries ?? []).map((e) => {
         const st = run.entries[e.id];

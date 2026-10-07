@@ -764,3 +764,24 @@ test("a shell entry cut off by a restart fails so on_fail decides", async () => 
   assert.deepEqual([e.status, e.note], ["failed", "flowd restarted while the command ran"]);
   await B.f.close();
 });
+
+test("a hold queues a second run until the first moves on; the first to queue is served first", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm, hold: desk}\n  - {step: c, role: pm}\n") }));
+  f.defs.processes.p.maxRuns = 3;
+  await f.submit(start("p", { pm: "S1" }));
+  await f.submit(start("p", { pm: "S2" }));
+  await f.submit(start("p", { pm: "S3" }));
+  agterm.addSession("S1", "S2", "S3");
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.entries.b.status, "active");
+  assert.deepEqual(f.store.getRun("p#2")!.entries.b.queued?.hold, "desk");
+  assert.deepEqual(f.runSummary(f.store.getRun("p#2")!).heldBy, { hold: "desk", run: "p#1" });
+  await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
+  await settle(f);
+  assert.equal(f.store.getRun("p#2")!.entries.b.status, "active");
+  assert.equal(f.store.getRun("p#3")!.entries.b.status, "waiting");
+  await f.submit({ type: "run.stop", run: "p#2", data: {}, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("p#3")!.entries.b.status, "active");
+  await f.close();
+});

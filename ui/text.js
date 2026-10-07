@@ -17,7 +17,7 @@ const EN = {
   "You": "You", "someone": "Someone",
   "dur.lt1m": "less than a minute", "dur.m": "{m} min", "dur.h": "{h} h", "dur.hm": "{h} h {m} min", "dur.d": "{d} d", "ago": "{d} ago",
   "ev.gh.checks": "GitHub checks", "ev.gh.merged": "the PR merge", "ev.gh.review": "a PR review", "ev.gh.opened": "the PR opening",
-  "ev.gh.ci": "GitHub CI", "ev.signal": "signal {name}", "wait.for": "Waiting for {what}", "wait.pause": "Pause {d}", "do.sh": "flows runs {cmd}", "wait.until": "Pause until {when}",
+  "ev.gh.ci": "GitHub CI", "ev.signal": "signal {name}", "wait.for": "Waiting for {what}", "wait.pause": "Pause {d}", "do.sh": "flows runs {cmd}", "wait.until": "Pause until {when}", "wait.hold": "Waits for {hold}: {run} has it", "wait.holdFree": "Waits for {hold}",
   "do.clear": "{role} starts fresh", "do.compact": "{role} compacts its context", "do.type": "flows types into {role}'s terminal",
   "do.plugin": "Action {name}",
   "evs.delivered": "{role} got the task", "evs.done": "{role} finished", "evs.doneNote": "{role} finished: “{note}”",
@@ -87,7 +87,7 @@ const RU = {
   "You": "Ты", "someone": "Кто-то",
   "dur.lt1m": "меньше минуты", "dur.m": "{m} мин", "dur.h": "{h} ч", "dur.hm": "{h} ч {m} мин", "dur.d": "{d} дн", "ago": "{d} назад",
   "ev.gh.checks": "проверки GitHub", "ev.gh.merged": "мёрдж PR", "ev.gh.review": "ревью PR", "ev.gh.opened": "открытие PR",
-  "ev.gh.ci": "CI на GitHub", "ev.signal": "сигнал {name}", "wait.for": "Ждём: {what}", "wait.pause": "Пауза {d}", "do.sh": "flows выполняет {cmd}", "wait.until": "Пауза до {when}",
+  "ev.gh.ci": "CI на GitHub", "ev.signal": "сигнал {name}", "wait.for": "Ждём: {what}", "wait.pause": "Пауза {d}", "do.sh": "flows выполняет {cmd}", "wait.until": "Пауза до {when}", "wait.hold": "Ждёт {hold}: сейчас занят {run}", "wait.holdFree": "Ждёт {hold}",
   "do.clear": "{role} начинает с чистого листа", "do.compact": "{role} сжимает контекст", "do.type": "flows печатает в терминал {role}",
   "do.plugin": "Действие {name}",
   "evs.delivered": "{role} получил задание", "evs.done": "{role} закончил", "evs.doneNote": "{role} закончил: «{note}»",
@@ -247,8 +247,13 @@ export function describeRun(r) {
   if (r.status === "paused") return { tone: "calm", tag: t("st.paused"), title: what, detail: null };
   if (r.agentWait) return { tone: "wait", tag: t("tag.agentWaits"), title: what, detail: t("run.agentWaitNote", { note: r.agentWait.note }) };
   if (r.waitUntil) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.until", { when: moment(r.waitUntil, Date.now()) }), detail: null };
+  if (r.heldBy) return { tone: "wait", tag: t("tag.waiting"), title: holdPhrase(r.heldBy), detail: null };
   if (r.waitingOn) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.for", { what: eventPhrase(r.waitingOn) }), detail: null };
   return { tone: "work", tag: t("tag.working"), title: what, detail: null };
+}
+
+export function holdPhrase(h) {
+  return h.run ? t("wait.hold", { hold: h.hold, run: h.run }) : t("wait.holdFree", { hold: h.hold });
 }
 
 /** Since when a run has waited for a person (ms), for "waiting 25 min". */

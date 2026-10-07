@@ -25,6 +25,8 @@ export interface Entry {
   sh?: string;
   /** a shell entry's working directory (a template); else the process cwd */
   cwd?: string;
+  /** a name only one open run at a time may stand on (`hold: desk-1`); the others queue */
+  hold?: string;
 }
 
 export interface Role { spawn: string; cwd?: string }
@@ -79,6 +81,8 @@ export interface EntryState {
   remindAt?: number;
   /** set when a line is delivered: the agent must go active by then */
   startBy?: number;
+  /** entered while another run had its hold: waits for the daemon's hold-free */
+  queued?: { hold: string; since: number };
   reminded: number;
   /** The event that last woke this entry in this iteration (kept through retry and goto). */
   woke?: { type: string; data: Dict };
@@ -118,6 +122,7 @@ export type Input =
   | { kind: "session"; session: string; status: SessionStatus }
   | { kind: "compacted"; session: string }
   | { kind: "tick" }
+  | { kind: "hold-free" }
   | { kind: "set"; vars: Record<string, string> }
   | { kind: "pause" }
   | { kind: "resume" }

@@ -73,7 +73,8 @@ export function matches(where: Dict, data: Dict): boolean {
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export interface StepCtx { process?: Process; defs: Defs; now: number }
+/** holders: which open run stands on an entry holding each name (from the daemon) */
+export interface StepCtx { process?: Process; defs: Defs; now: number; holders?: Record<string, string> }
 
 export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
   if (TERMINAL.includes(prev.status)) return { run: prev, actions: [], error: `run ${prev.id} is ${prev.status}` };
@@ -147,7 +148,20 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const e = byId(id)!;
     const s = st(id);
     run.current = id;
-    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined });
+    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined, queued: undefined });
+    proceed(id);
+  }
+
+  /** What entering does once the entry's hold, if any, is this run's. */
+  function proceed(id: string): void {
+    const e = byId(id)!;
+    const s = st(id);
+    const holder = e.hold ? ctx.holders?.[e.hold] : undefined;
+    if (holder && holder !== run.id) {
+      s.status = "waiting";
+      s.queued = { hold: e.hold!, since: now };
+      return;
+    }
     if (e.kind === "delay") {
       s.status = "waiting"; // the tick closes it once startedAt + delayMs has passed
       return;
@@ -428,10 +442,19 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       }
       return done();
     }
+    case "hold-free": {
+      if (run.status !== "running" || !cur || !st(cur.id).queued) return fail(`${run.id} is not queued for a hold`);
+      const s = st(cur.id);
+      s.queued = undefined;
+      s.startedAt = now;
+      proceed(cur.id);
+      return done();
+    }
     case "tick": {
       if (run.status !== "running" || !cur) return done();
       const s = st(cur.id);
       if (s.status !== "active" && s.status !== "waiting") return done();
+      if (s.queued) return done(); // its timeout starts once it has the hold
       if (cur.kind === "delay" && s.status === "waiting" && s.startedAt !== undefined && now - s.startedAt >= cur.delayMs!) {
         finish(cur.id, "done", { note: `waited ${formatDuration(cur.delayMs!)}`, by: "system" });
         return done();

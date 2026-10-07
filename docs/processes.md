@@ -155,7 +155,8 @@ Keys on any entry:
 | `sh` | string | | A shell command flowd runs (see the kinds above). Only on its own (no `step`, `do`, `wait`, `role`); a `wait_for` before it is allowed. |
 | `cwd` | string | the process `cwd` | For `sh` only: where the command runs. A template over `run` and `vars`. |
 | `wait` | duration | | A pause: `30s`, `10m`, `2h`, `1d`. Only on its own (no `step`, `do`, `wait_for`). |
-| `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. |
+| `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. Time queued for a `hold` does not count. |
+| `hold` | name | | Something only one run at a time may use, such as a shared test environment: `hold: desk-1`. See "Holds" below. |
 
 ## How a run moves
 
@@ -168,6 +169,12 @@ From `src/engine.ts`:
   entry from X through the failed one to `pending` (for a forward goto, X only), keeping their
   attempt and failure counts, then enters X. More than `retries` failures of one entry in an
   iteration stops the run.
+- **Holds.** An open run holds a name while its current entry has that `hold`, whatever the
+  entry's status: running, waiting, failed and waiting for you, or paused. Consecutive entries
+  with the same `hold` keep it. Another run (of any process) entering an entry with that name
+  queues: the entry is `waiting`, nothing reaches its agent, no watch or pause starts, and the UI
+  and `flow ls` say who has the name. When the holder moves past its holding entries, finishes or
+  is stopped, the run that queued first takes the name and its entry starts as usual.
 - **Iteration end.** Without `repeat` the run is `done` and emits `flow.run.done`. With
   `repeat: true` it emits `flow.iteration.done`, bumps the iteration, resets every entry and
   clears the vars. What a process must remember between iterations belongs in its project's
@@ -197,7 +204,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
 | events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `steps[N]: wait_for.where must be a mapping`, `steps[N]: wait_for.with must be a mapping`, `X: step Y uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |
-| failure handling | `steps[N]: with must be a mapping`, `steps[N]: on_fail must be retry, human, end or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
+| failure handling | `steps[N]: with must be a mapping`, `steps[N]: on_fail must be retry, human, end or {goto: id}`, `steps[N]: retries must be an integer >= 0`, `steps[N]: hold must be a name: lowercase letters, digits, dashes`, `steps[N]: after must be {goto: id}`, `steps[N]: bad duration …` |
 | detours and ids | `steps[N]: detour must be true or false`, `steps[N]: a detour needs after.goto`, `at least one entry must not be a detour`, `duplicate entry id X (give one an explicit id)`, `X: goto target Y does not exist` |
 
 An event type is known when a loaded plugin declares it (`gh.checks`), when it is a core
@@ -368,6 +375,19 @@ steps:
   - {step: review, role: reviewer}
   - {id: tail, wait: 24h}
   - {id: cleanup, sh: 'git -C ~/code/repo worktree remove --force "$FLOW_VAR_DIR"', on_fail: retry, retries: 2}
+```
+
+**One test environment, several runs.** Only the entries that use the environment hold it; the
+rest of each run goes on in parallel. A second run queues in front of `deploy` until the first has
+finished `autotests`, failures included.
+
+```yaml
+max_runs: 3
+steps:
+  - {step: open-pr, role: dev}
+  - {step: deploy, role: dev, hold: desk-1, timeout: 1h}
+  - {step: autotests, role: dev, hold: desk-1, timeout: 4h}
+  - {step: review, role: dev}
 ```
 
 **A review queue: one pull request at a time, each reviewed once.** GitHub's list of review
