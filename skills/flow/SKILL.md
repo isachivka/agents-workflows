@@ -45,6 +45,11 @@ on to its next step. Do not ask the user to confirm closing it, and do not wait 
 anything; say in the note what changed after the failure. If it still does not work,
 `flow failed --note "…"` again and the run stays stopped.
 
+The same goes for a step of yours that waits for an event again (a review wait after your
+`flow failed --note "waiting: …"`): if the user tells you it is moot — they merged the PR by hand,
+the reviewer is away — `flow done --note "…"` ends the wait and the run moves on. Never assume an
+event will wake the step for you; only what the step waits for does.
+
 Only if the user wants the whole step redone from its instructions do they press "Try again" in
 the flows UI; a new `▶ flow:` line arrives then.
 

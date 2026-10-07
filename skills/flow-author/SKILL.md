@@ -79,6 +79,9 @@ From the installed copy of this skill, the repo is
 - A `gh.review` wait without `with: {from: …}` wakes on every comment, bots included: use
   `from: requested` (or logins) to wait for the reviewer. A pure `gh.review` wait (no step) also
   needs `only: decisions`, or a comment closes it as done. See `$REPO/docs/plugins.md`.
+- A merged PR ends a `gh.review` wait as `done`, a closed one as `failed` (`{{event.data.kind}}` is
+  `merged`/`closed`). An agent step woken by review events should say what to do then: merged →
+  `flow done`, closed → `flow failed`.
 - `gh.checks` and `gh.review` need a PR, so they cannot be triggers: start on CI with `gh.ci`.
   A trigger that cannot work shows its error under the process (UI) and in Settings → Plugins.
 - A trigger's `with` takes plain values, no templates: there is no run yet. A trigger watches a

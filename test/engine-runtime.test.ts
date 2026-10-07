@@ -462,3 +462,17 @@ test("a shell entry hands the daemon the command as written, the cwd and the run
   assert.deepEqual((plain.actions.find((x) => x.kind === "shell") as any).cwd, "/work");
   assert.equal((plain.actions.find((x) => x.kind === "shell") as any).timeoutMs, 1_800_000);
 });
+
+test("an agent closes its own step while it waits again, once the step has reached it; never a fresh one", () => {
+  const s = new Sim(ONE_ROLE("  - {step: b, role: pm}\n  - {step: d, role: pm, wait_for: gh.checks, on_fail: retry}\n  - {step: c, role: pm}\n"), STEPS).send({ kind: "start" });
+  s.send(rep("b"));
+  assert.equal(s.status("d"), "waiting");
+  s.send(rep("d"));
+  assert.equal(s.error, "step d waits for gh.checks and has not reached you yet");
+  s.send(ev("gh.checks", { pr: "7" }, "failed")).send(rep("d", "failed", "agent", "waiting for the next review"));
+  assert.equal(s.status("d"), "waiting");
+  s.send(rep("d", "done", "agent", "the user merged it by hand"));
+  assert.equal(s.error, undefined);
+  assert.equal(s.run.current, "c");
+  assert.ok(s.kinds().includes("unwatch"));
+});

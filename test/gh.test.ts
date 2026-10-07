@@ -195,9 +195,10 @@ test("a poll that works again clears the error the last one reported", async () 
 
 type Rv = { id: string; by: string; bot?: boolean; state: string; at: string };
 type Cm = { id: string; by: string; bot?: boolean; at: string };
-const answer = (o: { author?: string; decision?: string | null; requested?: (string | { team: string } | { bot: string } | null)[]; reviews?: Rv[]; comments?: Cm[]; totals?: [number, number]; errors?: string[] }) => ({
+const answer = (o: { state?: string; author?: string; decision?: string | null; requested?: (string | { team: string } | { bot: string } | null)[]; reviews?: Rv[]; comments?: Cm[]; totals?: [number, number]; errors?: string[] }) => ({
   ...(o.errors ? { errors: o.errors.map((message) => ({ message })) } : {}),
   data: { repository: { pullRequest: {
+    state: o.state ?? "OPEN",
     author: { login: o.author ?? "carol" },
     reviewDecision: o.decision ?? null,
     timelineItems: { nodes: (o.requested ?? []).map((r) => ({ requestedReviewer:
@@ -396,4 +397,28 @@ test("title reads the run's PR title; no pr, no call", async () => {
   assert.deepEqual([exec.calls[0], exec.cwds[0]], [["pr", "view", "https://github.com/o/r/pull/7", "--json", "title"], "/w"]);
   assert.equal(await gh.title!({ vars: {}, cwd: "/w" }, ctx), undefined);
   assert.equal(exec.calls.length, 1);
+});
+
+test("a review wait ends when the PR is merged (done) or closed (failed), even on the first poll", async () => {
+  const state = { now: answer({ requested: ["alice"] }) as unknown };
+  const emitted: PluginEvent[] = [];
+  const stop = makeGhPlugin(reviewExec(state)).watch!(reviewWait({ from: "requested", already: true }), repoCtx(emitted)) as () => void;
+  await sleep(12);
+  state.now = answer({ state: "MERGED", decision: "REVIEW_REQUIRED", requested: ["alice"] });
+  await sleep(20);
+  stop();
+  assert.deepEqual(emitted, [{ type: "gh.review", run: "p#1", entry: "feedback", outcome: "done", data: {
+    pr: PRURL, id: "", by: "", kind: "merged", state: "MERGED", decision: "REVIEW_REQUIRED", url: PRURL, at: "", reviews: 0, comments: 0, merged: true } }]);
+  const closed: PluginEvent[] = [];
+  const stop2 = makeGhPlugin(reviewExec({ now: answer({ state: "CLOSED" }) })).watch!(reviewWait({ from: "requested" }), repoCtx(closed)) as () => void;
+  await sleep(12);
+  stop2();
+  assert.deepEqual(closed.map((e) => [e.outcome, e.data!.merged]), [["failed", false]]);
+});
+
+test("pollOnce review: a merged or closed PR ends the wait at once", async () => {
+  const v = (st: string) => fake({ "pr view": { stdout: JSON.stringify({ state: st, reviews: [], comments: [] }) } });
+  assert.deepEqual(await pollOnce("review", "7", v("MERGED")), { emit: { outcome: "done", data: { state: "MERGED", merged: true, reviews: 0, comments: 0 } } });
+  assert.deepEqual(await pollOnce("review", "7", v("CLOSED"), "0/0"), { emit: { outcome: "failed", data: { state: "CLOSED", merged: false, reviews: 0, comments: 0 } } });
+  assert.deepEqual(await pollOnce("review", "7", v("OPEN")), { baseline: "0/0" });
 });

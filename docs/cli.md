@@ -33,7 +33,11 @@ flow done [--note TEXT] [--evidence URL] [--run ID --step ENTRY] [--human]
 Closes the step as done and prints `recorded done`. An agent can close only its own current step,
 and only after its nudge line was typed into its session. That includes its own step that failed
 and stopped the run: the agent only gets a turn then because you talked to it, so once it has done
-what you asked, its `flow done` moves the run on.
+what you asked, its `flow done` moves the run on. The same holds for its own step that waits
+for an event again after it had it (a review wait re-armed by `flow failed`): when the awaited
+thing will not come, say the PR was merged by hand, the agent's `flow done` ends the wait. A step
+that waits and never reached the agent is refused: `step X waits for gh.review and has not
+reached you yet`.
 
 ### `flow failed`
 

@@ -334,8 +334,12 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
         if (cur!.kind === "human") return fail(`${curId} is the human's step; a human closes it`);
         // its own failed step is still current only when the run stopped on it; the agent gets a
         // turn then only because the user talks to it, so its report carries the user's decision
-        if (s.status !== "active" && s.status !== "failed") return fail(`step ${curId} is not active (${s.status})`);
-        if (s.deliveredAt === undefined) return fail(`step ${curId} has not reached the agent yet`);
+        // waiting again for its event after it already had the step (a re-armed review wait): a turn
+        // now is the user talking to it, as with failed; a fresh wait is a step it never had
+        const waitingAgain = cur!.kind === "agent" && s.status === "waiting" && !s.queued && s.attempts > 0;
+        if (cur!.kind === "agent" && s.status === "waiting" && !waitingAgain && cur!.waitFor) return fail(`step ${curId} waits for ${cur!.waitFor.on} and has not reached you yet`);
+        if (s.status !== "active" && s.status !== "failed" && !waitingAgain) return fail(`step ${curId} is not active (${s.status})`);
+        if (s.deliveredAt === undefined && !waitingAgain) return fail(`step ${curId} has not reached the agent yet`);
       } else if (!["active", "waiting", "failed"].includes(s.status)) {
         return fail(`step ${curId} is ${s.status}`);
       }

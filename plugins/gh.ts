@@ -50,7 +50,9 @@ export async function pollOnce(kind: "checks" | "merged" | "review", pr: string,
     if (state === "CLOSED") return { emit: { outcome: "failed", data: { state } } };
     return {};
   }
-  const v = json(await exec(["pr", "view", pr, "--json", "reviews,comments"], cwd), "pr view") as { reviews: unknown[]; comments: unknown[] };
+  const v = json(await exec(["pr", "view", pr, "--json", "state,reviews,comments"], cwd), "pr view") as { state?: string; reviews: unknown[]; comments: unknown[] };
+  const ended = prEnded(v.state);
+  if (ended) return { emit: { outcome: ended.outcome, data: { ...ended.data, reviews: v.reviews.length, comments: v.comments.length } } };
   const now = `${v.reviews.length}/${v.comments.length}`;
   if (baseline === undefined || baseline === now) return { baseline: now };
   return { baseline: now, emit: { data: { reviews: v.reviews.length, comments: v.comments.length } } };
@@ -92,6 +94,7 @@ export async function pollRepo(kind: "merged" | "opened" | "ci", w: { with: Dict
 const REVIEW_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      state
       author { login }
       reviewDecision
       timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], first: 100) {
@@ -105,7 +108,7 @@ const REVIEW_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
 
 export interface ReviewItem { id: string; kind: "review" | "comment"; by: string; bot: boolean; state: string; at: string; url: string }
 export interface ReviewAnswer {
-  author: { login: string }; reviewDecision: string | null; requested: string[]; items: ReviewItem[];
+  state: string; author: { login: string }; reviewDecision: string | null; requested: string[]; items: ReviewItem[];
   totals: { reviews: number; comments: number };
 }
 
@@ -125,10 +128,14 @@ export function parseReviewAnswer(json: unknown): ReviewAnswer {
     ...(pr.comments?.nodes ?? []).map((c: any) => ({ id: String(c.id), kind: "comment" as const, ...who(c.author), state: "", at: String(c.createdAt ?? ""), url: String(c.url ?? "") })),
   ];
   const totals = { reviews: Number(pr.reviews?.totalCount ?? items.filter((i) => i.kind === "review").length), comments: Number(pr.comments?.totalCount ?? items.filter((i) => i.kind === "comment").length) };
-  return { author: { login: String(pr.author?.login ?? "") }, reviewDecision: pr.reviewDecision ?? null, requested: [...new Set<string>(requested)], items, totals };
+  return { state: String(pr.state ?? "OPEN"), author: { login: String(pr.author?.login ?? "") }, reviewDecision: pr.reviewDecision ?? null, requested: [...new Set<string>(requested)], items, totals };
 }
 
 const DECISIONS = new Set(["APPROVED", "CHANGES_REQUESTED"]);
+
+/** A merged or closed PR gets no more reviews: a review wait on it ends, done when merged. */
+const prEnded = (state: string | undefined): { outcome: "done" | "failed"; data: Dict } | undefined =>
+  state === "MERGED" || state === "CLOSED" ? { outcome: state === "MERGED" ? "done" : "failed", data: { state, merged: state === "MERGED" } } : undefined;
 
 const fromLogins = (from: string) => from.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
@@ -283,6 +290,15 @@ function watchReviewers(w: Watch, ctx: PluginCtx, pr: string, exec: Exec, every:
       const a = parseReviewAnswer(json(await exec(args, w.cwd), "api graphql"));
       if (finished) return;
       if (failing) { ctx.error(null, w); failing = false; }
+      const ended = prEnded(a.state);
+      if (ended && w.run) {
+        finished = true;
+        // the same keys a review carries, so a prompt written for reviews still renders
+        ctx.emit({ type: w.type, run: w.run, entry: w.entry, outcome: ended.outcome, data: {
+          pr, id: "", by: "", kind: a.state.toLowerCase(), state: a.state, decision: a.reviewDecision ?? "", url: pr, at: "",
+          reviews: a.totals.reviews, comments: a.totals.comments, merged: ended.data.merged } });
+        return;
+      }
       const counted = countedItems(a, { from, only });
       const newest = a.items.reduce((m, i) => (i.at > m ? i.at : m), mark);
       if (!seen) {
