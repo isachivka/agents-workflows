@@ -82,7 +82,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
 | `max_runs` | integer ≥ 1 | `1` | Open runs allowed at once. Further starts are refused. |
-| `triggers` | list | none | Automatic starts, see below. Manual starts always work. |
+| `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |
 | `roles` | mapping | none | Agent roles, see below. |
 | `steps` | list | required | The entries, in order. Must not be empty. |
 

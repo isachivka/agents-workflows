@@ -138,3 +138,15 @@ test("after its flow failed stopped the run, the agent finishes the step once th
   assert.deepEqual([run.status, run.current], ["running", "c"]);
   await s.close();
 });
+
+test("flow start --var seeds the run's vars before its first step renders", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", "", "q") });
+  const env = { FLOWD_URL: s.base };
+  const started = await flow(["start", "q", "--var", "title=Fix the login timeout", "--var", "query=a=b c"], env);
+  assert.deepEqual([started.code, started.stdout], [0, "q#1\n"]);
+  await settle(s.f);
+  assert.deepEqual(s.f.store.getRun("q#1")!.vars, { title: "Fix the login timeout", query: "a=b c" });
+  const bad = await flow(["start", "q", "--var", "novalue"], env);
+  assert.deepEqual([bad.code, bad.stderr], [1, "flow: expected key=value, got novalue\n"]);
+  await s.close();
+});

@@ -44,6 +44,7 @@ From the installed copy of this skill, the repo is
 | stop quietly when there is nothing to do | `on_fail: end` — the run is done (or the next iteration starts), nobody is asked |
 | skip work a run already did (a PR reviewed once) | in an `sh` step: `flow ls --all --process "$FLOW_PROCESS" --where pr="$u" >/dev/null && continue` — exit 1 means no such run; see the review-queue recipe in docs/processes.md |
 | a fix-up branch | `{step: <id>, role: <role>, detour: true, after: {goto: <id>}}` after the main line; reached only by a `goto` |
+| start by hand with inputs the first step needs | `flow start <name> --var key=value …` — vars exist before the first prompt and role `name:` render; `flow set` after the start is too late |
 | start on a schedule or an event | `triggers: [{cron: "0 10 * * 1-5"}]`, `[{on: flow.run.done, where: {process: other}}]` |
 | start on a plugin event (GitHub) | `triggers: [{on: gh.opened, with: {label: ready-for-agent}}]`; also `{on: gh.merged, with: {base: main}}`, `{on: gh.ci, with: {branch: main}, where: {conclusion: failure}}`. The run starts with the event's data as vars: `{{vars.pr}}`, `{{vars.number}}`, … |
 | a mechanical step without an agent (git, a script) | `{sh: 'git worktree add "$FLOW_VAR_DIR"'}` — run data comes as env `FLOW_VAR_<NAME>`, never `{{…}}` in the command; quote it; hand values back with `flow set --run "$FLOW_RUN" k=v` |

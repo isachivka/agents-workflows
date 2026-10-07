@@ -118,7 +118,7 @@ export interface RunState {
 export type SessionStatus = "active" | "completed" | "idle" | "blocked" | "closed";
 
 export type Input =
-  | { kind: "start"; event?: FlowEvent }
+  | { kind: "start"; event?: FlowEvent; vars?: Record<string, string> }
   | { kind: "report"; entry: string; outcome: Outcome; note?: string; evidence?: string; by: "agent" | "human" | "system" }
   | { kind: "skip"; entry: string; note: string }
   | { kind: "goto"; entry: string }

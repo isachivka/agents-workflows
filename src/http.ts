@@ -161,7 +161,7 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
       return r;
     }],
     ["GET", /^\/api\/runs$/, (_p, _b, q) => f.runSummaries(q.get("all") === "1")],
-    ["POST", /^\/api\/runs$/, (_p, b) => submit({ type: "run.start", data: { process: b.process, bind: b.bind ?? {} }, source: "ui" })],
+    ["POST", /^\/api\/runs$/, (_p, b) => submit({ type: "run.start", data: { process: b.process, bind: b.bind ?? {}, vars: b.vars ?? {} }, source: "ui" })],
     ["GET", /^\/api\/runs\/([^/]+)$/, ([id]) => {
       const d = f.runDetail(id);
       if (!d) throw new HttpError(404, { error: `no run ${id}` });

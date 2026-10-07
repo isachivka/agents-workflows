@@ -98,11 +98,14 @@ shell: `--run 'pr-loop#3'`.
 ### `flow start`
 
 ```
-flow start <process> [--bind role=SESSION …]
+flow start <process> [--bind role=SESSION …] [--var key=value …]
 ```
 
 Starts a run and prints its id (`pr-loop#3`). `--bind` attaches a role to an existing agterm
-session id; unbound roles are spawned when their first line is due. Refused when the process is
+session id; unbound roles are spawned when their first line is due. `--var` (repeatable) sets run
+variables before the first entry starts, so its prompt and a role's `name:` can read them; a value
+may hold spaces and `=`: `flow start triage --var title="Fix the login timeout" --var item=42`. In
+a repeating process they last for the first iteration, like any vars. Refused when the process is
 invalid, already has `max_runs` open runs, or a session is bound to another open run.
 
 ### `flow ls`

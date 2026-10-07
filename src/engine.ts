@@ -323,6 +323,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       if (curId) return fail(`run ${run.id} already started`);
       run.startedAt = now;
       const first = p.entries.find((x) => !x.detour)!;
+      Object.assign(run.vars, input.vars); // flow start --var: there before the first prompt renders
       if (input.event) {
         st(first.id).event = input.event;
         // the run knows what started it: scalar event data become vars, plus the event type

@@ -41,7 +41,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/api/runs` | `?all=1` adds finished runs | `RunSummary[]`, open runs first |
-| POST | `/api/runs` | `{process, bind?: {role: session}}` | `{run}` |
+| POST | `/api/runs` | `{process, bind?: {role: session}, vars?: {key: value}}` (vars are set before the first entry) | `{run}` |
 | GET | `/api/runs/:id` | | `RunSummary` plus `entries` (per-entry state), `events` (newest first) and `sessions` (`{sessionId: agterm status}`) |
 | POST | `/api/runs/:id/pause` · `/resume` · `/stop` | | `{run}` |
 | POST | `/api/runs/:id/vars` | `{vars: {k: v}}` | `{run}` |

@@ -344,7 +344,7 @@ export class Flowd {
     const entry = e.entry ?? "";
     switch (e.type) {
       case "run.start":
-        return this.startRun(String(d.process ?? ""), stringVars(d.bind), str(d.trigger));
+        return this.startRun(String(d.process ?? ""), stringVars(d.bind), str(d.trigger), undefined, stringVars(d.vars));
       case "agterm.status":
       case "agterm.closed": {
         const session = String(d.session ?? "");
@@ -467,7 +467,7 @@ export class Flowd {
     return { run: hit.run.id, entry: cur.id };
   }
 
-  private async startRun(name: string, bind: Record<string, string>, trigger?: string, ev?: FlowEvent): Promise<Result> {
+  private async startRun(name: string, bind: Record<string, string>, trigger?: string, ev?: FlowEvent, vars: Record<string, string> = {}): Promise<Result> {
     const p = this.defs.processes[name];
     if (!p) {
       const why = this.defs.invalid[`process:${name}`];
@@ -486,7 +486,7 @@ export class Flowd {
     const n = this.store.nextRunNumber(name);
     const run = newRun(`${name}#${n}`, p, bind);
     this.store.createRun(run, n, this.now());
-    return this.apply(run.id, { kind: "start", event: ev ? { type: ev.type, outcome: ev.outcome, data: ev.data, source: ev.source } : undefined });
+    return this.apply(run.id, { kind: "start", vars, event: ev ? { type: ev.type, outcome: ev.outcome, data: ev.data, source: ev.source } : undefined });
   }
 
   private async apply(runId: string, input: Input): Promise<Result> {

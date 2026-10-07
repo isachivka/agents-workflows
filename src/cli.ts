@@ -18,8 +18,10 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
-  flow start <process> [--bind role=SESSION …]
-  flow ls [--all] [--process P] [--where k=v …]  open runs (--all: finished ones too); filtered, exit 1 when none match
+  flow start <process> [--bind role=SESSION …] [--var key=value …]
+                                         start a run; --var seeds its vars before the first step
+  flow ls [--all] [--process P] [--where k=v …]
+                                         open runs (--all: finished ones too); filtered, exit 1 when none match
   flow check [name]                      validate FLOWS_HOME offline (all, or one process or step)
   flow done|failed --human --run ID --step ID
                                          close a step from your own terminal
@@ -41,10 +43,11 @@ interface Args {
   all: boolean;
   process?: string;
   where: string[];
+  vars: string[];
 }
 
 export function parseArgs(argv: string[]): Args {
-  const a: Args = { _: [], bind: [], human: false, all: false, where: [] };
+  const a: Args = { _: [], bind: [], human: false, all: false, where: [], vars: [] };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     const value = () => {
@@ -58,6 +61,7 @@ export function parseArgs(argv: string[]): Args {
     else if (x === "--step") a.step = value();
     else if (x === "--outcome") a.outcome = value();
     else if (x === "--bind") a.bind.push(value());
+    else if (x === "--var") a.vars.push(value());
     else if (x === "--human") a.human = true;
     else if (x === "--all") a.all = true;
     else if (x === "--process") a.process = value();
@@ -156,8 +160,8 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "start": {
         const [name] = a._;
-        if (!name) throw new CliError("usage: flow start <process> [--bind role=SESSION …]");
-        out((await call("POST", "/api/runs", { process: name, bind: pairs(a.bind) })).run);
+        if (!name) throw new CliError("usage: flow start <process> [--bind role=SESSION …] [--var key=value …]");
+        out((await call("POST", "/api/runs", { process: name, bind: pairs(a.bind), vars: pairs(a.vars) })).run);
         return 0;
       }
       case "ls": {
