@@ -9,6 +9,8 @@ export class FakeAgterm implements Agterm {
   sessions: SessionInfo[] = [];
   n = 0;
   failSpawn = 0;
+  /** spawns that open the session and then fail, as when flowd dies right after agterm answered */
+  lostSpawn = 0;
   failType = 0;
 
   async spawn(o: { cwd: string; command: string; workspace: string; name: string }): Promise<string> {
@@ -16,6 +18,7 @@ export class FakeAgterm implements Agterm {
     const id = `S${++this.n}`;
     this.calls.push(`spawn ${id} ${o.workspace} | ${o.name} | ${o.cwd} | ${o.command}`);
     this.sessions.push({ id, name: o.name, cwd: o.cwd, workspace: o.workspace });
+    if (this.lostSpawn > 0) { this.lostSpawn--; throw new Error("lost the answer"); }
     return id;
   }
   async type(session: string, text: string): Promise<void> {

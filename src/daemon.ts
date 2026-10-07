@@ -630,6 +630,15 @@ export class Flowd {
     }
   }
 
+  /** A session in that workspace with that name that no open run has: one a lost spawn opened. */
+  private async unboundSession(workspace: string, name: string): Promise<string | undefined> {
+    try {
+      return (await this.agterm.tree()).find((s) => s.workspace === workspace && s.name === name && !this.store.runBySession(s.id))?.id;
+    } catch {
+      return undefined; // agterm unreachable: the spawn below fails and is retried
+    }
+  }
+
   private async spawnFor(run: RunState, row: OutboxRow): Promise<void> {
     const key = `${run.id}\u0000${row.role}`;
     if (this.spawning.has(key)) return;
@@ -641,10 +650,16 @@ export class Flowd {
       return;
     }
     this.spawning.add(key);
+    let attempts = row.attempts + 1;
     try {
       const cwd = expandHome(renderTemplate(role.cwd ?? p.cwd, renderData(run)));
       const name = renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
-      const session = await this.agterm.spawn({ cwd, command: spawnCommand(role.spawn, row.text), workspace: p.workspace ?? run.process, name });
+      const workspace = p.workspace ?? run.process;
+      // an earlier attempt may have opened the session and lost the answer (flowd died, the socket
+      // broke): take that session rather than start the agent twice
+      const opened = row.attempts > 0 ? await this.unboundSession(workspace, name) : undefined;
+      attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
+      const session = opened ?? await this.agterm.spawn({ cwd, command: spawnCommand(role.spawn, row.text), workspace, name });
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
@@ -656,7 +671,7 @@ export class Flowd {
       }
     } catch (e) {
       this.log(`spawn ${run.id} ${row.role}: ${msg(e)}`);
-      if (this.store.bumpOutbox(row.id) >= 3) {
+      if (attempts >= 3) {
         this.store.markSent(row.id, this.now());
         await this.submit({ type: "role.failed", run: run.id, data: { role: row.role, reason: `spawn failed: ${msg(e)}` }, source: "flowd" });
       }

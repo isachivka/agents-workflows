@@ -85,3 +85,9 @@ test("cursorColumn reads a surface's caret column", async () => {
   assert.equal(await realAgterm(f.bin).cursorColumn("surface:S1:left"), 7);
   assert.match(f.calls(), /\[surface\]\[cursor\]\[--target\]\[surface:S1:left\]\[--json\]/);
 });
+
+test("agtermctl exiting before it reads its stdin (EPIPE) is no crash", async () => {
+  // `true` never reads stdin; a big write hits a closed pipe
+  await realAgterm("/usr/bin/true", 0).press("S1", "x".repeat(4_000_000));
+  await realAgterm("/usr/bin/true", 0).type("S1", "y".repeat(4_000_000));
+});

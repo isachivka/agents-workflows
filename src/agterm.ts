@@ -39,6 +39,9 @@ function run(bin: string, args: string[], stdin?: string): Promise<string> {
       if (err) reject(new Error(`agtermctl ${args.slice(0, 2).join(" ")}: ${String(stderr).trim() || err.message}`));
       else resolve(String(stdout));
     });
+    // agtermctl may exit before it reads its stdin: the pipe's EPIPE is then no news (the exit status
+    // above says how it went), and unhandled it would kill flowd
+    child.stdin?.on("error", () => {});
     child.stdin?.end(stdin ?? "");
   });
 }

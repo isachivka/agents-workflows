@@ -821,3 +821,17 @@ test("a role spawns into the process's workspace under its name template", async
   assert.ok(agterm.calls[0].startsWith("spawn S1 Log sync | sync 2026-10-08 pm | /tmp |"), agterm.calls[0]);
   await f.close();
 });
+
+test("a spawn whose answer was lost adopts the session it opened instead of spawning another", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  agterm.lostSpawn = 1;
+  await f.submit(start("p"));
+  await settle(f);
+  await f.flush();
+  await settle(f);
+  assert.equal(agterm.calls.filter((c) => c.startsWith("spawn ")).length, 1);
+  const run = f.store.getRun("p#1")!;
+  assert.equal(run.roles.pm, "S1");
+  assert.ok(run.entries.b.deliveredAt);
+  await f.close();
+});

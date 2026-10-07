@@ -80,9 +80,12 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 ## Sessions and roles
 
 - A role without a session is spawned when its first line is due:
-  `agtermctl session new --command "/bin/zsh -lc '<spawn> <first line>'"` in the workspace named
-  after the process, session name `<run> <role>`. The first line is the agent's first prompt.
-  A login shell puts `claude` on `PATH`, but your `.zshrc` aliases are not loaded.
+  `agtermctl session new --command "/bin/zsh -lc '<spawn> <first line>'"` in the process's
+  `workspace` (default: its name), session name from the role's `name` (default `<run> <role>`).
+  The first line is the agent's first prompt. A login shell puts `claude` on `PATH`, but your
+  `.zshrc` aliases are not loaded. A failed spawn is retried up to three times; a retry first looks
+  for a session of that workspace and name that no open run has (one an earlier attempt opened
+  before its answer was lost, say to a flowd crash) and takes it instead of starting a second agent.
 - A role can be bound to an existing session at start (`flow start <process> --bind role=SESSION`,
   or the Start form). A session can be bound to one open run only; that is how `flow` finds the
   caller.
