@@ -387,3 +387,13 @@ test("already: false keeps the plain count-based gh.review", () => {
   stop();
   assert.deepEqual(exec.calls[0]?.slice(0, 2), ["pr", "view"]);
 });
+
+test("title reads the run's PR title; no pr, no call", async () => {
+  const exec = fake({ "pr view": { stdout: JSON.stringify({ title: "Fix the login timeout" }) } });
+  const gh = makeGhPlugin(exec);
+  const ctx: PluginCtx = { emit: () => {}, log: () => {}, error: () => {}, config: {} };
+  assert.equal(await gh.title!({ vars: { pr: "https://github.com/o/r/pull/7" }, cwd: "/w" }, ctx), "Fix the login timeout");
+  assert.deepEqual([exec.calls[0], exec.cwds[0]], [["pr", "view", "https://github.com/o/r/pull/7", "--json", "title"], "/w"]);
+  assert.equal(await gh.title!({ vars: {}, cwd: "/w" }, ctx), undefined);
+  assert.equal(exec.calls.length, 1);
+});

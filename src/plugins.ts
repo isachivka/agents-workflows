@@ -29,6 +29,8 @@ export interface Plugin {
   start?(ctx: PluginCtx): unknown;
   watch?(w: Watch, ctx: PluginCtx): (() => void) | void;
   actions?: Record<string, (args: Dict, ctx: PluginCtx) => unknown>;
+  /** What a run is about, in words (a PR's title), from its vars; flowd keeps it in vars.title. */
+  title?(run: { vars: Record<string, string>; cwd: string }, ctx: PluginCtx): Promise<string | undefined> | string | undefined;
 }
 export interface PluginStatus {
   name: string;
@@ -194,6 +196,20 @@ export class PluginHost {
       this.log(`unwatch ${a.w.type}: ${msg(e)}`);
     }
     this.active.delete(k);
+  }
+
+  /** The first title a plugin gives for these vars; a failing plugin is skipped (its error shows in its status). */
+  async titleOf(vars: Record<string, string>, cwd: string): Promise<string | undefined> {
+    for (const l of this.loaded.values()) {
+      if (!l.plugin.title) continue;
+      try {
+        const t = await l.plugin.title({ vars, cwd }, l.ctx);
+        if (typeof t === "string" && t.trim()) return t.trim();
+      } catch (e) {
+        l.lastError = msg(e);
+      }
+    }
+    return undefined;
   }
 
   async runAction(name: string, args: Dict): Promise<unknown> {

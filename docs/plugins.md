@@ -14,6 +14,7 @@ export default {
   start(ctx) {},                               // optional: once at daemon start
   watch(w, ctx) { return () => {}; },          // optional: a wait or a trigger wants one of its events
   actions: { post(args, ctx) {} },             // optional: `do: gh.post` in a process
+  title({ vars, cwd }, ctx) {},                // optional: what a run is about, from its vars
 };
 ```
 
@@ -24,6 +25,7 @@ export default {
 | `start(ctx)` | For sources that push: a socket, a webhook listener. May return a promise; a rejection is reported. |
 | `watch(w, ctx)` | Called when someone subscribes to one of the plugin's types: an entry starts waiting on it (a **wait**), or a process has an `on:` trigger for it (a **trigger subscription**). Returns a function that stops the watch; it is called when the entry stops waiting (event arrived, timeout, goto, stop) or the trigger goes away. Throw to refuse what it cannot serve, with a message that says what to write instead. |
 | `actions` | Functions called by `{do: <name>.<action>, with: {...}}` entries. Resolving marks the entry done; throwing fails it with the error as the note. |
+| `title({vars, cwd}, ctx)` | What a run is about, in words, from its vars: `gh` returns the title of `vars.pr`. flowd asks when a run's `pr` changes and every 10 minutes for each open run with a `pr`, and stores a new answer in `vars.title`. Return `undefined` when it does not know; a throw is shown in the plugin's status and the old title stays. The first plugin with an answer wins. |
 
 `w` (a `Watch`):
 

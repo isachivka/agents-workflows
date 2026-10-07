@@ -20,6 +20,9 @@ when a step is yours. Then:
    **The moment your work has a pull request** — you opened it, or found the one it belongs to —
    run `flow set pr=<url>` right away, even if the step does not ask. `pr` is the standard name:
    the UI's "Open the PR" button and the `gh` waits read it. Never invent another name for it.
+   Once there is a PR, flowd keeps `title` (what the run is about) in sync with the PR's title by
+   itself. Before that, if the run has no `title` yet (`flow show` lists the vars), set a short
+   one for the task: `flow set title="Fix the login timeout"`.
 5. After reporting, end your turn. The next step arrives as a new `▶ flow:` line.
 
 Never end a turn without one of `flow done`, `flow failed` or `flow wait`. When the step has you

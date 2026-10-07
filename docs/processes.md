@@ -62,6 +62,7 @@ Names every process and agent uses the same way, so the UI and plugins can rely 
 | Name | Holds | Read by |
 |---|---|---|
 | `pr` | the URL of the run's pull request (GitHub) or merge request | the UI's "Open the PR" button on every run card and the run page; `gh.checks`, `gh.merged`, `gh.review` waits (as their default PR); a run started by a `gh` trigger gets it automatically |
+| `title` | what the run works on, in words: the PR's title, or the task's before there is a PR | the UI, to tell runs apart. flowd fills it from the PR (through the `gh` plugin's `title`) when `pr` is set and re-reads it every 10 minutes, so a renamed PR renames the run; a run started by a `gh` trigger has it from the event. Before a PR, an agent sets it: `flow set title="…"` |
 
 Agents set `pr` the moment the work has a PR (`flow set pr=<url>`), whether or not the step asks;
 the `flow` skill tells them so, and `flow set` hints when a PR URL goes under another name. When a

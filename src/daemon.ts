@@ -30,6 +30,8 @@ export interface FlowdOptions {
   claudeConfig?: string;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
+  /** how often every open run's title is re-read from its PR (0: never on a timer) */
+  titleMs?: number;
   /** how a shell entry's command is run; the command is appended (default: a login zsh) */
   shell?: string[];
 }
@@ -145,6 +147,11 @@ export class Flowd {
     const flushMs = this.o.flushMs ?? 1_000;
     if (tickMs > 0) this.timers.push(setInterval(() => { void this.tickNow(); }, tickMs));
     if (flushMs > 0) this.timers.push(setInterval(() => { void this.flush(); }, flushMs));
+    const titleMs = this.o.titleMs ?? 600_000;
+    if (titleMs > 0) {
+      this.timers.push(setInterval(() => { void this.refreshTitles(); }, titleMs));
+      this.background(this.refreshTitles()); // runs that got their PR while flowd was down
+    }
     if (this.o.watchDefs !== false) this.watcher = fsWatch(this.home, { recursive: true }, () => this.scheduleReload());
   }
 
@@ -489,7 +496,23 @@ export class Flowd {
     if (res.error) return { error: res.error, run: runId };
     this.commit(res);
     this.grantHolds();
+    if (res.run.vars.pr && res.run.vars.pr !== run.vars.pr) this.background(this.refreshTitle(runId));
     return { run: runId };
+  }
+
+  /** Re-reads every open run's title from its PR: a renamed PR renames the run. */
+  refreshTitles(): Promise<void> {
+    return Promise.all(this.store.openRuns().filter((r) => r.vars.pr).map((r) => this.refreshTitle(r.id))).then(() => undefined);
+  }
+
+  private async refreshTitle(runId: string): Promise<void> {
+    const run = this.store.getRun(runId);
+    if (!run?.vars.pr || this.closing) return;
+    const title = await this.plugins.titleOf(run.vars, this.cwdOf(run.process));
+    // the PR may have changed while gh answered
+    if (title && title !== run.vars.title && this.store.getRun(runId)?.vars.pr === run.vars.pr) {
+      await this.submit({ type: "run.set", run: runId, data: { vars: { title } }, source: "flowd" });
+    }
   }
 
   private ctxFor(run: RunState) {

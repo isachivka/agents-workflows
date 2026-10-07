@@ -158,6 +158,10 @@ export function makeGhPlugin(exec: Exec = realExec, intervalMs = 60_000): Plugin
   return {
     name: "gh",
     events: ["checks", "merged", "review", "opened", "ci"],
+    async title({ vars, cwd }) {
+      if (!vars.pr) return undefined;
+      return (json(await exec(["pr", "view", vars.pr, "--json", "title"], cwd), "pr view") as { title?: string }).title;
+    },
     watch(w, ctx) {
       const kind = w.type.slice("gh.".length) as "checks" | "merged" | "review" | "opened" | "ci";
       const every = Number(ctx.config.interval_ms ?? intervalMs);

@@ -785,3 +785,29 @@ test("a hold queues a second run until the first moves on; the first to queue is
   assert.equal(f.store.getRun("p#3")!.entries.b.status, "active");
   await f.close();
 });
+
+const TITLE_PLUGIN = `const g = globalThis as any;
+export default { name: "titler", title({ vars }: any) { if (g.__titleFail) throw new Error("offline"); return vars.pr ? (g.__titles ?? {})[vars.pr] : undefined; } };\n`;
+
+test("the run's title follows its PR: fetched when pr is set, refreshed on the timer, a failure keeps the old one", async () => {
+  const g = globalThis as any;
+  g.__titles = { "https://x/pull/1": "Fix the login timeout" };
+  g.__titleFail = false;
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, "plugins/titler.ts": TITLE_PLUGIN, ...TWO }));
+  await f.submit(start("p"));
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.vars.title, undefined);
+  await f.submit({ type: "run.set", run: "p#1", data: { vars: { pr: "https://x/pull/1" } }, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.vars.title, "Fix the login timeout");
+  g.__titles["https://x/pull/1"] = "Fix the login timeout on slow networks";
+  g.__titleFail = true;
+  await f.refreshTitles();
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.vars.title, "Fix the login timeout");
+  g.__titleFail = false;
+  await f.refreshTitles();
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.vars.title, "Fix the login timeout on slow networks");
+  await f.close();
+});
