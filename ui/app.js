@@ -1,6 +1,6 @@
 import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
-import { prUrl } from "./pr.js";
+import { prUrl, repoName, slackUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
   eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, runTitle, duration, ago, clock, moment, runLabel, holdPhrase } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
@@ -17,6 +17,12 @@ const isOpen = (r) => r.status !== "done" && r.status !== "stopped";
 
 /** "pr-loop · run 4", plus "· round 2" once a repeating run is past its first round. */
 const runName = (r) => `${runLabel(r.id)}${r.iteration > 1 ? ` · ${t("run.round", { n: r.iteration })}` : ""}`;
+/** The small line over a card's headline: the repo, then the run when the headline is its title. */
+const cardLabel = (r, about) => [repoName(r.vars), about ? runName(r) : null].filter(Boolean).join(" · ");
+const SlackLink = ({ vars, cls = "btn" }) => {
+  const url = slackUrl(vars);
+  return url && html`<a class=${cls} href=${url} target="_blank" rel="noreferrer">${t("act.openSlack")}<${Icon} name="external" /></a>`;
+};
 
 /** Rounds that ended since `since` in the given open runs. The run list only carries the current
  * round, so this reads each repeating run's events; few runs repeat, so a fetch each is fine. */
@@ -87,7 +93,7 @@ function WaitingCard({ r, now }) {
   const post = (path) => attempt(() => api("POST", `/api/runs/${enc(r.id)}${path}`, {}), setErr);
   const about = runTitle(r);
   return html`<article class="box you">
-    <div class="meta"><${Pill} tone="you">${d.tag}<//>${about && html`<span class="muted small">${runName(r)}</span>`}
+    <div class="meta"><${Pill} tone="you">${d.tag}<//>${cardLabel(r, about) && html`<span class="muted small">${cardLabel(r, about)}</span>`}
       <span class="muted small when">${t("now.waitedFor", { d: duration(now - waitingSince(r)) })}</span></div>
     <h3 class="about" title=${about ? r.vars.title : undefined}>${about || runName(r)}</h3>
     <p class="step">${d.title}</p>
@@ -95,6 +101,7 @@ function WaitingCard({ r, now }) {
     <${Err} msg=${err} />
     <div class="acts">
       ${url && html`<a class="btn ${s === "human" ? "primary" : ""}" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
+      <${SlackLink} vars=${r.vars} />
       ${s === "human" && !r.waitingOn && html`<button class="btn ${url ? "" : "primary"}" onClick=${post(`/entries/${enc(cur.id)}/done`)}>${t("act.done")}</button>`}
       ${(s === "failed" || s === "stopped") && html`<a class="btn primary" href="#/run/${enc(r.id)}">${t("act.sortOut")}</a>`}
       ${s === "failed" && html`<button class="btn" onClick=${post(`/entries/${enc(cur.id)}/retry`)}>${t("act.retry")}</button>`}
@@ -114,7 +121,7 @@ function WorkingCard({ r, now }) {
   const url = prUrl(r.vars);
   const about = runTitle(r);
   return html`<article class="box">
-    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//>${about && html`<span class="muted small">${runName(r)}</span>`}</div>
+    <div class="meta"><${Pill} tone=${d.tone}>${d.tag}<//>${cardLabel(r, about) && html`<span class="muted small">${cardLabel(r, about)}</span>`}</div>
     <h3 class="about" title=${about ? r.vars.title : undefined}>${about || runName(r)}</h3>
     <p class="step">${cur && cur.kind === "agent" && html`<span class="who">${cur.role}</span> · `}${d.title}</p>
     ${d.detail && html`<p class="muted small">${d.detail}</p>`}
@@ -124,6 +131,7 @@ function WorkingCard({ r, now }) {
     <div class="acts">
       <a class="btn" href="#/run/${enc(r.id)}">${t("act.details")}</a>
       ${url && html`<a class="btn" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
+      <${SlackLink} vars=${r.vars} />
       ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.terminal")}</button>`}
     </div>
   </article>`;
@@ -134,9 +142,10 @@ function FinishedRow({ r, now }) {
   return html`<div class="row">
     <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
     <a href="#/run/${enc(r.id)}"><b>${runTitle(r) || runLabel(r.id)}</b></a>
-    ${runTitle(r) && html`<span class="muted small">${runLabel(r.id)}</span>`}
+    ${(runTitle(r) || repoName(r.vars)) && html`<span class="muted small">${[repoName(r.vars), runTitle(r) ? runLabel(r.id) : null].filter(Boolean).join(" · ")}</span>`}
     ${last && html`<span class="muted grow note" title=${last.note}>— ${last.note}</span>`}
     ${prUrl(r.vars) && html`<a class="small" href=${prUrl(r.vars)} target="_blank" rel="noreferrer">PR<${Icon} name="external" /></a>`}
+    <${SlackLink} vars=${r.vars} cls="small" />
     <span class="muted small" style="margin-left:auto">${ago(r.updated, now)}</span>
   </div>`;
 }
@@ -167,7 +176,7 @@ function Run({ arg: id }) {
         <div class="title-row"><h1 title=${runTitle(r) ? r.vars.title : undefined}>${runTitle(r) || runLabel(r.id)}</h1>
           <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${s ? t("st.needs-human") : t(`st.${r.status}`)}<//></div>
         <${ProcessLine} name=${r.process} />
-        <p class="muted small">${runTitle(r) ? `${runLabel(r.id)} · ` : ""}${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
+        <p class="muted small">${repoName(r.vars) ? `${repoName(r.vars)} · ` : ""}${runTitle(r) ? `${runLabel(r.id)} · ` : ""}${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
       </div>
       ${live && html`<div class="acts">
         ${r.status === "paused" && html`<button class="btn" onClick=${post("/resume")}>${t("act.resume")}</button>`}
@@ -238,6 +247,7 @@ function HumanStep({ r, cur, post, detail }) {
     ${data && html`<details class="more"><summary>${t("proc.toldHuman")}</summary><pre class="instr">${data.text}</pre></details>`}
     <div class="acts">
       ${url && html`<a class=${`btn${r.waitingOn ? " primary" : ""}`} href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
+      <${SlackLink} vars=${r.vars} />
       ${r.waitingOn
         ? html`<p class="muted">${detail}</p>`
         : html`<button class="btn primary" onClick=${post(`/entries/${enc(cur.id)}/done`)}>${t("act.done")}</button>`}

@@ -103,7 +103,7 @@ const r3 = await start("review-loop", { lead: "L3", dev: "D3" });
 for (const e of ["pick", "implement", "review", "open-pr"]) await report(r3, e, `${e} done`);
 // a step that did not work out, with a long reason
 const r4 = await start("changelog", { writer: "W1" });
-await f.submit({ type: "run.set", run: r4, data: { vars: { title: "Fix the login timeout", pr: "https://github.com/acme/app/pull/136" } }, source: "preview" });
+await f.submit({ type: "run.set", run: r4, data: { vars: { title: "Fix the login timeout", pr: "https://github.com/acme/api/pull/136", slack_thread: "https://acme.slack.com/archives/C0123/p1700000000" } }, source: "preview" });
 await settle(f);
 await report(r4, "draft", "no permission to push to main — git push was rejected by the protected-branch rule on acme/app; "
   + "the writer's token has contents:read only. Either grant contents:write or let the draft go to a branch.", "failed");

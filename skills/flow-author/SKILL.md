@@ -68,6 +68,7 @@ From the installed copy of this skill, the repo is
 - `human` is a reserved role; agent roles must be declared under `roles`.
 - The run's pull request is always `vars.pr` (see "Standard variables" in docs/processes.md): a
   step that opens or finds a PR should say `flow set pr=<url>`; never name it otherwise.
+  Likewise a Slack thread about the work is always `vars.slack_thread` (the UI links it).
 - `vars.title` is what the run is about, shown to tell runs apart. flowd fills it from the PR's
   title once `pr` is set; a step before the PR may ask the agent to `flow set title="…"`. Do not
   use `title` for anything else.

@@ -38,6 +38,8 @@ test("an agent session shows, sets, reports, and cannot report twice", async () 
   const other = await flow(["set", "pull_request=https://github.com/o/r/pull/7", "thread=https://chat.example/x/1"], env);
   assert.equal(other.code, 0);
   assert.equal(other.stderr, "flow: hint: pull_request looks like a pull request — the standard name is pr (flow set pr=https://github.com/o/r/pull/7)\n");
+  const slack = await flow(["set", "thread=https://acme.slack.com/archives/C1/p2"], env);
+  assert.equal(slack.stderr, "flow: hint: thread looks like a Slack thread — the standard name is slack_thread (flow set slack_thread=https://acme.slack.com/archives/C1/p2)\n");
   const done = await flow(["done", "--note", "ok"], env);
   assert.deepEqual([done.code, done.stdout], [0, "recorded done\n"]);
   const twice = await flow(["done"], env);

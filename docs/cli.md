@@ -54,7 +54,8 @@ the UI. Prints `ok`. Vars are cleared at the start of each iteration.
 
 A pull-request URL under any name but `pr` is stored, with a hint on stderr:
 `flow: hint: pull_request looks like a pull request — the standard name is pr (flow set pr=<url>)`.
-See [Standard variables](processes.md#standard-variables).
+A Slack thread link under any name but `slack_thread` gets the same kind of hint. See
+[Standard variables](processes.md#standard-variables).
 
 ### `flow wait`
 

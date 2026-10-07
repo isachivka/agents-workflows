@@ -11,3 +11,15 @@ test("prUrl: the pr var first, else a PR-shaped var, never another link", () => 
   assert.equal(P.prUrl({ thread: "https://chat.example/archives/C1/p2", wave: "61" }), null);
   assert.equal(P.prUrl({}), null);
 });
+
+test("repoName: the repository from the PR URL, without its owner", () => {
+  assert.equal(P.repoName({ pr: "https://github.com/acme/web-app/pull/12" }), "web-app");
+  assert.equal(P.repoName({ mr: "https://gitlab.example/g/sub/api/-/merge_requests/3" }), "api");
+  assert.equal(P.repoName({ thread: "https://chat.example/x" }), null);
+});
+
+test("slackUrl: the slack_thread var first, else a Slack-thread-shaped var", () => {
+  assert.equal(P.slackUrl({ slack_thread: "https://acme.slack.com/archives/C1/p2" }), "https://acme.slack.com/archives/C1/p2");
+  assert.equal(P.slackUrl({ thread: "https://acme.slack.com/archives/C1/p2?thread_ts=1.2" }), "https://acme.slack.com/archives/C1/p2?thread_ts=1.2");
+  assert.equal(P.slackUrl({ pr: "https://github.com/o/r/pull/1" }), null);
+});

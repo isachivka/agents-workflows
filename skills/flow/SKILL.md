@@ -20,6 +20,8 @@ when a step is yours. Then:
    **The moment your work has a pull request** — you opened it, or found the one it belongs to —
    run `flow set pr=<url>` right away, even if the step does not ask. `pr` is the standard name:
    the UI's "Open the PR" button and the `gh` waits read it. Never invent another name for it.
+   **The moment the work has a Slack thread** — someone opened one about it, or a step asks you to
+   post there — `flow set slack_thread=<url>`, so the UI can link it.
    Once there is a PR, flowd keeps `title` (what the run is about) in sync with the PR's title by
    itself. Before that, if the run has no `title` yet (`flow show` lists the vars), set a short
    one for the task: `flow set title="Fix the login timeout"`.

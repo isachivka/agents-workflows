@@ -61,13 +61,16 @@ Names every process and agent uses the same way, so the UI and plugins can rely 
 
 | Name | Holds | Read by |
 |---|---|---|
-| `pr` | the URL of the run's pull request (GitHub) or merge request | the UI's "Open the PR" button on every run card and the run page; `gh.checks`, `gh.merged`, `gh.review` waits (as their default PR); a run started by a `gh` trigger gets it automatically |
+| `pr` | the URL of the run's pull request (GitHub) or merge request | the UI's "Open the PR" button on every run card and the run page, and the repository name (without its owner) in the small line over a card's title; `gh.checks`, `gh.merged`, `gh.review` waits (as their default PR); a run started by a `gh` trigger gets it automatically |
+| `slack_thread` | the link to the Slack thread about this work, once there is one | the UI's "Slack thread" button on run cards, on a human step and in Finished today |
 | `title` | what the run works on, in words: the PR's title, or the task's before there is a PR | the UI, to tell runs apart. flowd fills it from the PR (through the `gh` plugin's `title`) when `pr` is set and re-reads it every 10 minutes, so a renamed PR renames the run; a run started by a `gh` trigger has it from the event. Before a PR, an agent sets it: `flow set title="…"` |
 
-Agents set `pr` the moment the work has a PR (`flow set pr=<url>`), whether or not the step asks;
-the `flow` skill tells them so, and `flow set` hints when a PR URL goes under another name. When a
+Agents set `pr` the moment the work has a PR (`flow set pr=<url>`), and `slack_thread` the moment
+a Slack thread about it appears, whether or not the step asks; the `flow` skill tells them so, and
+`flow set` hints when such a link goes under another name. When a
 run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL (`…/pull/<n>`,
-`…/merge_requests/<n>`), never to any other link.
+`…/merge_requests/<n>`), never to any other link; likewise for `slack_thread` and
+`https://<team>.slack.com/archives/…` links.
 
 ## Process keys
 

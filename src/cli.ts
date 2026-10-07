@@ -7,6 +7,7 @@ class CliError extends Error {}
 
 /** a GitHub pull request or a GitLab merge request URL; ui/pr.js has the same rule */
 const PR_URL = /^https?:\/\/\S+\/(pull|merge_requests)\/\d+/;
+const SLACK_URL = /^https:\/\/[\w-]+\.slack\.com\/archives\//;
 
 const HELP = `flow — drive flows from an agent session or a terminal
 
@@ -140,6 +141,7 @@ export async function main(argv: string[]): Promise<number> {
         await call("POST", "/api/vars", { session, run: a.run, vars });
         for (const [k, v] of Object.entries(vars)) {
           if (k !== "pr" && PR_URL.test(v)) process.stderr.write(`flow: hint: ${k} looks like a pull request — the standard name is pr (flow set pr=${v})\n`);
+          if (k !== "slack_thread" && SLACK_URL.test(v)) process.stderr.write(`flow: hint: ${k} looks like a Slack thread — the standard name is slack_thread (flow set slack_thread=${v})\n`);
         }
         out("ok");
         return 0;
