@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Sim, rep, nudge } from "./helpers.ts";
+import { renderData } from "../src/engine.ts";
 
 const STEPS = { a: "Do A in {{vars.dir}}", b: "Do B", c: "Do C", fix: "Fix it" };
 const LINEAR = `
@@ -231,4 +232,11 @@ test("the holder keeps its hold across consecutive holding entries; hold-free on
   assert.equal(s.status("c"), "active");
   s.send({ kind: "hold-free" });
   assert.ok(s.error);
+});
+
+test("run.date is the local day the run started", () => {
+  const s = new Sim(ONE_ROLE("  - {step: b, role: pm}\n"), STEPS);
+  s.now = new Date(2026, 9, 8, 23, 30).getTime();
+  s.send({ kind: "start" });
+  assert.equal((renderData(s.run).run as any).date, "2026-10-08");
 });

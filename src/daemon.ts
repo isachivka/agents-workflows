@@ -643,7 +643,8 @@ export class Flowd {
     this.spawning.add(key);
     try {
       const cwd = expandHome(renderTemplate(role.cwd ?? p.cwd, renderData(run)));
-      const session = await this.agterm.spawn({ cwd, command: spawnCommand(role.spawn, row.text), workspace: run.process, name: `${run.id} ${row.role}` });
+      const name = renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
+      const session = await this.agterm.spawn({ cwd, command: spawnCommand(role.spawn, row.text), workspace: p.workspace ?? run.process, name });
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });

@@ -811,3 +811,13 @@ test("the run's title follows its PR: fetched when pr is set, refreshed on the t
   assert.equal(f.store.getRun("p#1")!.vars.title, "Fix the login timeout on slow networks");
   await f.close();
 });
+
+test("a role spawns into the process's workspace under its name template", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES,
+    "processes/p.yaml": "description: d\ncwd: /tmp\nworkspace: Log sync\nroles: {pm: {spawn: claude, name: \"sync {{run.date}} {{role}}\"}}\nsteps:\n  - {step: b, role: pm}\n" }));
+  clock.t = new Date(2026, 9, 8, 7, 0).getTime();
+  await f.submit(start("p"));
+  await settle(f);
+  assert.ok(agterm.calls[0].startsWith("spawn S1 Log sync | sync 2026-10-08 pm | /tmp |"), agterm.calls[0]);
+  await f.close();
+});

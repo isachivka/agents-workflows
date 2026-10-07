@@ -47,9 +47,15 @@ export const nudgeText = (run: RunState, entry: string) =>
 export const reminderText = (entry: string) =>
   `▶ flow: step ${entry} is not closed — \`flow done\`, \`flow failed --note "…"\`, or \`flow wait --note "…"\` if you are waiting on purpose`;
 
+/** YYYY-MM-DD in local time: the day a person would name */
+const localDate = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 export function renderData(run: RunState, event?: FlowEvent): Dict {
   return {
-    run: { id: run.id, process: run.process, iteration: run.iteration },
+    run: { id: run.id, process: run.process, iteration: run.iteration, date: run.startedAt === undefined ? undefined : localDate(run.startedAt) },
     vars: run.vars,
     event: event ? { type: event.type, outcome: event.outcome, data: event.data } : undefined,
   };
@@ -315,6 +321,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
   switch (input.kind) {
     case "start": {
       if (curId) return fail(`run ${run.id} already started`);
+      run.startedAt = now;
       const first = p.entries.find((x) => !x.detour)!;
       if (input.event) {
         st(first.id).event = input.event;

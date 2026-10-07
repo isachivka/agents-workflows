@@ -70,7 +70,7 @@ export function splitStep(text: string): { summary: string; body: string } {
   return { summary, body: m[2].trim() };
 }
 
-export const PROCESS_KEYS = new Set(["description", "cwd", "repeat", "max_runs", "triggers", "roles", "steps"]);
+export const PROCESS_KEYS = new Set(["description", "cwd", "workspace", "repeat", "max_runs", "triggers", "roles", "steps"]);
 export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
@@ -98,14 +98,17 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   const maxRuns = raw.max_runs ?? 1;
   if (!Number.isInteger(maxRuns) || (maxRuns as number) < 1) err("max_runs must be an integer >= 1");
 
+  if (raw.workspace !== undefined && (typeof raw.workspace !== "string" || !raw.workspace.trim())) err("workspace must be a name");
+
   const roles: Record<string, Role> = {};
   if (raw.roles !== undefined && !isObj(raw.roles)) err("roles must be a mapping");
   for (const [r, def] of Object.entries(isObj(raw.roles) ? raw.roles : {})) {
     if (r === "human") { err("role name human is reserved"); continue; }
     if (!isObj(def) || typeof def.spawn !== "string" || !def.spawn.trim()) { err(`role ${r}: spawn is required`); continue; }
-    for (const k of Object.keys(def)) if (k !== "spawn" && k !== "cwd") err(`role ${r}: unknown key ${k}`);
+    for (const k of Object.keys(def)) if (k !== "spawn" && k !== "cwd" && k !== "name") err(`role ${r}: unknown key ${k}`);
     if (def.cwd !== undefined && typeof def.cwd !== "string") err(`role ${r}: cwd must be a string`);
-    roles[r] = { spawn: def.spawn, cwd: typeof def.cwd === "string" ? def.cwd : undefined };
+    if (def.name !== undefined && (typeof def.name !== "string" || !def.name.trim())) err(`role ${r}: name must be a string`);
+    roles[r] = { spawn: def.spawn, cwd: typeof def.cwd === "string" ? def.cwd : undefined, name: typeof def.name === "string" ? def.name : undefined };
   }
 
   const triggers: Trigger[] = [];
@@ -255,7 +258,8 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     }
   }
   if (errors.length) throw new DefError(errors);
-  return { name, description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number, triggers, roles, entries, source };
+  return { name, description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number,
+    workspace: typeof raw.workspace === "string" && raw.workspace.trim() ? raw.workspace.trim() : undefined, triggers, roles, entries, source };
 }
 
 const files = (dir: string, ext: string) => (existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(ext)).sort() : []);

@@ -29,7 +29,8 @@ export interface Entry {
   hold?: string;
 }
 
-export interface Role { spawn: string; cwd?: string }
+/** name: the agterm session name, a template over run and role (default "{{run.id}} {{role}}") */
+export interface Role { spawn: string; cwd?: string; name?: string }
 export interface Trigger { cron?: string; on?: string; where: Dict; with: Dict }
 
 export interface Process {
@@ -38,6 +39,8 @@ export interface Process {
   cwd: string;
   repeat: boolean;
   maxRuns: number;
+  /** the agterm workspace its roles spawn into (default: the process name) */
+  workspace?: string;
   triggers: Trigger[];
   roles: Record<string, Role>;
   entries: Entry[];
@@ -106,6 +109,8 @@ export interface RunState {
   roles: Record<string, string | null>;
   entries: Record<string, EntryState>;
   current: string | null;
+  /** when the run started (ms), for {{run.date}} */
+  startedAt?: number;
   /** the entry whose agent has not started; its first active resumes the run */
   startBlocked?: string;
 }

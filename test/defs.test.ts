@@ -178,3 +178,11 @@ test("hold is a name", () => {
   assert.deepEqual(errorsOf(() => parseProcess("p", "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm, hold: Desk 9}\n", ctx)),
     ["steps[1]: hold must be a name: lowercase letters, digits, dashes"]);
 });
+
+test("workspace on the process and name on a role", () => {
+  const p = parseProcess("p", "description: d\ncwd: /tmp\nworkspace: Log sync\nroles: {pm: {spawn: c, name: \"sync {{run.date}}\"}}\nsteps:\n  - {step: pick, role: pm}\n", ctx);
+  assert.equal(p.workspace, "Log sync");
+  assert.equal(p.roles.pm.name, "sync {{run.date}}");
+  assert.deepEqual(errorsOf(() => parseProcess("p", "description: d\ncwd: /tmp\nworkspace: \"\"\nroles: {pm: {spawn: c, name: 3}}\nsteps:\n  - {step: pick, role: pm}\n", ctx)),
+    ["workspace must be a name", "role pm: name must be a string"]);
+});

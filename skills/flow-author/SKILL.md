@@ -50,7 +50,8 @@ From the installed copy of this skill, the repo is
 | let time pass (keep a session a day, then clean up) | `{id: tail, wait: 24h}`; survives flowd restarts |
 | one shared thing (a test environment) for several runs | `hold: <name>` on each entry that uses it: `{step: deploy, role: dev, hold: desk-1}`, `{step: autotests, role: dev, hold: desk-1}`. One run at a time stands on those entries; others queue in front, the rest runs in parallel. Not `max_runs: 1`, which blocks the whole process |
 | one item per pass, forever | `repeat: true` — vars are cleared between iterations |
-| close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
+| put a process's sessions in one named workspace, name them by date | `workspace: Log sync` on the process (free text, may be shared); `name: "sync {{run.date}}"` on a role (default `{{run.id}} {{role}}`) |
+| close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1 or a shared `workspace:`: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
 
 ## Traps
 

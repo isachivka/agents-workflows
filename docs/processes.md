@@ -40,6 +40,7 @@ Placeholders, substituted when the step starts (`src/template.ts`, `renderData` 
 | `{{run.id}}` | `pr-loop#3` |
 | `{{run.process}}` | `pr-loop` |
 | `{{run.iteration}}` | `2` |
+| `{{run.date}}` | `2026-10-08`, the local day the run started |
 | `{{vars.<key>}}` | a run variable set with `flow set key=value` |
 | `{{event.type}}` | the type of the event that woke this entry |
 | `{{event.outcome}}` | `done` or `failed`, if the event had one |
@@ -78,6 +79,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 |---|---|---|---|
 | `description` | string | required | One line, shown in the UI. |
 | `cwd` | string | required | Working directory of spawned agents. `~` is expanded. |
+| `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
 | `max_runs` | integer ≥ 1 | `1` | Open runs allowed at once. Further starts are refused. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work. |
@@ -96,6 +98,7 @@ roles:
 |---|---|
 | `spawn` | Required. The command that starts the agent. It runs as `/bin/zsh -lc '<spawn> <first line>'`: a login shell, so `claude` is on `PATH`, but your `.zshrc` aliases are not loaded. Write `--dangerously-skip-permissions` yourself if you want it. |
 | `cwd` | Optional template, rendered when the role is spawned. Defaults to the process `cwd`. |
+| `name` | Optional template for the agterm session name, rendered when the role is spawned: `run` (with `{{run.date}}`), `vars` and `{{role}}`. Defaults to `{{run.id}} {{role}}`. A daily run reads well as `"sync {{run.date}}"`. |
 
 `human` is reserved: entries with `role: human` need no declaration.
 
@@ -446,9 +449,9 @@ After a successful `flow done`, run as your very last command:
 `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"`
 ```
 
-The run is over by then, so flowd takes the closed session calmly. With `max_runs` above 1 several
-runs share the workspace: close only your own session instead,
-`agtermctl session close --target "$AGTERM_SESSION_ID"`.
+The run is over by then, so flowd takes the closed session calmly. When the workspace is shared
+— `max_runs` above 1, or a `workspace:` other processes use too — close only your own session
+instead: `agtermctl session close --target "$AGTERM_SESSION_ID"`.
 
 The shipped examples are in [`examples/`](../examples/): `demo` (an agent step, compact, clear, a signal wait
 and a human step, for a first run), `pr-loop` (two roles, CI, a human merge, a detour) and
