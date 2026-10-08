@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createServer as httpServer } from "node:http";
 import { createServer, type AddressInfo, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,14 +10,18 @@ import { serve } from "./http-helpers.ts";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts");
 
-/** Runs the CLI. AGTERM_SESSION_ID is always set explicitly: the test runner itself may live in an agterm session. */
-function flow(args: string[], env: Record<string, string>) {
+/**
+ * Runs the CLI. AGTERM_SESSION_ID and FLOW_SESSION are always set explicitly: the test runner
+ * itself may live in an agterm or a flows session.
+ */
+function flow(args: string[], env: Record<string, string>, stdin = "") {
   const started = Date.now();
   return new Promise<{ code: number; stdout: string; stderr: string; ms: number }>((resolve) => {
-    execFile(process.execPath, [CLI, ...args], { env: { ...process.env, AGTERM_SESSION_ID: "", ...env } }, (err, stdout, stderr) => {
+    const child = execFile(process.execPath, [CLI, ...args], { env: { ...process.env, AGTERM_SESSION_ID: "", FLOW_SESSION: "", ...env } }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
       resolve({ code, stdout, stderr, ms: Date.now() - started });
     });
+    child.stdin?.end(stdin);
   });
 }
 
@@ -159,4 +164,29 @@ test("flow start over max_runs prints the run and its place in line", async () =
   assert.deepEqual([queued.code, queued.stdout], [0, "q#2 queued: 1st in line, 1 of 1 runs open\n"]);
   assert.match((await flow(["ls"], env)).stdout, /^q#2 {2}it\.1 {2}queued {2}1st in line$/m);
   await s.close();
+});
+
+test("claude-hook: turn events go out only from a flows session, with Claude's session id; compacted from either", async (t) => {
+  const bodies: unknown[] = [];
+  const srv = httpServer((req, res) => {
+    let b = "";
+    req.on("data", (c) => { b += c; });
+    req.on("end", () => { bodies.push({ path: req.url, ...JSON.parse(b) }); res.end("{}"); });
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+  t.after(() => { srv.closeAllConnections(); srv.close(); }); // a failed assert must not leave it listening
+  const FLOWD_URL = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  const quiet = (r: { code: number; stdout: string; stderr: string }) => assert.deepEqual([r.code, r.stdout, r.stderr], [0, "", ""]);
+  quiet(await flow(["claude-hook", "completed"], { FLOWD_URL, AGTERM_SESSION_ID: "S1" }, '{"session_id":"c0"}'));
+  assert.deepEqual(bodies, []);
+  quiet(await flow(["claude-hook", "start"], { FLOWD_URL, AGTERM_SESSION_ID: "S1", FLOW_SESSION: "zmx:flows-z-1-pm" }, '{"session_id":"c1","source":"clear"}'));
+  quiet(await flow(["claude-hook", "active"], { FLOWD_URL, FLOW_SESSION: "zmx:flows-z-1-pm" }, "not json"));
+  quiet(await flow(["claude-hook", "compacted"], { FLOWD_URL, AGTERM_SESSION_ID: "S1", FLOW_SESSION: "zmx:flows-z-1-pm" }));
+  quiet(await flow(["claude-hook", "compacted"], { FLOWD_URL, AGTERM_SESSION_ID: "S1" }));
+  assert.deepEqual(bodies, [
+    { path: "/claude", event: "start", session: "zmx:flows-z-1-pm", claude: "c1", source: "clear" },
+    { path: "/claude", event: "active", session: "zmx:flows-z-1-pm" },
+    { path: "/claude", event: "compacted", session: "zmx:flows-z-1-pm" },
+    { path: "/claude", event: "compacted", session: "S1" },
+  ]);
 });

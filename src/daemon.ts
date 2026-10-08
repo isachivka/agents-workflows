@@ -101,6 +101,8 @@ export class Flowd {
   private closing = false;
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
+  /** the Claude session id each zmx session's own agent reports from (a nested `claude -p` has another) */
+  private claudeOf = new Map<string, string>();
   private spawning = new Set<string>();
   private flushRun: Promise<void> | undefined;
   private timers: ReturnType<typeof setInterval>[] = [];
@@ -297,6 +299,15 @@ export class Flowd {
     return [...await this.agterm.tree(), ...zmx];
   }
 
+  private async sessionTurn(session: string, status: SessionStatus): Promise<Result> {
+    this.store.setSessionStatus(session, status, this.now());
+    for (const r of this.store.openRuns()) {
+      if (Object.values(r.roles).includes(session)) await this.apply(r.id, { kind: "session", session, status });
+    }
+    if (status !== "active") void this.flush();
+    return {};
+  }
+
   private async reconcileSessions(): Promise<void> {
     let live: SessionInfo[] | undefined;
     try {
@@ -401,13 +412,24 @@ export class Flowd {
       case "agterm.closed": {
         const session = String(d.session ?? "");
         if (!session) return { error: "no session" };
-        const status = (e.type === "agterm.closed" ? "closed" : AGTERM_STATUSES.has(String(d.status)) ? d.status : "idle") as SessionStatus;
-        this.store.setSessionStatus(session, status, this.now());
-        for (const r of this.store.openRuns()) {
-          if (Object.values(r.roles).includes(session)) await this.apply(r.id, { kind: "session", session, status });
+        return this.sessionTurn(session, (e.type === "agterm.closed" ? "closed" : AGTERM_STATUSES.has(String(d.status)) ? d.status : "idle") as SessionStatus);
+      }
+      case "claude.status": {
+        // Claude Code's own hooks: the turn signal for zmx sessions, which have no agterm to report it
+        const session = String(d.session ?? "");
+        if (!session.startsWith("zmx:") || !this.store.runBySession(session)) return {};
+        const claude = str(d.claude);
+        const known = this.claudeOf.get(session);
+        if (d.event === "start") {
+          // a fresh claude is the agent only if none is known; /clear, a compaction or a resume
+          // give the same agent a new id
+          if (claude && (!known || ["clear", "compact", "resume"].includes(String(d.source)))) this.claudeOf.set(session, claude);
+          return {};
         }
-        if (status !== "active") void this.flush();
-        return {};
+        if (claude && known && claude !== known) return {}; // a nested `claude -p` the agent ran
+        if (claude && !known) this.claudeOf.set(session, claude); // first word since flowd started
+        const status = ({ active: "active", completed: "completed", blocked: "blocked" } as Record<string, SessionStatus>)[String(d.event)];
+        return status ? this.sessionTurn(session, status) : { error: `unknown Claude event ${String(d.event)}` };
       }
       case "claude.compacted": {
         const session = String(d.session ?? "");

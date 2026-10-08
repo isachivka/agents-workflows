@@ -228,8 +228,10 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
       return {};
     }],
     ["POST", /^\/claude$/, (_p, b) => {
-      if (b.event === "compacted" && typeof b.session === "string" && b.session) {
-        void f.submit({ type: "claude.compacted", data: { session: b.session }, source: "claude" });
+      if (typeof b.session !== "string" || !b.session) return {};
+      if (b.event === "compacted") void f.submit({ type: "claude.compacted", data: { session: b.session }, source: "claude" });
+      else if (["start", "active", "completed", "blocked"].includes(b.event)) {
+        void f.submit({ type: "claude.status", data: { session: b.session, event: b.event, claude: b.claude, source: b.source }, source: "claude" });
       }
       return {};
     }],

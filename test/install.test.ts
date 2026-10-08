@@ -38,8 +38,14 @@ test("install wires launchd, agterm and Claude hooks, the skill and the PATH lin
 
   const settings = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
   assert.equal(settings.model, "x");
-  assert.equal(settings.hooks.Stop.length, 1);
   assert.deepEqual(settings.hooks.PostCompact, [{ hooks: [{ type: "command", command: "'/bin/node' '/repo/src/cli.ts' claude-hook compacted" }] }]);
+  // turn signals for zmx sessions; outside one ($FLOW_SESSION unset) the shell skips node altogether
+  const turn = (event: string) => ({ type: "command", command: `[ -z "$FLOW_SESSION" ] || '/bin/node' '/repo/src/cli.ts' claude-hook ${event}` });
+  assert.deepEqual(settings.hooks.SessionStart, [{ hooks: [turn("start")] }]);
+  assert.deepEqual(settings.hooks.UserPromptSubmit, [{ hooks: [turn("active")] }]);
+  assert.deepEqual(settings.hooks.PostToolUse, [{ hooks: [turn("active")] }]);
+  assert.deepEqual(settings.hooks.Stop, [{ hooks: [{ type: "command", command: "s" }] }, { hooks: [turn("completed")] }]);
+  assert.deepEqual(settings.hooks.Notification, [{ matcher: "permission_prompt", hooks: [turn("blocked")] }]);
   assert.ok(existsSync(join(home, ".claude", "settings.json.bak-flows")));
 
   assert.equal(readlinkSync(join(home, ".claude", "skills", "flow")), "/repo/skills/flow");
@@ -60,6 +66,7 @@ test("a re-install with another node replaces flows' hooks instead of adding to 
     "# mine\non status echo hi\non status '/b/node' '/repo/src/cli.ts' agterm-hook\non session.closed '/b/node' '/repo/src/cli.ts' agterm-hook\n");
   const settings = JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf8"));
   assert.deepEqual(settings.hooks.PostCompact, [{ hooks: [{ type: "command", command: "'/b/node' '/repo/src/cli.ts' claude-hook compacted" }] }]);
+  assert.deepEqual(settings.hooks.Stop, [{ hooks: [{ type: "command", command: `[ -z "$FLOW_SESSION" ] || '/b/node' '/repo/src/cli.ts' claude-hook completed` }] }]);
 });
 
 test("an install from before the skills/ move gets its skill link replaced", async () => {

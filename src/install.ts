@@ -109,20 +109,32 @@ export async function install(o: InstallOpts = {}): Promise<void> {
 
   const settingsPath = join(home, ".claude", "settings.json");
   const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, "utf8")) : {};
-  const command = `${flowCmd} claude-hook compacted`;
   settings.hooks ??= {};
-  const before = JSON.stringify(settings.hooks.PostCompact ?? []);
-  // drop flows' entry from an earlier install, keep everyone else's
-  const groups = (settings.hooks.PostCompact ?? [])
-    .map((g: { hooks?: { command?: string }[] }) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !/cli\.ts' claude-hook compacted$/.test(h.command ?? "")) }))
-    .filter((g: { hooks: unknown[] }) => g.hooks.length > 0);
-  groups.push({ hooks: [{ type: "command", command }] });
-  if (JSON.stringify(groups) !== before) {
+  // Turn signals matter only inside a zmx session flowd spawned ($FLOW_SESSION set): elsewhere the
+  // shell skips node, so other Claude sessions pay nothing per tool call.
+  const turn = (event: string) => `[ -z "$FLOW_SESSION" ] || ${flowCmd} claude-hook ${event}`;
+  const wanted: [string, string, string?][] = [
+    ["PostCompact", `${flowCmd} claude-hook compacted`],
+    ["SessionStart", turn("start")],
+    ["UserPromptSubmit", turn("active")],
+    ["PostToolUse", turn("active")],
+    ["Stop", turn("completed")],
+    ["Notification", turn("blocked"), "permission_prompt"],
+  ];
+  const before = JSON.stringify(settings.hooks);
+  for (const [event, command, matcher] of wanted) {
+    // drop flows' entry from an earlier install (possibly another node or repo path), keep everyone else's
+    const groups = (settings.hooks[event] ?? [])
+      .map((g: { hooks?: { command?: string }[] }) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !/cli\.ts' claude-hook \w+$/.test(h.command ?? "")) }))
+      .filter((g: { hooks: unknown[] }) => g.hooks.length > 0);
+    groups.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] });
+    settings.hooks[event] = groups;
+  }
+  if (JSON.stringify(settings.hooks) !== before) {
     if (existsSync(settingsPath)) copyFileSync(settingsPath, `${settingsPath}.bak-flows`);
-    settings.hooks.PostCompact = groups;
     mkdirSync(dirname(settingsPath), { recursive: true });
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-    say(`Claude PostCompact hook added to ${settingsPath} (backup: settings.json.bak-flows)`);
+    say(`Claude hooks (${wanted.map(([e]) => e).join(", ")}) written to ${settingsPath} (backup: settings.json.bak-flows)`);
   }
 
   for (const skill of ["flow", "flow-author"]) link(join(repo, "skills", skill), join(home, ".claude", "skills", skill), say);
