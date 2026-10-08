@@ -64,7 +64,9 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
     },
     async focus(session) {
       const name = nameOf(session);
-      const attach = `env ZMX_DIR=${shq(o.dir)} ${shq(o.bin)} attach ${shq(name)}`;
+      // agterm runs the command inside its own zmx pane, whose ZMX_SESSION zmx attach would follow
+      // instead of the name (checked live: "session agterm-… does not exist")
+      const attach = `env -u ZMX_SESSION ZMX_DIR=${shq(o.dir)} ${shq(o.bin)} attach ${shq(name)}`;
       try {
         await run(o.agtermctl ?? "agtermctl", ["session", "new", "--command", attach, "--name", name]);
       } catch (e) {

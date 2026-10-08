@@ -92,7 +92,7 @@ test("focus opens a zmx attach in agterm and raises it; without agterm it says w
   chmodSync(ctl, 0o755);
   const t = zmxTerminal({ bin: z.bin, dir: z.sockets, agtermctl: ctl, opener: ctl });
   await t.focus("zmx:flows-a");
-  const attach = `env ZMX_DIR='${z.sockets}' '${z.bin}' attach 'flows-a'`;
+  const attach = `env -u ZMX_SESSION ZMX_DIR='${z.sockets}' '${z.bin}' attach 'flows-a'`;
   assert.equal(readFileSync(log, "utf8"), `[session][new][--command][${attach}][--name][flows-a]\n[-a][agterm]\n`);
   process.env.FAKE_FAIL = "1";
   try {

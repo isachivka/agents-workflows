@@ -86,7 +86,8 @@ The entry stays active and fails after 10 minutes.
 - List them: `ZMX_DIR=~/.local/state/flows/zmx zmx list` (agterm's zmx is
   `/Applications/agterm.app/Contents/MacOS/zmx`). Each is labelled with its run and role.
 - Watch or take over one: the run's terminal button, or
-  `ZMX_DIR=~/.local/state/flows/zmx zmx attach flows-<process>-<n>-<role>-<k>`; detach with zmx's
+  `env -u ZMX_SESSION ZMX_DIR=~/.local/state/flows/zmx zmx attach flows-<process>-<n>-<role>-<k>`
+  (inside an agterm pane `ZMX_SESSION` names agterm's own session, and attach would follow it); detach with zmx's
   detach key, which leaves the agent running.
 - Agents of finished runs keep running until they exit: `zmx kill <name>` ends one.
 - Never point agterm's own zmx commands (`zmx prune`) at this directory, or flows' at agterm's
