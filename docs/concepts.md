@@ -172,8 +172,10 @@ triggered by them.
 - A triggered run starts with the event in its vars: every scalar field of the event's `data`
   as a string (`vars.pr`, `vars.number`, `vars.branch`, …) and `vars.trigger` = the event type.
   So a later `wait_for: gh.checks` finds `vars.pr` with no `flow set`.
-- A start is refused when the process already has `max_runs` open runs. A refused trigger records
-  `flow.trigger.skipped`. You can always start a process by hand.
+- At `max_runs` a start by hand or by an event is `queued`: the run exists with its vars and bound
+  sessions and starts by itself, oldest first, when a run of the process ends (its sessions are
+  told when their place changes). A cron start is skipped instead and records
+  `flow.trigger.skipped`; a schedule fires again.
 
 ## Subscriptions: how a plugin hears about waits and triggers
 

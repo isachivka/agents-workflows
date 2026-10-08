@@ -81,7 +81,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `cwd` | string | required | Working directory of spawned agents. `~` is expanded. |
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
-| `max_runs` | integer ≥ 1 | `1` | Open runs allowed at once. Further starts are refused. |
+| `max_runs` | integer ≥ 1 | `1` | Runs working at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |
 | `roles` | mapping | none | Agent roles, see below. |
 | `steps` | list | required | The entries, in order. Must not be empty. |
@@ -399,7 +399,7 @@ steps:
 
 **A review queue: one pull request at a time, each reviewed once.** GitHub's list of review
 requests is the queue; a cron run takes the next PR no run has had yet. While a run is open
-`max_runs` skips the tick and the PR waits for the next one, so nothing is lost. When there is
+`max_runs` skips the cron tick and the PR waits for the next one, so nothing is lost. When there is
 nothing new, `on_fail: end` finishes the run without asking anyone.
 
 ```yaml

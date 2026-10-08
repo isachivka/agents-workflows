@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
-import { formatDuration, matches, newRun, renderData, renderPrompt, renderWith, step } from "./engine.ts";
+import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { EMPTY_INPUT_COLUMN, expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
@@ -36,7 +36,7 @@ export interface FlowdOptions {
   shell?: string[];
 }
 
-export interface Result { error?: string; run?: string }
+export interface Result { error?: string; run?: string; queued?: { position: number; open: number; max: number } }
 
 export interface PlanItem {
   id: string; kind: string; role: string | null; detour: boolean; waitFor: string | null; status: string;
@@ -57,6 +57,8 @@ export interface RunSummary {
   waitUntil: number | null;
   /** queued for a hold: its name and the run that has it */
   heldBy: { hold: string; run: string | null } | null;
+  /** a queued run: its place in line and how full its process is */
+  queue: { position: number; open: number; max: number } | null;
   created: number; updated: number;
   plan: PlanItem[];
 }
@@ -102,6 +104,7 @@ export class Flowd {
   private watcher: FSWatcher | undefined;
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
   private loaded = false;
+  private queueing = false;
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
 
   constructor(o: FlowdOptions) {
@@ -140,6 +143,7 @@ export class Flowd {
       }
       for (const run of this.store.openRuns()) this.rearm(run);
       this.grantHolds();
+      await this.startQueued();
       this.subscribing = true;
       this.syncSubscriptions();
     });
@@ -220,7 +224,7 @@ export class Flowd {
         this.rearm(run);
       }
     }
-    if (this.loaded) void this.enqueue(async () => this.grantHolds());
+    if (this.loaded) void this.enqueue(async () => { this.grantHolds(); await this.startQueued(); }); // a hold gone, max_runs raised
     this.loaded = true;
     for (const c of this.crons) c.stop();
     this.crons = [];
@@ -460,6 +464,9 @@ export class Flowd {
     if (!session) return { error: "no session: run this inside a flow session, or pass --run and --step" };
     const hit = this.store.runBySession(session);
     if (!hit) return { error: "no open run is bound to this session" };
+    if (hit.run.status === "queued") {
+      return { error: `${hit.run.id} is queued (${ordinal(this.queueOf(hit.run).position)} in line); its first step comes when a run of ${hit.run.process} ends` };
+    }
     const cur = hit.run.current ? this.defs.processes[hit.run.process]?.entries.find((x) => x.id === hit.run.current) : undefined;
     if (!cur || cur.role !== hit.role) {
       return { error: `no active step for this session (${hit.run.id} is at ${hit.run.current ?? "nothing"}${cur?.role ? `, role ${cur.role}` : ""})` };
@@ -473,20 +480,32 @@ export class Flowd {
       const why = this.defs.invalid[`process:${name}`];
       return { error: `no valid process ${name}${why ? `: ${why.join("; ")}` : ""}` };
     }
-    const open = this.store.openRuns().filter((r) => r.process === name).length;
-    if (open >= p.maxRuns) {
-      if (trigger && trigger !== "flow.trigger.skipped") void this.submit({ type: "flow.trigger.skipped", data: { process: name, trigger }, source: "flow" });
-      return { error: `${name} already has ${open} open run(s) (max_runs ${p.maxRuns})` };
-    }
     for (const [role, session] of Object.entries(bind)) {
       if (!p.roles[role]) return { error: `${name} has no role ${role}` };
       const taken = this.store.runBySession(session);
       if (taken) return { error: `session ${session} is already bound to ${taken.run.id}` };
     }
+    const runs = this.store.openRuns().filter((r) => r.process === name);
+    const open = runs.filter((r) => r.status !== "queued").length;
+    const full = open >= p.maxRuns;
+    // a schedule fires again; a start by hand or by an event is work that must not be lost. A start
+    // that flow.trigger.skipped itself caused is refused without another one: that would feed itself
+    if (full && (trigger === "cron" || trigger === "flow.trigger.skipped")) {
+      if (trigger === "cron") void this.submit({ type: "flow.trigger.skipped", data: { process: name, trigger }, source: "flow" });
+      return { error: `${name} already has ${open} open run(s) (max_runs ${p.maxRuns})` };
+    }
     const n = this.store.nextRunNumber(name);
     const run = newRun(`${name}#${n}`, p, bind);
+    const event = ev ? { type: ev.type, outcome: ev.outcome, data: ev.data, source: ev.source } : undefined;
+    if (full) {
+      const position = runs.length - open + 1;
+      Object.assign(run, { status: "queued", vars: { ...vars }, queuedEvent: event, queuePos: position });
+      this.store.createRun(run, n, this.now());
+      this.changed("runs");
+      return { run: run.id, queued: { position, open, max: p.maxRuns } };
+    }
     this.store.createRun(run, n, this.now());
-    return this.apply(run.id, { kind: "start", vars, event: ev ? { type: ev.type, outcome: ev.outcome, data: ev.data, source: ev.source } : undefined });
+    return this.apply(run.id, { kind: "start", vars, event });
   }
 
   private async apply(runId: string, input: Input): Promise<Result> {
@@ -496,6 +515,7 @@ export class Flowd {
     if (res.error) return { error: res.error, run: runId };
     this.commit(res);
     this.grantHolds();
+    await this.startQueued();
     if (res.run.vars.pr && res.run.vars.pr !== run.vars.pr) this.background(this.refreshTitle(runId));
     return { run: runId };
   }
@@ -527,6 +547,35 @@ export class Flowd {
       if (hold && !run.entries[run.current!]?.queued) out[hold] = run.id;
     }
     return out;
+  }
+
+  /**
+   * Starts queued runs, oldest first, while their process has fewer than max_runs open, then tells
+   * the rest their new place. Every apply ends here, so it runs inside itself: the flag stops that.
+   */
+  private async startQueued(): Promise<void> {
+    if (this.queueing) return;
+    this.queueing = true;
+    try {
+      const open = this.store.openRuns();
+      for (const name of new Set(open.filter((r) => r.status === "queued").map((r) => r.process))) {
+        const p = this.defs.processes[name];
+        if (!p) continue;
+        let active = open.filter((r) => r.process === name && r.status !== "queued").length;
+        let position = 0;
+        for (const r of open.filter((x) => x.process === name && x.status === "queued")) {
+          if (active < p.maxRuns) {
+            const started = await this.apply(r.id, { kind: "start", event: r.queuedEvent });
+            if (!started.error) { active++; this.changed("runs"); }
+            continue;
+          }
+          position++;
+          if (r.queuePos !== position) await this.apply(r.id, { kind: "queued", position, open: active, max: p.maxRuns });
+        }
+      }
+    } finally {
+      this.queueing = false;
+    }
   }
 
   /** Hands every free hold to the running run that queued for it first. */
@@ -806,6 +855,15 @@ export class Flowd {
     }
   }
 
+  private queueOf(run: RunState): { position: number; open: number; max: number } {
+    const runs = this.store.openRuns().filter((r) => r.process === run.process);
+    return {
+      position: runs.filter((r) => r.status === "queued").findIndex((r) => r.id === run.id) + 1,
+      open: runs.filter((r) => r.status !== "queued").length,
+      max: this.defs.processes[run.process]?.maxRuns ?? 0,
+    };
+  }
+
   runSummary(run: RunState): RunSummary {
     const p = this.defs.processes[run.process];
     const cur = run.current ? p?.entries.find((x) => x.id === run.current) : undefined;
@@ -820,6 +878,7 @@ export class Flowd {
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
       waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
       heldBy: s?.queued ? { hold: s.queued.hold, run: this.holders()[s.queued.hold] ?? null } : null,
+      queue: run.status === "queued" ? this.queueOf(run) : null,
       created: times?.created ?? 0, updated: times?.updated ?? 0,
       plan: (p?.entries ?? []).map((e) => {
         const st = run.entries[e.id];

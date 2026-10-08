@@ -106,7 +106,12 @@ session id; unbound roles are spawned when their first line is due. `--var` (rep
 variables before the first entry starts, so its prompt and a role's `name:` can read them; a value
 may hold spaces and `=`: `flow start triage --var title="Fix the login timeout" --var item=42`. In
 a repeating process they last for the first iteration, like any vars. Refused when the process is
-invalid, already has `max_runs` open runs, or a session is bound to another open run.
+invalid or a session is bound to another open run.
+
+When the process already has `max_runs` runs working, the run is created `queued` and the command
+still succeeds: `jsf#6 queued: 2nd in line, 5 of 5 runs open` (the id stays the first word). It
+starts by itself, oldest first, when one of them ends; its bound sessions are told each time their
+place changes. Stop it like any run to drop it from the line.
 
 ### `flow ls`
 

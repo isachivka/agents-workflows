@@ -96,7 +96,8 @@ The plist and the hooks call node by its absolute path, which nvm changes with e
   every 60 s by default (`interval_ms` in `plugins.yaml`).
 - `where` must match the event's data exactly (values compared as strings), for example
   `where: {conclusion: failure}` for `gh.ci`.
-- `max_runs` reached: the start is refused and `flow.trigger.skipped` is recorded.
+- `max_runs` reached: an event trigger's run is `queued` and starts when a run of the process ends;
+  a cron trigger is skipped and `flow.trigger.skipped` is recorded.
 
 ## A run stopped with "the agent ended its turn N times without flow done/failed"
 

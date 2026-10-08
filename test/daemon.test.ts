@@ -61,7 +61,7 @@ test("reports that cannot be placed are refused with a reason", async () => {
   await f.close();
 });
 
-test("broadcast events wake matching waits and start triggered processes; max_runs skips the rest", async () => {
+test("broadcast events wake matching waits and start triggered processes; over max_runs they queue", async () => {
   resetWatches();
   const home = makeHome({
     ...STEP_FILES,
@@ -81,9 +81,8 @@ test("broadcast events wake matching waits and start triggered processes; max_ru
   assert.ok(f.store.getRun("q#1"), "q was started by p's flow.run.done");
   await f.submit({ type: "flow.run.done", data: { process: "p", run: "p#x" }, source: "test" });
   await settle(f);
-  assert.equal(f.store.getRun("q#2"), null);
-  const skipped = f.store.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'flow.trigger.skipped'").get() as { n: number };
-  assert.equal(Number(skipped.n), 1);
+  assert.equal(f.store.getRun("q#2")!.status, "queued");
+  assert.equal(f.store.getRun("q#2")!.queuedEvent?.type, "flow.run.done");
   await f.close();
 });
 
@@ -833,5 +832,30 @@ test("a spawn whose answer was lost adopts the session it opened instead of spaw
   const run = f.store.getRun("p#1")!;
   assert.equal(run.roles.pm, "S1");
   assert.ok(run.entries.b.deliveredAt);
+  await f.close();
+});
+
+test("a start over max_runs queues; it starts when a run ends, and the rest hear their new place", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  agterm.addSession("S2", "S3");
+  assert.deepEqual(await f.submit(start("p")), { run: "p#1" });
+  const second = await f.submit({ type: "run.start", data: { process: "p", bind: { pm: "S2" }, vars: { title: "Second" } }, source: "test" });
+  assert.deepEqual(second, { run: "p#2", queued: { position: 1, open: 1, max: 1 } });
+  await f.submit(start("p", { pm: "S3" }));
+  await settle(f);
+  const q2 = f.store.getRun("p#2")!;
+  assert.deepEqual([q2.status, q2.current, q2.vars.title, q2.roles.pm], ["queued", null, "Second", "S2"]);
+  assert.deepEqual(f.runSummary(f.store.getRun("p#3")!).queue, { position: 2, open: 1, max: 1 });
+  await f.submit({ type: "run.stop", run: "p#1", data: {}, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("p#2")!.status, "running");
+  assert.equal(f.store.getRun("p#2")!.current, "b");
+  clock.t += 20_000;
+  await settle(f);
+  assert.ok(agterm.typed().some((c) => c.startsWith("type S2 ▶ flow: step b · p#2")), agterm.typed().join("\n"));
+  assert.ok(agterm.typed().includes("type S3 ▶ flow: p#3 is queued — now 1st in line (1 of 1 runs open). Nothing to do: it starts by itself."), agterm.typed().join("\n"));
+  // a schedule does not queue
+  await f.submit({ type: "run.start", data: { process: "p", trigger: "cron" }, source: "cron" });
+  assert.equal(f.store.getRun("p#4"), null);
   await f.close();
 });

@@ -41,7 +41,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/api/runs` | `?all=1` adds finished runs | `RunSummary[]`, open runs first |
-| POST | `/api/runs` | `{process, bind?: {role: session}, vars?: {key: value}}` (vars are set before the first entry) | `{run}` |
+| POST | `/api/runs` | `{process, bind?: {role: session}, vars?: {key: value}}` (vars are set before the first entry) | `{run}`, plus `queued: {position, open, max}` when the process was at `max_runs` and the run waits in line |
 | GET | `/api/runs/:id` | | `RunSummary` plus `entries` (per-entry state), `events` (newest first) and `sessions` (`{sessionId: agterm status}`) |
 | POST | `/api/runs/:id/pause` · `/resume` · `/stop` | | `{run}` |
 | POST | `/api/runs/:id/vars` | `{vars: {k: v}}` | `{run}` |
@@ -53,13 +53,14 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
 
 `RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
-waitingOn, roles, vars, needsYou, agentWait, waitUntil, heldBy, created, updated, plan}`, where `created` and
+waitingOn, roles, vars, needsYou, agentWait, waitUntil, heldBy, queue, created, updated, plan}`, where `created` and
 `updated` are ms, when the run was created and last saved, `plan` lists every entry as
 `{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after}`
 (`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"`,
 `"end"` or `{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the
 current entry's agent declared a wait (else `null`), `waitUntil` is when a pause entry ends (ms),
-`heldBy` is `{hold, run}` while the current entry queues for a `hold` (`run`: who has it), and `needsYou` is true for a `needs-human`
+`heldBy` is `{hold, run}` while the current entry queues for a `hold` (`run`: who has it), `queue`
+is `{position, open, max}` for a run with status `queued` (waiting for a free slot), and `needsYou` is true for a `needs-human`
 run, one standing on an open human step, or one whose agent waits with `human: true`.
 
 ## Agents and events

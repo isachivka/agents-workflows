@@ -17,7 +17,7 @@
     "flow": "bin/flow"
   },
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test --test-concurrency=1 --test-timeout=30000 test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { ordinal } from "./engine.ts";
 
 const BASE = process.env.FLOWD_URL || `http://127.0.0.1:${process.env.FLOWD_PORT || 7420}`;
 
@@ -161,7 +162,9 @@ export async function main(argv: string[]): Promise<number> {
       case "start": {
         const [name] = a._;
         if (!name) throw new CliError("usage: flow start <process> [--bind role=SESSION …] [--var key=value …]");
-        out((await call("POST", "/api/runs", { process: name, bind: pairs(a.bind), vars: pairs(a.vars) })).run);
+        const r = await call("POST", "/api/runs", { process: name, bind: pairs(a.bind), vars: pairs(a.vars) });
+        // the id stays the first word: scripts read it
+        out(r.queued ? `${r.run} queued: ${ordinal(r.queued.position)} in line, ${r.queued.open} of ${r.queued.max} runs open` : r.run);
         return 0;
       }
       case "ls": {
@@ -170,7 +173,7 @@ export async function main(argv: string[]): Promise<number> {
           (!a.process || r.process === a.process) && where.every(([k, v]) => r.vars?.[k] === v));
         if (!runs.length) out("no runs");
         for (const r of runs) {
-          out([r.id, `it.${r.iteration}`, r.status, r.current ? `${r.current} (${r.currentStatus}${r.agentWait ? `, waiting: ${r.agentWait.note}` : ""})` : "-",
+          out([r.id, `it.${r.iteration}`, r.status, r.queue ? `${ordinal(r.queue.position)} in line` : "", r.current ? `${r.current} (${r.currentStatus}${r.agentWait ? `, waiting: ${r.agentWait.note}` : ""})` : r.queue ? "" : "-",
             r.waitingOn ? `waits ${r.waitingOn}` : "", r.heldBy ? `waits hold ${r.heldBy.hold}${r.heldBy.run ? ` (${r.heldBy.run})` : ""}` : "", r.reason ?? ""].filter(Boolean).join("  "));
         }
         // a filtered ls is a question a script asks: exit 1 is "no such run"

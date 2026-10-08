@@ -150,3 +150,13 @@ test("flow start --var seeds the run's vars before its first step renders", asyn
   assert.deepEqual([bad.code, bad.stderr], [1, "flow: expected key=value, got novalue\n"]);
   await s.close();
 });
+
+test("flow start over max_runs prints the run and its place in line", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {id: w, wait_for: signal.go}\n", "", "q") });
+  const env = { FLOWD_URL: s.base };
+  assert.equal((await flow(["start", "q"], env)).stdout, "q#1\n");
+  const queued = await flow(["start", "q"], env);
+  assert.deepEqual([queued.code, queued.stdout], [0, "q#2 queued: 1st in line, 1 of 1 runs open\n"]);
+  assert.match((await flow(["ls"], env)).stdout, /^q#2 {2}it\.1 {2}queued {2}1st in line$/m);
+  await s.close();
+});

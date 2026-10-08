@@ -41,6 +41,12 @@ export function newRun(id: string, p: Process, bind: Record<string, string> = {}
   return { id, process: p.name, iteration: 1, status: "running", vars: {}, roles, entries, current: null };
 }
 
+/** 1st, 2nd, 3rd, 4th, … 11th, 21st */
+export const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+
+export const queueText = (run: string, position: number, open: number, max: number) =>
+  `▶ flow: ${run} is queued — now ${ordinal(position)} in line (${open} of ${max} runs open). Nothing to do: it starts by itself.`;
+
 export const nudgeText = (run: RunState, entry: string) =>
   `▶ flow: step ${entry} · ${run.id} it.${run.iteration} — run \`flow show\` for the instructions`;
 
@@ -321,6 +327,11 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
   switch (input.kind) {
     case "start": {
       if (curId) return fail(`run ${run.id} already started`);
+      if (run.status === "queued") {
+        run.status = "running";
+        run.queuePos = undefined;
+        run.queuedEvent = undefined;
+      }
       run.startedAt = now;
       const first = p.entries.find((x) => !x.detour)!;
       Object.assign(run.vars, input.vars); // flow start --var: there before the first prompt renders
@@ -452,6 +463,13 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       if (cur?.do === "compact" && st(cur.id).status === "active" && run.roles[cur.role!] === input.session) {
         finish(cur.id, "done", { by: "system" });
       }
+      return done();
+    }
+    case "queued": {
+      if (run.status !== "queued") return fail(`${run.id} is not queued`);
+      run.queuePos = input.position;
+      // only roles that already have a session hear it: a notice never spawns an agent
+      for (const [role, session] of Object.entries(run.roles)) if (session) deliver(role, queueText(run.id, input.position, input.open, input.max));
       return done();
     }
     case "hold-free": {

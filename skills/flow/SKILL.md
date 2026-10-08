@@ -53,6 +53,14 @@ event will wake the step for you; only what the step waits for does.
 Only if the user wants the whole step redone from its instructions do they press "Try again" in
 the flows UI; a new `▶ flow:` line arrives then.
 
+## Starting a run, and waiting in line
+
+`flow start <process> --bind <role>=$AGTERM_SESSION_ID` may answer
+`<run> queued: 2nd in line, 5 of 5 runs open`. That is success: the hand-over is done, nothing to
+retry, no limit to raise. Tell the user and end your turn. Lines like
+`▶ flow: <run> is queued — now 1st in line …` only tell you the place; do nothing. The run's first
+`▶ flow: step …` line comes by itself when its turn comes.
+
 A refusal (`flow: …`, exit 1) is an answer, not a glitch. `step X has not reached the agent yet`
 means you already reported and the next step is on its way — wait for its line.
 If `flow show` says no step is active for this session, do nothing and tell the user.

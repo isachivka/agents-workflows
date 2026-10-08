@@ -101,6 +101,14 @@ export async function startFlowd(home: string, opts: Partial<FlowdOptions> = {})
     claudeConfig: join(home, "no-claude.json"), // never the real ~/.claude.json
     ...opts,
   });
+  // an event loop that feeds itself never lets idle() return and writes to the database until the
+  // disk fills: fail the test instead
+  const addEvent = f.store.addEvent.bind(f.store);
+  let events = 0;
+  f.store.addEvent = (...args: Parameters<typeof addEvent>) => {
+    if (++events > 5_000) throw new Error("over 5000 events in one test: an event loop feeds itself");
+    return addEvent(...args);
+  };
   await f.init();
   return { f, clock, agterm };
 }

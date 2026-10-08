@@ -96,7 +96,8 @@ export interface EntryState {
 /** Declared mid-turn it parks on that turn's end; the agent's next turn uses it up. */
 export interface AgentWait { note: string; human: boolean; since: number; parked: boolean }
 
-export type RunStatus = "running" | "paused" | "needs-human" | "done" | "stopped";
+/** queued: started over max_runs; open (it binds sessions), waits for a free slot */
+export type RunStatus = "queued" | "running" | "paused" | "needs-human" | "done" | "stopped";
 export const TERMINAL: RunStatus[] = ["done", "stopped"];
 
 export interface RunState {
@@ -111,6 +112,10 @@ export interface RunState {
   current: string | null;
   /** when the run started (ms), for {{run.date}} */
   startedAt?: number;
+  /** a queued run: the event that triggered it, handed to its start */
+  queuedEvent?: FlowEvent;
+  /** a queued run: the place in line its sessions were last told */
+  queuePos?: number;
   /** the entry whose agent has not started; its first active resumes the run */
   startBlocked?: string;
 }
@@ -128,6 +133,7 @@ export type Input =
   | { kind: "compacted"; session: string }
   | { kind: "tick" }
   | { kind: "hold-free" }
+  | { kind: "queued"; position: number; open: number; max: number }
   | { kind: "set"; vars: Record<string, string> }
   | { kind: "pause" }
   | { kind: "resume" }

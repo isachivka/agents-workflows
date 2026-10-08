@@ -28,7 +28,9 @@ test("runs: start, list, detail by an encoded id, overrides, refusals", async ()
   assert.deepEqual([skip.status, skip.body.error], [409, "a skip needs a reason"]);
   assert.equal((await s.call("POST", "/api/runs/p%231/entries/b/done", { note: "by hand" })).status, 200);
   assert.equal((await s.call("GET", "/api/runs/p%231")).body.current, "c");
-  assert.equal((await s.call("POST", "/api/runs", { process: "p" })).status, 409);
+  const queued = await s.call("POST", "/api/runs", { process: "p" });
+  assert.deepEqual([queued.status, queued.body], [200, { run: "p#2", queued: { position: 1, open: 1, max: 1 } }]);
+  assert.equal((await s.call("POST", "/api/runs", { process: "nope" })).status, 409);
   await s.close();
 });
 
@@ -159,7 +161,7 @@ test("on the LAN an IP-literal Host is flowd's own; a name still is not", async 
   const ip = { "content-type": "application/json", host: "192.168.1.20:7420" };
   const start = JSON.stringify({ process: "p" });
   assert.equal(await rawRequest(s.base, "/api/runs", ip, start), 200);
-  assert.equal(await rawRequest(s.base, "/api/runs", { ...ip, origin: "http://192.168.1.20:7420" }, start), 409); // past the guard: max_runs
+  assert.equal(await rawRequest(s.base, "/api/runs", { ...ip, origin: "http://192.168.1.20:7420" }, start), 200); // past the guard: queued
   assert.equal(await rawRequest(s.base, "/api/runs", { ...ip, origin: "http://evil.example" }, start), 403);
   assert.equal(await rawRequest(s.base, "/api/runs", { ...ip, host: "evil.example:7420" }, start), 403);
   await s.close();

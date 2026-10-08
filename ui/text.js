@@ -7,7 +7,7 @@ export const LANGS = ["en", "ru"];
 const EN = {
   "nav.now": "Now", "nav.processes": "Processes", "nav.settings": "Settings", "nav.label": "Sections", "lang.label": "Language",
   "title.waiting": "({n}) Waiting for you · flows", "title.page": "{page} · flows", "loading": "Loading…",
-  "st.running": "Running", "st.paused": "Paused", "st.needs-human": "Waiting for you", "st.done": "Finished", "st.stopped": "Stopped",
+  "st.queued": "Queued", "tag.queued": "In line", "run.queued": "{n} in line: {open} of {max} runs are working", "st.running": "Running", "st.paused": "Paused", "st.needs-human": "Waiting for you", "st.done": "Finished", "st.stopped": "Stopped",
   "tag.yourStep": "Your step", "tag.stopped": "Stopped", "tag.agentAsks": "Agent asks", "tag.working": "Agent working",
   "tag.agentWaits": "Agent waits", "tag.roundDone": "Round done", "tag.waiting": "Waiting",
   "run.label": "{process} · run {n}", "run.round": "round {n}", "run.started": "started {when}",
@@ -77,7 +77,7 @@ const EN = {
 const RU = {
   "nav.now": "Сейчас", "nav.processes": "Процессы", "nav.settings": "Настройки", "nav.label": "Разделы", "lang.label": "Язык",
   "title.waiting": "({n}) Ждут тебя · flows", "title.page": "{page} · flows", "loading": "Загрузка…",
-  "st.running": "Работает", "st.paused": "На паузе", "st.needs-human": "Ждёт тебя", "st.done": "Готово", "st.stopped": "Остановлен",
+  "st.queued": "В очереди", "tag.queued": "В очереди", "run.queued": "В очереди №{n}: работают {open} из {max}", "st.running": "Работает", "st.paused": "На паузе", "st.needs-human": "Ждёт тебя", "st.done": "Готово", "st.stopped": "Остановлен",
   "tag.yourStep": "Твой шаг", "tag.stopped": "Остановился", "tag.agentAsks": "Агент просит", "tag.working": "Агент работает",
   "tag.agentWaits": "Агент ждёт", "tag.roundDone": "Круг готов", "tag.waiting": "Ждёт",
   "run.label": "{process} · запуск {n}", "run.round": "круг {n}", "run.started": "начат {when}",
@@ -233,6 +233,9 @@ export function situation(r) {
   return null;
 }
 
+/** 1st, 2nd, 3rd, 4th, … 11th, 21st (src/engine.ts has the same) */
+const ordinalEn = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+
 export function describeRun(r) {
   const cur = currentEntry(r);
   const what = cur ? entryPhrase(cur) : t("run.starting");
@@ -245,6 +248,10 @@ export function describeRun(r) {
   if (r.status === "done") return { tone: "calm", tag: t("st.done"), title: t("run.finished"), detail: null };
   if (r.status === "stopped") return { tone: "calm", tag: t("st.stopped"), title: t("run.stopped"), detail: null };
   if (r.status === "paused") return { tone: "calm", tag: t("st.paused"), title: what, detail: null };
+  if (r.status === "queued" && r.queue) {
+    const n = lang === "ru" ? r.queue.position : ordinalEn(r.queue.position);
+    return { tone: "wait", tag: t("tag.queued"), title: t("run.queued", { n, open: r.queue.open, max: r.queue.max }), detail: null };
+  }
   if (r.agentWait) return { tone: "wait", tag: t("tag.agentWaits"), title: what, detail: t("run.agentWaitNote", { note: r.agentWait.note }) };
   if (r.waitUntil) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.until", { when: moment(r.waitUntil, Date.now()) }), detail: null };
   if (r.heldBy) return { tone: "wait", tag: t("tag.waiting"), title: holdPhrase(r.heldBy), detail: null };

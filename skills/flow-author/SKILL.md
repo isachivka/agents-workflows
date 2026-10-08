@@ -101,9 +101,9 @@ From the installed copy of this skill, the repo is
   the exit code and stderr, and `on_fail` decides. Besides `FLOW_VAR_<NAME>` it gets `FLOW_RUN`,
   `FLOW_PROCESS`, `FLOW_ITERATION` and `FLOW_EVENT_<KEY>`. It is killed after `timeout` (default
   30 minutes), and a flowd restart mid-command fails it — make commands safe to run again.
-- A trigger that fires while the process already has `max_runs` open runs is skipped, not queued.
-  For work that must not be lost, start from a list that keeps it (cron + an `sh` step that picks
-  the next item, as in the review-queue recipe), not from the event alone.
+- `max_runs` is how many runs work at once. A start by hand or by an event beyond it waits in line
+  (`queued`) and starts by itself; a cron start is skipped. Keep the limit where people can keep up
+  with what the runs produce (reviews), not where the machine can.
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
   for the user.
 
