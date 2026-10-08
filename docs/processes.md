@@ -80,6 +80,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `description` | string | required | One line, shown in the UI. |
 | `cwd` | string | required | Working directory of spawned agents. `~` is expanded. |
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
+| `terminal` | `agterm` or `zmx` | `agterm` | Where its roles' agents run: agterm sessions, or headless zmx sessions flowd runs itself. Only new spawns follow an edit. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
 | `max_runs` | integer ≥ 1 | `1` | Runs working at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |
@@ -204,7 +205,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | step id, process name | `step id X must match …`, `process name X must match …` |
 | step frontmatter | `missing --- frontmatter --- block`, `frontmatter must be a mapping`, `unknown key X`, `summary is required`, `body is empty` |
 | YAML | `yaml: …`, `a process file must be a YAML mapping` |
-| process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1` |
+| process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1`, `workspace must be a name`, `terminal must be agterm or zmx` |
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
 | triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping`, `trigger N: with must be a mapping`, `trigger N: with only applies to on: triggers` |
 | entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do, wait_for, wait or sh`, `steps[N]: wait is a pause on its own; it cannot go with step, do or wait_for`, `steps[N]: sh must be a command`, `steps[N]: sh runs on its own; it cannot go with step, do, wait or role`, `steps[N]: cwd on a step is only for sh, and must be a path`, `steps[N]: step and do are exclusive` |

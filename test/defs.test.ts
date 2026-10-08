@@ -186,3 +186,10 @@ test("workspace on the process and name on a role", () => {
   assert.deepEqual(errorsOf(() => parseProcess("p", "description: d\ncwd: /tmp\nworkspace: \"\"\nroles: {pm: {spawn: c, name: 3}}\nsteps:\n  - {step: pick, role: pm}\n", ctx)),
     ["workspace must be a name", "role pm: name must be a string"]);
 });
+
+test("terminal: agterm by default, zmx on request, nothing else", () => {
+  const src = (t: string) => `description: d\ncwd: /tmp\n${t}roles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n`;
+  assert.equal(parseProcess("p", src(""), ctx).terminal, "agterm");
+  assert.equal(parseProcess("p", src("terminal: zmx\n"), ctx).terminal, "zmx");
+  assert.deepEqual(errorsOf(() => parseProcess("p", src("terminal: tmux\n"), ctx)), ["terminal must be agterm or zmx"]);
+});
