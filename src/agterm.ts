@@ -9,8 +9,6 @@ export interface SpawnOpts {
   /** the agent's command line (`agentLine`); the terminal runs it in a login zsh */
   command: string;
   workspace: string; name: string;
-  /** set in the agent's environment (zmx; agterm sets its own) */
-  env?: Record<string, string>;
   /** labels on the session (zmx) */
   labels?: Record<string, string>;
 }

@@ -1,6 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { EMPTY_INPUT_COLUMN, run, shq, type SessionInfo, type Terminal } from "./agterm.ts";
 
+/** zmx takes only these characters in session names and label values. */
+export const zmxName = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "-");
+
 /**
  * agterm's zmx (patched with `type` and `screen`) as a terminal: sessions run headless in their own
  * socket directory, never agterm's, whose `zmx prune` would kill them. Ids are `zmx:<name>`.
@@ -8,8 +11,6 @@ import { EMPTY_INPUT_COLUMN, run, shq, type SessionInfo, type Terminal } from ".
 export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; opener?: string; submitDelayMs?: number }): Terminal {
   const zmx = (args: string[], stdin?: string, cwd?: string) => run(o.bin, args, stdin, { env: { ...process.env, ZMX_DIR: o.dir }, cwd });
   const nameOf = (session: string) => session.replace(/^zmx:/, "");
-  // zmx takes only these in session names and label values
-  const safe = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "-");
   const screen = async (session: string) => {
     const out = await zmx(["screen", nameOf(session)]);
     const nl = out.indexOf("\n");
@@ -17,13 +18,13 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
   };
   return {
     async spawn(s) {
-      const name = `flows-${safe(s.name)}`;
+      const name = zmxName(s.name);
       mkdirSync(o.dir, { recursive: true });
       // zmx types the words into the session's shell, quoting each; `exec` makes the agent the
-      // session's process, so the session ends with it
-      await zmx(["run", name, "-d", "exec", "env", ...Object.entries(s.env ?? {}).map(([k, v]) => `${k}=${v}`), "/bin/zsh", "-lc", s.command],
-        undefined, s.cwd);
-      const labels = Object.entries(s.labels ?? {}).map(([k, v]) => `${k}=${safe(v)}`);
+      // session's process, so the session ends with it. FLOW_SESSION is how `flow` and the Claude
+      // hooks inside name the session (ZMX_SESSION is set by agterm's own zmx panes too).
+      await zmx(["run", name, "-d", "exec", "env", `FLOW_SESSION=zmx:${name}`, "/bin/zsh", "-lc", s.command], undefined, s.cwd);
+      const labels = Object.entries(s.labels ?? {}).map(([k, v]) => `${k}=${zmxName(v)}`);
       if (labels.length) await zmx(["set", name, ...labels]);
       return `zmx:${name}`;
     },

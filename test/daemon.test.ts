@@ -859,3 +859,79 @@ test("a start over max_runs queues; it starts when a run ends, and the rest hear
   assert.equal(f.store.getRun("p#4"), null);
   await f.close();
 });
+
+// --- zmx as a second terminal ---
+
+const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");
+const zmxFake = () => Object.assign(new FakeAgterm(), { prefix: "zmx:Z" });
+
+test("a terminal: zmx process spawns through zmx, named flows-<run>-<role> and labelled; an agterm process through agterm", async () => {
+  const zmx = zmxFake();
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...ZMX }), { zmx });
+  await f.submit(start("z"));
+  await settle(f);
+  assert.ok(zmx.calls[0]?.startsWith("spawn zmx:Z1  | flows-z-1-pm | /tmp | claude '▶ flow: step b · z#1 it.1"), zmx.calls[0]);
+  assert.ok(zmx.calls[0].endsWith(" | run=z.1 role=pm"), zmx.calls[0]);
+  assert.equal(f.store.getRun("z#1")!.roles.pm, "zmx:Z1");
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(agterm.calls.map((c) => c.split(" | ")[0]), ["spawn S1 p"]);
+  assert.equal(zmx.calls.length, 1);
+  await f.close();
+});
+
+test("a zmx session's lines and draft check go to zmx", async () => {
+  const zmx = zmxFake();
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...ZMX }), { zmx });
+  await f.submit(start("z"));
+  await settle(f);
+  await f.submit(status("zmx:Z1", "active"));
+  await f.submit(report({ session: "zmx:Z1", outcome: "done" }));
+  await f.submit(status("zmx:Z1", "completed"));
+  zmx.sessions[0].overlay = true; // the fake's stand-in for "the user is typing"
+  clock.t += 17_000;
+  await settle(f);
+  assert.deepEqual(zmx.typed(), []);
+  zmx.sessions[0].overlay = false;
+  await settle(f);
+  assert.deepEqual(zmx.typed(), ["type zmx:Z1 ▶ flow: step c · z#1 it.1 — run `flow show` for the instructions"]);
+  assert.deepEqual(agterm.typed(), []);
+  await f.close();
+});
+
+test("a tick closes a zmx role whose session is gone; no zmx list while no run holds a zmx session", async () => {
+  const zmx = zmxFake();
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...ZMX }), { zmx });
+  await f.submit(start("p"));
+  await settle(f);
+  await f.tickNow();
+  assert.equal(zmx.trees, 0);
+  await f.submit(start("z"));
+  await settle(f);
+  await f.tickNow();
+  await settle(f);
+  assert.equal(f.store.getRun("z#1")!.roles.pm, "zmx:Z1");
+  zmx.sessions = [];
+  await f.tickNow();
+  await settle(f);
+  assert.equal(f.store.getRun("z#1")!.roles.pm, null);
+  assert.equal(f.store.getRun("p#1")!.roles.pm, "S1");
+  await f.close();
+});
+
+test("at startup a zmx session is looked for in zmx, not agterm", async () => {
+  const home = makeHome({ ...STEP_FILES, ...ZMX });
+  const zmx = zmxFake();
+  const A = await startFlowd(home, { zmx });
+  await A.f.submit(start("z"));
+  await settle(A.f);
+  await A.f.close();
+  const B = await startFlowd(home, { agterm: new FakeAgterm(), zmx });
+  await settle(B.f);
+  assert.equal(B.f.store.getRun("z#1")!.roles.pm, "zmx:Z1");
+  await B.f.close();
+  const C = await startFlowd(home, { agterm: new FakeAgterm(), zmx: zmxFake() });
+  await settle(C.f);
+  assert.equal(C.f.store.getRun("z#1")!.roles.pm, null);
+  await C.f.close();
+});

@@ -241,3 +241,19 @@ test("every file the real index.html, manifest and stylesheet point at exists in
   }
   assert.deepEqual(refs.filter((r) => !existsSync(join(ui, r))), []);
 });
+
+test("sessions: zmx's are listed while a run holds one, and focus goes to the session's terminal", async () => {
+  const { FakeAgterm } = await import("./daemon-helpers.ts");
+  const zmx = Object.assign(new FakeAgterm(), { prefix: "zmx:Z" });
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", "terminal: zmx\n", "z") }, { zmx });
+  s.agterm.addSession("S5");
+  assert.deepEqual((await s.call("GET", "/api/sessions")).body.map((x: any) => x.id), ["S5"]);
+  assert.equal(zmx.trees, 0);
+  await s.call("POST", "/api/runs", { process: "z" });
+  await settle(s.f);
+  assert.deepEqual((await s.call("GET", "/api/sessions")).body.map((x: any) => x.id), ["S5", "zmx:Z1"]);
+  assert.equal((await s.call("POST", `/api/sessions/${encodeURIComponent("zmx:Z1")}/focus`)).status, 200);
+  assert.ok(zmx.calls.includes("focus zmx:Z1"));
+  assert.ok(!s.agterm.calls.includes("focus zmx:Z1"));
+  await s.close();
+});

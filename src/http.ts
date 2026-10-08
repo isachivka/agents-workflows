@@ -210,9 +210,9 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
       if (typeof b.type !== "string" || !b.type) throw new HttpError(400, { error: "type is required" });
       return submit({ type: b.type, run: b.run || undefined, entry: b.entry || undefined, outcome: b.outcome || undefined, data: b.data ?? {}, source: b.source ?? "cli" });
     }],
-    ["GET", /^\/api\/sessions$/, () => f.agterm.tree()],
+    ["GET", /^\/api\/sessions$/, () => f.sessions()],
     ["POST", /^\/api\/sessions\/([^/]+)\/focus$/, async ([id]) => {
-      await f.agterm.focus(id);
+      await f.termOf(id).focus(id);
       return {};
     }],
     ["GET", /^\/api\/plugins$/, () => ({ core: CORE_EVENTS, plugins: f.plugins.status() })],

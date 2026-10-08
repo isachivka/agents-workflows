@@ -12,11 +12,15 @@ export class FakeAgterm implements Terminal {
   /** spawns that open the session and then fail, as when flowd dies right after agterm answered */
   lostSpawn = 0;
   failType = 0;
+  /** how spawned ids start: `S` (agterm), `zmx:Z` for a fake zmx */
+  prefix = "S";
+  trees = 0;
 
   async spawn(o: SpawnOpts): Promise<string> {
     if (this.failSpawn > 0) { this.failSpawn--; throw new Error("no agterm"); }
-    const id = `S${++this.n}`;
-    this.calls.push(`spawn ${id} ${o.workspace} | ${o.name} | ${o.cwd} | ${o.command}`);
+    const id = `${this.prefix}${++this.n}`;
+    const labels = o.labels ? ` | ${Object.entries(o.labels).map(([k, v]) => `${k}=${v}`).join(" ")}` : "";
+    this.calls.push(`spawn ${id} ${o.workspace} | ${o.name} | ${o.cwd} | ${o.command}${labels}`);
     this.sessions.push({ id, name: o.name, cwd: o.cwd, workspace: o.workspace });
     if (this.lostSpawn > 0) { this.lostSpawn--; throw new Error("lost the answer"); }
     return id;
@@ -26,7 +30,7 @@ export class FakeAgterm implements Terminal {
     this.calls.push(`type ${session} ${text}`);
   }
   async focus(session: string): Promise<void> { this.calls.push(`focus ${session}`); }
-  async tree(): Promise<SessionInfo[]> { return this.sessions; }
+  async tree(): Promise<SessionInfo[]> { this.trees++; return this.sessions; }
   /** caret column per surface; a missing surface reads as an empty input box */
   columns = new Map<string, number>();
   async cursorColumn(surface: string): Promise<number> {

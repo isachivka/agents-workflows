@@ -32,19 +32,19 @@ esac
   };
 }
 
-test("spawn: zmx run in the role's cwd, exec'ing the agent with its env, then labels; the id is zmx:<name>", async () => {
+test("spawn: zmx run in the role's cwd, exec'ing the agent with FLOW_SESSION, then labels; the id is zmx:<name>", async () => {
   const z = fakeZmx();
   const cwd = mkdtempSync(join(tmpdir(), "flows-cwd-"));
   const id = await zmxTerminal({ bin: z.bin, dir: z.sockets }).spawn({
-    cwd, command: agentLine("claude --x", "it's go"), workspace: "w", name: "pr loop-3-pm#x",
-    env: { FLOW_SESSION: "zmx:flows-pr-loop-3-pm-x" }, labels: { run: "pr loop.3", role: "pm" },
+    cwd, command: agentLine("claude --x", "it's go"), workspace: "", name: "flows-pr loop#3-pm",
+    labels: { run: "pr loop.3", role: "pm" },
   });
-  assert.equal(id, "zmx:flows-pr-loop-3-pm-x");
+  assert.equal(id, "zmx:flows-pr-loop-3-pm");
   assert.ok(existsSync(z.sockets), "the socket directory is created");
   const real = (await import("node:fs")).realpathSync(cwd);
   assert.equal(z.calls(),
-    `${z.sockets}|${real}|[run][flows-pr-loop-3-pm-x][-d][exec][env][FLOW_SESSION=zmx:flows-pr-loop-3-pm-x][/bin/zsh][-lc][claude --x 'it'\\''s go']\n` +
-    `${z.sockets}|${process.cwd()}|[set][flows-pr-loop-3-pm-x][run=pr-loop.3][role=pm]\n`);
+    `${z.sockets}|${real}|[run][flows-pr-loop-3-pm][-d][exec][env][FLOW_SESSION=zmx:flows-pr-loop-3-pm][/bin/zsh][-lc][claude --x 'it'\\''s go']\n` +
+    `${z.sockets}|${process.cwd()}|[set][flows-pr-loop-3-pm][run=pr-loop.3][role=pm]\n`);
 });
 
 test("type sends the text, then a CR alone, through zmx type; press goes through zmx send", async () => {

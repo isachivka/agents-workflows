@@ -6,7 +6,8 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { agentLine, expandHome, shq, type Terminal } from "./agterm.ts";
+import { agentLine, expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
+import { zmxName } from "./zmx.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -17,6 +18,8 @@ export interface FlowdOptions {
   home: string;
   statePath: string;
   agterm: Terminal;
+  /** headless sessions for processes with `terminal: zmx` */
+  zmx?: Terminal;
   pluginDirs: string[];
   now?: () => number;
   tickMs?: number;
@@ -84,6 +87,7 @@ export class Flowd {
   home: string;
   store: Store;
   agterm: Terminal;
+  zmx: Terminal | undefined;
   plugins: PluginHost;
   defs: Defs = { processes: {}, steps: {}, invalid: {} };
   now: () => number;
@@ -111,6 +115,7 @@ export class Flowd {
     this.o = o;
     this.home = o.home;
     this.agterm = o.agterm;
+    this.zmx = o.zmx;
     this.now = o.now ?? Date.now;
     this.log = o.log ?? ((m) => console.error(`[flowd] ${m}`));
     this.store = new Store(o.statePath);
@@ -274,16 +279,32 @@ export class Flowd {
     this.reloadTimer = setTimeout(() => this.reloadDefs(), 300);
   }
 
+  /** The terminal a session lives in: its id says which. */
+  termOf(session: string): Terminal {
+    if (!session.startsWith("zmx:")) return this.agterm;
+    if (!this.zmx) throw new Error(`${session} is a zmx session and zmx is not configured in this flowd`);
+    return this.zmx;
+  }
+
+  /** Sessions bound to open runs. */
+  private heldSessions(): Set<string> {
+    return new Set(this.store.openRuns().flatMap((r) => Object.values(r.roles)).filter((s): s is string => Boolean(s)));
+  }
+
+  /** Every session the terminals know of; zmx only asked while a run holds one of its sessions. */
+  async sessions(): Promise<SessionInfo[]> {
+    const zmx = this.zmx && [...this.heldSessions()].some((s) => s.startsWith("zmx:")) ? await this.zmx.tree().catch(() => []) : [];
+    return [...await this.agterm.tree(), ...zmx];
+  }
+
   private async reconcileSessions(): Promise<void> {
-    let live;
+    let live: SessionInfo[] | undefined;
     try {
       live = await this.agterm.tree();
     } catch (e) {
       this.log(`agterm tree: ${msg(e)}`);
-      return;
     }
-    const ids = new Set(live.map((s) => s.id));
-    for (const s of live) {
+    for (const s of live ?? []) {
       // active before the restart and cleared now: the turn ended while flowd was down
       // (agterm resets completed to idle on the user's first key), so it counts as completed
       const was = this.store.sessionStatus(s.id);
@@ -291,12 +312,39 @@ export class Flowd {
       const now = shown ?? (was === "active" ? "completed" : "idle");
       this.store.setSessionStatus(s.id, now, this.now());
     }
-    for (const run of this.store.openRuns()) {
-      for (const session of new Set(Object.values(run.roles))) {
-        if (!session) continue;
-        // a turn that ended while flowd was down must still start its reminder clock
-        if (ids.has(session)) void this.submit({ type: "agterm.status", data: { session, status: this.store.sessionStatus(session) }, source: "flowd" });
-        else void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
+    const held = [...this.heldSessions()];
+    // zmx shows no turn status: a zmx session keeps the one its hooks last reported
+    let zmxLive: SessionInfo[] | undefined;
+    if (this.zmx && held.some((s) => s.startsWith("zmx:"))) {
+      try {
+        zmxLive = await this.zmx.tree();
+      } catch (e) {
+        this.log(`zmx list: ${msg(e)}`);
+      }
+    }
+    const ids = new Set([...live ?? [], ...zmxLive ?? []].map((s) => s.id));
+    for (const session of held) {
+      if (!(session.startsWith("zmx:") ? zmxLive || !this.zmx : live)) continue; // cannot tell
+      // a turn that ended while flowd was down must still start its reminder clock
+      if (ids.has(session)) void this.submit({ type: "agterm.status", data: { session, status: this.store.sessionStatus(session) }, source: "flowd" });
+      else void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
+    }
+  }
+
+  /** zmx sends no closed event: a held zmx session missing from `zmx list` has ended. */
+  private async checkZmx(): Promise<void> {
+    const held = [...this.heldSessions()].filter((s) => s.startsWith("zmx:"));
+    if (!this.zmx || !held.length) return;
+    let live: Set<string>;
+    try {
+      live = new Set((await this.zmx.tree()).map((s) => s.id));
+    } catch (e) {
+      this.log(`zmx list: ${msg(e)}`);
+      return;
+    }
+    for (const session of held) {
+      if (!live.has(session) && this.store.sessionStatus(session) !== "closed") {
+        void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
       }
     }
   }
@@ -628,7 +676,8 @@ export class Flowd {
     await this.submit({ type: "entry.report", data: { run, entry, outcome, note, by: "system" }, source: "flowd" });
   }
 
-  tickNow(): Promise<void> {
+  async tickNow(): Promise<void> {
+    await this.checkZmx();
     return this.enqueue(async () => {
       for (const run of this.store.openRuns()) {
         if (run.status !== "running") continue;
@@ -663,9 +712,9 @@ export class Flowd {
       const busy = this.store.sessionStatus(session);
       if (busy === "active" || busy === "blocked") continue; // mid-turn, or at a permission prompt
       if (this.now() - (this.lastTyped.get(session) ?? -Infinity) < (this.o.gapMs ?? 2_000)) continue;
-      if (await this.agterm.userInput(session)) continue; // the line stays queued; retried on the next flush
       try {
-        await this.agterm.type(session, row.text);
+        if (await this.termOf(session).userInput(session)) continue; // the line stays queued; retried on the next flush
+        await this.termOf(session).type(session, row.text);
         this.store.markSent(row.id, this.now());
         this.lastTyped.set(session, this.now());
         if (row.entry_id) void this.submit({ type: "entry.delivered", run: row.run_id, entry: row.entry_id, data: {}, source: "flowd" });
@@ -680,11 +729,11 @@ export class Flowd {
   }
 
   /** A session in that workspace with that name that no open run has: one a lost spawn opened. */
-  private async unboundSession(workspace: string, name: string): Promise<string | undefined> {
+  private async unboundSession(terminal: Terminal, workspace: string, name: string): Promise<string | undefined> {
     try {
-      return (await this.agterm.tree()).find((s) => s.workspace === workspace && s.name === name && !this.store.runBySession(s.id))?.id;
+      return (await terminal.tree()).find((s) => s.workspace === workspace && s.name === name && !this.store.runBySession(s.id))?.id;
     } catch {
-      return undefined; // agterm unreachable: the spawn below fails and is retried
+      return undefined; // the terminal is unreachable: the spawn below fails and is retried
     }
   }
 
@@ -702,13 +751,17 @@ export class Flowd {
     let attempts = row.attempts + 1;
     try {
       const cwd = expandHome(renderTemplate(role.cwd ?? p.cwd, renderData(run)));
-      const name = renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
-      const workspace = p.workspace ?? run.process;
+      const zmx = p.terminal === "zmx";
+      const terminal = zmx ? this.termOf("zmx:") : this.agterm;
+      // a zmx session's name is its id, so one per run and role; zmx has no workspaces
+      const name = zmx ? zmxName(`flows-${run.id}-${row.role}`) : renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
+      const workspace = zmx ? "" : p.workspace ?? run.process;
+      const labels = zmx ? { run: run.id.replace("#", "."), role: row.role } : undefined;
       // an earlier attempt may have opened the session and lost the answer (flowd died, the socket
       // broke): take that session rather than start the agent twice
-      const opened = row.attempts > 0 ? await this.unboundSession(workspace, name) : undefined;
+      const opened = row.attempts > 0 ? await this.unboundSession(terminal, workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
-      const session = opened ?? await this.agterm.spawn({ cwd, command: agentLine(role.spawn, row.text), workspace, name });
+      const session = opened ?? await terminal.spawn({ cwd, command: agentLine(role.spawn, row.text), workspace, name, labels });
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
@@ -744,19 +797,19 @@ export class Flowd {
       let screen = "";
       for (let i = 0; i < 30 && !screen.includes("Yes, I trust this folder"); i++) {
         if (i) await pause();
-        screen = await this.agterm.text(session);
+        screen = await this.termOf(session).text(session);
       }
       if (!screen.includes("Yes, I trust this folder")) return; // no dialog: the start watchdog covers any other hang
       if (!yesSelected(screen)) {
-        await this.agterm.press(session, "\x1b[B");
+        await this.termOf(session).press(session, "\x1b[B");
         await pause();
-        screen = await this.agterm.text(session);
+        screen = await this.termOf(session).text(session);
       }
       if (!yesSelected(screen)) {
         await stop('select "Yes"');
         return;
       }
-      await this.agterm.press(session, "\r");
+      await this.termOf(session).press(session, "\r");
       this.log(`answered Claude's folder-trust dialog for ${cwd}`);
     } catch (e) {
       await stop(`answer it (${msg(e)})`);
