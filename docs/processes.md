@@ -80,7 +80,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `description` | string | required | One line, shown in the UI. |
 | `cwd` | string | required | Working directory of spawned agents. `~` is expanded. |
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
-| `terminal` | `agterm` or `zmx` | `agterm` | Where its roles' agents run: agterm sessions, or headless zmx sessions flowd runs itself. Only new spawns follow an edit. |
+| `terminal` | `agterm` or `zmx` | `agterm` | Where its roles' agents run: agterm sessions, or headless zmx sessions flowd runs itself (named `flows-<process>-<n>-<role>`; the terminal button attaches one in agterm; see [Sessions and roles](concepts.md#sessions-and-roles)). Only new spawns follow an edit. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
 | `max_runs` | integer ≥ 1 | `1` | Runs working at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |

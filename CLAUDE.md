@@ -31,7 +31,8 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 | `src/defs.ts` | parse and validate steps and processes, load `$FLOWS_HOME`, read/write definition files |
 | `src/engine.ts` | the pure run state machine: `step(run, input, ctx) → {run, actions}` |
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses |
-| `src/agterm.ts` | the only caller of `agtermctl`; shell quoting |
+| `src/agterm.ts` | the `Terminal` interface; agterm behind it, the only caller of `agtermctl`; shell quoting |
+| `src/zmx.ts` | the zmx terminal: headless sessions through the `zmx` CLI, the only caller of `zmx` |
 | `src/plugins.ts` | plugin interface and host: loading, events, watches with backoff, actions |
 | `src/daemon.ts` | `Flowd`: event loop, routing, action execution, outbox flush, ticks, cron, reloads, restart recovery |
 | `src/http.ts` | JSON API, SSE, static UI, hook endpoints, the Host/Origin/content-type guard |
@@ -53,7 +54,8 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 - Runtime dependencies are `yaml` and `croner`. Adding any dependency needs a human's yes.
 - `src/engine.ts` stays pure: no I/O, time comes in as `ctx.now`; it returns actions and
   `src/daemon.ts` carries them out.
-- Every `agtermctl` call goes through `src/agterm.ts`; every database access through `src/store.ts`.
+- Every `agtermctl` call goes through `src/agterm.ts`, every `zmx` call through `src/zmx.ts`; every
+  database access through `src/store.ts`.
 - A new event source or action is a plugin, not daemon code.
 - A refusal tells the reader what is wrong and what to do about it.
 

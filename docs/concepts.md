@@ -86,6 +86,23 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   `.zshrc` aliases are not loaded. A failed spawn is retried up to three times; a retry first looks
   for a session of that workspace and name that no open run has (one an earlier attempt opened
   before its answer was lost, say to a flowd crash) and takes it instead of starting a second agent.
+- A process with `terminal: zmx` spawns into a headless [zmx](https://github.com/neurosnap/zmx)
+  session instead: `zmx run flows-<process>-<n>-<role> -d exec env FLOW_SESSION=… /bin/zsh -lc '<spawn>
+  <first line>'` in the role's cwd, with `ZMX_DIR=~/.local/state/flows/zmx` (never agterm's own
+  socket directory). Its id is `zmx:flows-<process>-<n>-<role>`, which also says which terminal it
+  lives in, so a later edit of `terminal` leaves live sessions alone. It is labelled
+  `run=<process>.<n> role=<role>`. flowd types into it with `zmx type`, reads it with `zmx screen`,
+  and treats it as closed once it is gone from `zmx list` (checked every tick while a run holds
+  one). The terminal button opens `zmx attach` in a new agterm session; without agterm, the error
+  it shows is the command to run.
+- Turns: agterm reports an agterm session's turns. A zmx session has no agterm, so Claude Code's
+  own hooks report them (`flow claude-hook`, wired by `flow install`): `UserPromptSubmit` and
+  `PostToolUse` mean active, `Stop` completed, a `permission_prompt` notification blocked. flowd
+  follows the Claude session id its agent reported first and moves to a new one only on a
+  `SessionStart` from `/clear`, a compaction or a resume, so a `claude -p` the agent runs inside
+  its session cannot end the agent's turn. After a flowd restart a zmx session keeps the status
+  it had: zmx shows none to check against.
+- `flow` finds its session from `FLOW_SESSION` (set in zmx sessions), else `AGTERM_SESSION_ID`.
 - A role can be bound to an existing session at start (`flow start <process> --bind role=SESSION`,
   or the Start form). A session can be bound to one open run only; that is how `flow` finds the
   caller.

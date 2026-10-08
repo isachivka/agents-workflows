@@ -36,7 +36,7 @@ test("spawn: zmx run in the role's cwd, exec'ing the agent with FLOW_SESSION, th
   const z = fakeZmx();
   const cwd = mkdtempSync(join(tmpdir(), "flows-cwd-"));
   const id = await zmxTerminal({ bin: z.bin, dir: z.sockets }).spawn({
-    cwd, command: agentLine("claude --x", "it's go"), workspace: "", name: "flows-pr loop#3-pm",
+    cwd, command: agentLine("claude --x", "it's go"), workspace: "zmx", name: "flows-pr loop#3-pm",
     labels: { run: "pr loop.3", role: "pm" },
   });
   assert.equal(id, "zmx:flows-pr-loop-3-pm");
@@ -78,8 +78,8 @@ test("tree parses zmx list; no sessions is an empty list", async () => {
   z.set("list", "  name=flows-a\tpid=1\tclients=0\tcreated=1\tcwd=file://host/private/tmp/my%20dir\trun=p.1\trole=pm\n" +
     "  name=flows-b\tpid=2\tclients=1\tcreated=2\tcwd=/w\n");
   assert.deepEqual(await t.tree(), [
-    { id: "zmx:flows-a", name: "flows-a", cwd: "/private/tmp/my dir", workspace: "" },
-    { id: "zmx:flows-b", name: "flows-b", cwd: "/w", workspace: "" },
+    { id: "zmx:flows-a", name: "flows-a", cwd: "/private/tmp/my dir", workspace: "zmx" },
+    { id: "zmx:flows-b", name: "flows-b", cwd: "/w", workspace: "zmx" },
   ]);
 });
 

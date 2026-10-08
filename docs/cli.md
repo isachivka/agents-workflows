@@ -4,7 +4,8 @@
 `flow daemon` work without a running flowd. `bin/flow` runs `node src/cli.ts`; `flow install` puts
 a link to it at `~/.local/bin/flow`.
 
-**Finding the step.** Inside an agent's session, `flow` finds the step from `AGTERM_SESSION_ID`:
+**Finding the step.** Inside an agent's session, `flow` finds the step from `FLOW_SESSION` (a zmx
+session) or `AGTERM_SESSION_ID` (an agterm one):
 the open run bound to that session, and that run's current entry if it belongs to the session's
 role. Anywhere else, name it with `--run <id> --step <entry>`.
 
@@ -182,7 +183,7 @@ Sets flows up for the current user, and can be re-run at any time:
 | a link to `bin/flow` | `~/.local/bin/flow` |
 | the launchd agent `local.flows`, running `flow daemon` with `RunAtLoad` and `KeepAlive` | `~/Library/LaunchAgents/local.flows.plist`, log in `~/.local/state/flows/flowd.log` |
 | agterm hook lines `on status … agterm-hook` and `on session.closed … agterm-hook`, then `agtermctl hooks reload` | `~/.config/agterm/hooks.conf` |
-| a Claude Code `PostCompact` hook running `flow claude-hook compacted` (a backup is written first) | `~/.claude/settings.json`, backup `settings.json.bak-flows` |
+| Claude Code hooks (a backup is written first): `PostCompact` → `flow claude-hook compacted`; `SessionStart` → `start`, `UserPromptSubmit` and `PostToolUse` → `active`, `Stop` → `completed`, `Notification` (`permission_prompt`) → `blocked`. The last five run as `[ -z "$FLOW_SESSION" ] \|\| … claude-hook <event>`, so Claude sessions outside flows' zmx sessions never start node for them. | `~/.claude/settings.json`, backup `settings.json.bak-flows` |
 | links to the `flow` and `flow-author` skills | `~/.claude/skills/flow`, `~/.claude/skills/flow-author` |
 
 The hooks and the plist call node by its absolute path (found with `command -v node` in a login
@@ -210,7 +211,8 @@ Not for hand use; `flow install` wires them.
 | Command | Called by | Does |
 |---|---|---|
 | `flow agterm-hook` | agterm, on `status` and `session.closed` | Posts `AGT_EVENT_KIND`, `AGT_EVENT_STATUS` and `AGT_SESSION_ID` to `/agterm`. |
-| `flow claude-hook compacted` | Claude Code's `PostCompact` hook | Posts the session's `AGTERM_SESSION_ID` to `/claude`. |
+| `flow claude-hook compacted` | Claude Code's `PostCompact` hook | Posts the session (`FLOW_SESSION`, else `AGTERM_SESSION_ID`) to `/claude`. |
+| `flow claude-hook start\|active\|completed\|blocked` | Claude Code's `SessionStart`, `UserPromptSubmit`/`PostToolUse`, `Stop`, `Notification` (`permission_prompt`) hooks | Only with `FLOW_SESSION` set: posts it with Claude's `session_id` (and `source` on `SessionStart`) from the hook's stdin to `/claude`. Without it, exits at once. |
 
 Both give up after 2 s, never print and always exit 0, so a stopped flowd never slows agterm or
 Claude down.
@@ -219,6 +221,7 @@ Claude down.
 
 | Variable | Used by | Meaning |
 |---|---|---|
+| `FLOW_SESSION` | `flow` and `flow claude-hook` in a zmx session | Set by flowd when it spawns into zmx; tells `flow` which session is asking. Wins over `AGTERM_SESSION_ID`. |
 | `AGTERM_SESSION_ID` | `flow` in an agent's session | Set by agterm; tells `flow` which session is asking. |
 | `FLOWD_URL` | `flow` | Where flowd is. Default `http://127.0.0.1:7420`. |
 | `FLOWD_HOST` | `flow daemon`, `flow install` | The address flowd listens on. Default `127.0.0.1`. `0.0.0.0` lets a phone on your Wi-Fi open `http://<the Mac's IP>:7420` — and lets anyone on that network drive flowd (see [architecture](architecture.md#security-model)). `flow install` writes it into the launchd plist when set, and keeps the one already there otherwise. |
@@ -229,3 +232,5 @@ Claude down.
 | `FLOWS_AGTERM_APP` | flowd | The app the terminal buttons bring forward with `open -a`. Default `agterm`. |
 | `FLOWS_OPEN` | flowd | The command used for that. Default `open`. |
 | `FLOWS_LAUNCHCTL` | `flow install` | The `launchctl` binary. Default `launchctl`. |
+| `FLOWS_ZMX` | flowd | The `zmx` binary for `terminal: zmx`. Default `zmx` on `PATH`, else the one inside `/Applications/agterm.app` (agterm's build has the `type` and `screen` commands flowd needs). |
+| `FLOWS_ZMX_DIR` | flowd | zmx's socket directory for flows' sessions. Default `zmx` beside the database (`~/.local/state/flows/zmx`). Keep it short: unix sockets have a path limit. |

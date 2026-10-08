@@ -775,9 +775,9 @@ export class Flowd {
       const cwd = expandHome(renderTemplate(role.cwd ?? p.cwd, renderData(run)));
       const zmx = p.terminal === "zmx";
       const terminal = zmx ? this.termOf("zmx:") : this.agterm;
-      // a zmx session's name is its id, so one per run and role; zmx has no workspaces
+      // a zmx session's name is its id, so one per run and role; zmx has no workspaces, its sessions list as "zmx"
       const name = zmx ? zmxName(`flows-${run.id}-${row.role}`) : renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
-      const workspace = zmx ? "" : p.workspace ?? run.process;
+      const workspace = zmx ? "zmx" : p.workspace ?? run.process;
       const labels = zmx ? { run: run.id.replace("#", "."), role: row.role } : undefined;
       // an earlier attempt may have opened the session and lost the answer (flowd died, the socket
       // broke): take that session rather than start the agent twice

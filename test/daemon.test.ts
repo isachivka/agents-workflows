@@ -870,7 +870,7 @@ test("a terminal: zmx process spawns through zmx, named flows-<run>-<role> and l
   const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...ZMX }), { zmx });
   await f.submit(start("z"));
   await settle(f);
-  assert.ok(zmx.calls[0]?.startsWith("spawn zmx:Z1  | flows-z-1-pm | /tmp | claude '▶ flow: step b · z#1 it.1"), zmx.calls[0]);
+  assert.ok(zmx.calls[0]?.startsWith("spawn zmx:Z1 zmx | flows-z-1-pm | /tmp | claude '▶ flow: step b · z#1 it.1"), zmx.calls[0]);
   assert.ok(zmx.calls[0].endsWith(" | run=z.1 role=pm"), zmx.calls[0]);
   assert.equal(f.store.getRun("z#1")!.roles.pm, "zmx:Z1");
   await f.submit(start("p"));

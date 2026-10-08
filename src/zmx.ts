@@ -54,7 +54,7 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
         const f = Object.fromEntries(line.trim().split("\t").map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]));
         if (!f.name) continue; // "no sessions found in …"
         const cwd = f.cwd?.startsWith("file://") ? decodeURIComponent(new URL(f.cwd).pathname) : (f.cwd ?? "");
-        sessions.push({ id: `zmx:${f.name}`, name: f.name, cwd, workspace: "" });
+        sessions.push({ id: `zmx:${f.name}`, name: f.name, cwd, workspace: "zmx" });
       }
       return sessions;
     },

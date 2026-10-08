@@ -20,8 +20,9 @@ watch and take over at any time.
 - **Processes** as YAML: roles, order, retries, `goto` on failure, detours, waits for events,
   repeating iterations, cron and event triggers.
 - **flowd**, a local daemon that types each step into the right [agterm](https://github.com/umputun/agterm)
-  session (spawning it when needed), clears or compacts between steps, never interrupts a turn,
-  and reminds an agent that went quiet without reporting.
+  session (spawning it when needed), or with `terminal: zmx` into a headless zmx session you can
+  attach any time, clears or compacts between steps, never interrupts a turn, and reminds an
+  agent that went quiet without reporting.
 - **A web UI** that names what each run works on (its PR or task title, and the repository), links
   its PR and Slack thread, says what waits for you
   and what each run is doing, which round a repeating run is on and what finished today, in

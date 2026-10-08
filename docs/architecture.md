@@ -27,7 +27,8 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml` 
 | `src/defs.ts` | Parse and validate steps and processes, load `$FLOWS_HOME`, read/write/delete definition files with an mtime check. |
 | `src/engine.ts` | The pure state machine: `step(run, input, ctx) → {run, actions, error?}`. No I/O. |
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses. |
-| `src/agterm.ts` | The only caller of `agtermctl`: spawn, type, focus, tree; shell quoting. |
+| `src/agterm.ts` | The `Terminal` interface (spawn, type, press, text, tree, userInput, focus) and agterm behind it: the only caller of `agtermctl`; shell quoting. |
+| `src/zmx.ts` | The zmx terminal: headless sessions through the `zmx` CLI in flows' own socket directory. The daemon picks a session's terminal by its id (`zmx:` or not). |
 | `src/plugins.ts` | The plugin interface and host: loading, events, watches with backoff, actions. |
 | `src/daemon.ts` | `Flowd`: the event loop, routing, executing actions, the outbox flush, ticks, cron, definition reloads, restart recovery. |
 | `src/http.ts` | The JSON API, the SSE stream, the static UI, the hook endpoints, the Host/Origin/content-type guard. |
