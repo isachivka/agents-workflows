@@ -4,18 +4,35 @@ import { join } from "node:path";
 
 export interface SessionInfo { id: string; name: string; cwd: string; workspace: string; status?: string; title?: string; overlay?: boolean; surface?: string }
 
-export interface Agterm {
-  spawn(o: { cwd: string; command: string; workspace: string; name: string }): Promise<string>;
+export interface SpawnOpts {
+  cwd: string; command: string; workspace: string; name: string;
+  /** set in the agent's environment (zmx; agterm sets its own) */
+  env?: Record<string, string>;
+  /** labels on the session (zmx) */
+  labels?: Record<string, string>;
+}
+
+/** Where agents run: agterm, or zmx (src/zmx.ts). */
+export interface Terminal {
+  spawn(o: SpawnOpts): Promise<string>;
   type(session: string, text: string): Promise<void>;
   focus(session: string): Promise<void>;
   tree(): Promise<SessionInfo[]>;
-  reloadHooks(): Promise<void>;
-  /** zero-based caret column of a surface (`agtermctl surface cursor`) */
-  cursorColumn(surface: string): Promise<number>;
   /** the session's screen as plain text */
   text(session: string): Promise<string>;
   /** raw keystrokes, no Enter added (e.g. `\x1b[B` for Down, `\r` for Enter) */
   press(session: string, keys: string): Promise<void>;
+  /**
+   * The user is typing in the session (the caret is past the prompt), or something covers it:
+   * typing now would land on top. Cannot tell → false.
+   */
+  userInput(session: string): Promise<boolean>;
+}
+
+export interface Agterm extends Terminal {
+  reloadHooks(): Promise<void>;
+  /** zero-based caret column of a surface (`agtermctl surface cursor`) */
+  cursorColumn(surface: string): Promise<number>;
 }
 
 /** The caret column at an empty input box: right after `❯ ` (Claude Code) or `› ` (Codex). */
@@ -55,7 +72,7 @@ export function realAgterm(
   submitDelayMs = 500,
   opener = process.env.FLOWS_OPEN || "open",
 ): Agterm {
-  return {
+  const a: Agterm = {
     async spawn(o) {
       const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", o.command, "--workspace-name", o.workspace,
         "--create-workspace", "--no-select", "--name", o.name, "--json"]);
@@ -106,5 +123,18 @@ export function realAgterm(
       }
       return sessions;
     },
+    // The caret, not the screen: Claude Code draws a greyed suggestion in an empty input box that
+    // the screen text cannot tell from typed text.
+    async userInput(session) {
+      try {
+        const info = (await a.tree()).find((s) => s.id === session);
+        if (info?.overlay) return true;
+        if (!info?.surface) return false;
+        return (await a.cursorColumn(info.surface)) > EMPTY_INPUT_COLUMN;
+      } catch {
+        return false; // cannot tell: deliver as before
+      }
+    },
   };
+  return a;
 }

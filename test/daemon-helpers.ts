@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Flowd, type FlowdOptions } from "../src/daemon.ts";
-import type { Agterm, SessionInfo } from "../src/agterm.ts";
+import { EMPTY_INPUT_COLUMN, type SessionInfo, type SpawnOpts, type Terminal } from "../src/agterm.ts";
 
-export class FakeAgterm implements Agterm {
+export class FakeAgterm implements Terminal {
   calls: string[] = [];
   sessions: SessionInfo[] = [];
   n = 0;
@@ -13,7 +13,7 @@ export class FakeAgterm implements Agterm {
   lostSpawn = 0;
   failType = 0;
 
-  async spawn(o: { cwd: string; command: string; workspace: string; name: string }): Promise<string> {
+  async spawn(o: SpawnOpts): Promise<string> {
     if (this.failSpawn > 0) { this.failSpawn--; throw new Error("no agterm"); }
     const id = `S${++this.n}`;
     this.calls.push(`spawn ${id} ${o.workspace} | ${o.name} | ${o.cwd} | ${o.command}`);
@@ -33,6 +33,16 @@ export class FakeAgterm implements Agterm {
     const c = this.columns.get(surface);
     if (c === -1) throw new Error("hidden surface");
     return c ?? 2;
+  }
+  async userInput(session: string): Promise<boolean> {
+    const info = this.sessions.find((s) => s.id === session);
+    if (info?.overlay) return true;
+    if (!info?.surface) return false;
+    try {
+      return (await this.cursorColumn(info.surface)) > EMPTY_INPUT_COLUMN;
+    } catch {
+      return false;
+    }
   }
   async reloadHooks(): Promise<void> { this.calls.push("hooks reload"); }
   screens = new Map<string, string>();

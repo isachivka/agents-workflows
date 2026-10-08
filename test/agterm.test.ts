@@ -91,3 +91,15 @@ test("agtermctl exiting before it reads its stdin (EPIPE) is no crash", async ()
   await realAgterm("/usr/bin/true", 0).press("S1", "x".repeat(4_000_000));
   await realAgterm("/usr/bin/true", 0).type("S1", "y".repeat(4_000_000));
 });
+
+test("userInput: the caret past the prompt is the user typing; no surface or an error reads as not", async () => {
+  const f = fakeAgtermctl();
+  assert.equal(await realAgterm(f.bin).userInput("S1"), true); // column 7
+  assert.equal(await realAgterm(f.bin).userInput("S2"), false); // no left surface
+  process.env.FAKE_FAIL = "1";
+  try {
+    assert.equal(await realAgterm(f.bin).userInput("S1"), false);
+  } finally {
+    delete process.env.FAKE_FAIL;
+  }
+});

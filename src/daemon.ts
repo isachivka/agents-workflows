@@ -6,7 +6,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { EMPTY_INPUT_COLUMN, expandHome, shq, spawnCommand, type Agterm } from "./agterm.ts";
+import { expandHome, shq, spawnCommand, type Terminal } from "./agterm.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -16,7 +16,7 @@ import type { Defs, Dict, FlowEvent, Input, OnFail, RunState, SessionStatus, Ste
 export interface FlowdOptions {
   home: string;
   statePath: string;
-  agterm: Agterm;
+  agterm: Terminal;
   pluginDirs: string[];
   now?: () => number;
   tickMs?: number;
@@ -83,7 +83,7 @@ function readPluginConfig(home: string, log: (m: string) => void): Record<string
 export class Flowd {
   home: string;
   store: Store;
-  agterm: Agterm;
+  agterm: Terminal;
   plugins: PluginHost;
   defs: Defs = { processes: {}, steps: {}, invalid: {} };
   now: () => number;
@@ -663,7 +663,7 @@ export class Flowd {
       const busy = this.store.sessionStatus(session);
       if (busy === "active" || busy === "blocked") continue; // mid-turn, or at a permission prompt
       if (this.now() - (this.lastTyped.get(session) ?? -Infinity) < (this.o.gapMs ?? 2_000)) continue;
-      if (await this.userInSession(session)) continue; // the line stays queued; retried on the next flush
+      if (await this.agterm.userInput(session)) continue; // the line stays queued; retried on the next flush
       try {
         await this.agterm.type(session, row.text);
         this.store.markSent(row.id, this.now());
@@ -726,22 +726,6 @@ export class Flowd {
       }
     } finally {
       this.spawning.delete(key);
-    }
-  }
-
-  /**
-   * The user is typing in the session (the caret is past the prompt), or an overlay is open in it:
-   * typing now would land on top. The caret, not the screen: Claude Code draws a greyed suggestion
-   * in an empty input box that the screen text cannot tell from typed text.
-   */
-  private async userInSession(session: string): Promise<boolean> {
-    try {
-      const info = (await this.agterm.tree()).find((s) => s.id === session);
-      if (info?.overlay) return true;
-      if (!info?.surface) return false;
-      return (await this.agterm.cursorColumn(info.surface)) > EMPTY_INPUT_COLUMN;
-    } catch {
-      return false; // cannot tell: deliver as before
     }
   }
 
