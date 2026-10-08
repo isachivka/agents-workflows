@@ -6,7 +6,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { expandHome, shq, spawnCommand, type Terminal } from "./agterm.ts";
+import { agentLine, expandHome, shq, type Terminal } from "./agterm.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -708,7 +708,7 @@ export class Flowd {
       // broke): take that session rather than start the agent twice
       const opened = row.attempts > 0 ? await this.unboundSession(workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
-      const session = opened ?? await this.agterm.spawn({ cwd, command: spawnCommand(role.spawn, row.text), workspace, name });
+      const session = opened ?? await this.agterm.spawn({ cwd, command: agentLine(role.spawn, row.text), workspace, name });
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });

@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { realAgterm, shq, spawnCommand, expandHome } from "../src/agterm.ts";
+import { realAgterm, shq, agentLine, expandHome } from "../src/agterm.ts";
 
 function fakeAgtermctl() {
   const dir = mkdtempSync(join(tmpdir(), "flows-agterm-"));
@@ -25,11 +25,11 @@ esac
   return { bin, calls: () => readFileSync(log, "utf8") };
 }
 
-test("spawn passes every flag and returns the new session id", async () => {
+test("spawn passes every flag, runs the command in a login zsh and returns the new session id", async () => {
   const f = fakeAgtermctl();
-  const id = await realAgterm(f.bin).spawn({ cwd: "/w", command: "cmd", workspace: "pr-loop", name: "pr-loop#1 pm" });
+  const id = await realAgterm(f.bin).spawn({ cwd: "/w", command: "claude x", workspace: "pr-loop", name: "pr-loop#1 pm" });
   assert.equal(id, "S-NEW");
-  assert.equal(f.calls(), "[session][new][--cwd][/w][--command][cmd][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n");
+  assert.equal(f.calls(), "[session][new][--cwd][/w][--command][/bin/zsh -lc 'claude x'][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n");
 });
 
 // Live on 2026-10-04: a line typed together with its newline landed in Claude's composer
@@ -68,10 +68,8 @@ test("shq survives quotes, backticks, dollars and backslashes", () => {
   assert.equal(execFileSync("/bin/sh", ["-c", `printf %s ${shq(NASTY)}`], { encoding: "utf8" }), NASTY);
 });
 
-test("spawnCommand hands the prompt to the agent as one verbatim argument", () => {
-  const cmd = spawnCommand("printf [%s]", NASTY, "/bin/sh -c");
-  assert.equal(execFileSync("/bin/sh", ["-c", cmd], { encoding: "utf8" }), `[${NASTY}]`);
-  assert.ok(spawnCommand("claude", "x").startsWith("/bin/zsh -lc '"));
+test("agentLine hands the prompt to the agent as one verbatim argument", () => {
+  assert.equal(execFileSync("/bin/sh", ["-c", agentLine("printf [%s]", NASTY)], { encoding: "utf8" }), `[${NASTY}]`);
 });
 
 test("expandHome", () => {

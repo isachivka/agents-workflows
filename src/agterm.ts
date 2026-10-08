@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 export interface SessionInfo { id: string; name: string; cwd: string; workspace: string; status?: string; title?: string; overlay?: boolean; surface?: string }
 
 export interface SpawnOpts {
-  cwd: string; command: string; workspace: string; name: string;
+  cwd: string;
+  /** the agent's command line (`agentLine`); the terminal runs it in a login zsh */
+  command: string;
+  workspace: string; name: string;
   /** set in the agent's environment (zmx; agterm sets its own) */
   env?: Record<string, string>;
   /** labels on the session (zmx) */
@@ -40,23 +43,21 @@ export const EMPTY_INPUT_COLUMN = 2;
 
 export const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** The spawned session runs `<spawn> '<prompt>'` inside a login shell, so claude is on PATH. */
-export function spawnCommand(spawn: string, prompt: string, shell = "/bin/zsh -lc"): string {
-  return `${shell} ${shq(`${spawn} ${shq(prompt)}`)}`;
-}
+/** The agent's command line: `<spawn> '<prompt>'`, the prompt one verbatim argument. */
+export const agentLine = (spawn: string, prompt: string) => `${spawn} ${shq(prompt)}`;
 
 export function expandHome(path: string, home = homedir()): string {
   if (path === "~") return home;
   return path.startsWith("~/") ? join(home, path.slice(2)) : path;
 }
 
-function run(bin: string, args: string[], stdin?: string): Promise<string> {
+export function run(bin: string, args: string[], stdin?: string, o: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = execFile(bin, args, { timeout: 15_000 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`agtermctl ${args.slice(0, 2).join(" ")}: ${String(stderr).trim() || err.message}`));
+    const child = execFile(bin, args, { timeout: 15_000, ...o }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`${basename(bin)} ${args.slice(0, 2).join(" ")}: ${String(stderr).trim() || err.message}`));
       else resolve(String(stdout));
     });
-    // agtermctl may exit before it reads its stdin: the pipe's EPIPE is then no news (the exit status
+    // the CLI may exit before it reads its stdin: the pipe's EPIPE is then no news (the exit status
     // above says how it went), and unhandled it would kill flowd
     child.stdin?.on("error", () => {});
     child.stdin?.end(stdin ?? "");
@@ -74,7 +75,8 @@ export function realAgterm(
 ): Agterm {
   const a: Agterm = {
     async spawn(o) {
-      const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", o.command, "--workspace-name", o.workspace,
+      // a login shell, so claude is on PATH
+      const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", `/bin/zsh -lc ${shq(o.command)}`, "--workspace-name", o.workspace,
         "--create-workspace", "--no-select", "--name", o.name, "--json"]);
       const id = JSON.parse(out)?.result?.id;
       if (typeof id !== "string") throw new Error(`agtermctl session new: no id in ${out.slice(0, 200)}`);

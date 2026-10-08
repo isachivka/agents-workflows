@@ -14,7 +14,7 @@ test("a start spawns the role with the nudge as its first prompt, binds it and m
   assert.deepEqual(await f.submit(start("p")), { run: "p#1" });
   await settle(f);
   assert.equal(agterm.calls.length, 1);
-  assert.ok(agterm.calls[0].startsWith("spawn S1 p | p#1 pm | /tmp | /bin/zsh -lc 'claude '\\''▶ flow: step b · p#1 it.1"), agterm.calls[0]);
+  assert.ok(agterm.calls[0].startsWith("spawn S1 p | p#1 pm | /tmp | claude '▶ flow: step b · p#1 it.1"), agterm.calls[0]);
   const run = f.store.getRun("p#1")!;
   assert.equal(run.roles.pm, "S1");
   assert.ok(run.entries.b.deliveredAt);
