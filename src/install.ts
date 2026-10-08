@@ -8,7 +8,8 @@ import { realAgterm, shq } from "./agterm.ts";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LABEL = "local.flows";
 
-export interface InstallOpts { home?: string; repo?: string; node?: string; launchctl?: string; agtermctl?: string; uid?: number; log?: (s: string) => void }
+/** retryMs: the pause between bootstrap attempts (tests shorten it) */
+export interface InstallOpts { home?: string; repo?: string; node?: string; launchctl?: string; agtermctl?: string; uid?: number; log?: (s: string) => void; retryMs?: number }
 
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -84,12 +85,26 @@ export async function install(o: InstallOpts = {}): Promise<void> {
   const path = [join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].join(":");
   // FLOWD_HOST from the environment, else kept from the old plist: a re-install must not quietly take flowd off the LAN
   const oldPlist = existsSync(plistPath) ? readFileSync(plistPath, "utf8") : "";
-  const listen = process.env.FLOWD_HOST ?? /<key>FLOWD_HOST<\/key><string>([^<]*)<\/string>/.exec(oldPlist)?.[1] ?? "";
+  // whitespace between key and value: plutil -insert puts them on lines of their own
+  const listen = process.env.FLOWD_HOST || /<key>FLOWD_HOST<\/key>\s*<string>([^<]*)<\/string>/.exec(oldPlist)?.[1] || "";
   writeFileSync(plistPath, plist(node, cli, join(stateDir, "flowd.log"), path, listen));
   const uid = o.uid ?? process.getuid?.() ?? 501;
   const launchctl = o.launchctl ?? process.env.FLOWS_LAUNCHCTL ?? "launchctl";
   run(launchctl, ["bootout", `gui/${uid}/${LABEL}`], () => {}); // not loaded yet is fine
-  run(launchctl, ["bootstrap", `gui/${uid}`, plistPath], say);
+  // bootout returns before launchd has let the old service go, and a bootstrap then fails
+  // ("5: Input/output error"), leaving flowd down: try again for a few seconds
+  for (let attempt = 1; ; attempt++) {
+    try {
+      execFileSync(launchctl, ["bootstrap", `gui/${uid}`, plistPath], { stdio: "pipe" });
+      break;
+    } catch (e) {
+      if (attempt === 10) {
+        say(`${launchctl} bootstrap gui/${uid} ${plistPath}: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+        break;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, o.retryMs ?? 500);
+    }
+  }
   say(`launchd: ${plistPath} (log ${join(stateDir, "flowd.log")})`);
 
   const hooksPath = join(home, ".config", "agterm", "hooks.conf");

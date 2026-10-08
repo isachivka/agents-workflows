@@ -86,7 +86,24 @@ test("a re-install keeps FLOWD_HOST from the old plist", async () => {
   await install(opts);
   const plistPath = join(home, "Library", "LaunchAgents", "local.flows.plist");
   assert.doesNotMatch(readFileSync(plistPath, "utf8"), /FLOWD_HOST/);
-  writeFileSync(plistPath, readFileSync(plistPath, "utf8").replace("</string></dict>", "</string><key>FLOWD_HOST</key><string>0.0.0.0</string></dict>"));
+  // the layout plutil -insert leaves: key and value on lines of their own
+  writeFileSync(plistPath, readFileSync(plistPath, "utf8").replace("</string></dict>", "</string>\n\t\t<key>FLOWD_HOST</key>\n\t\t<string>0.0.0.0</string>\n\t</dict>"));
   await install(opts);
   assert.match(readFileSync(plistPath, "utf8"), /<key>FLOWD_HOST<\/key><string>0\.0\.0\.0<\/string>/);
+});
+
+test("a bootstrap refused right after bootout is retried", async () => {
+  delete process.env.FLOWD_HOST;
+  const home = mkdtempSync(join(tmpdir(), "flows-install-"));
+  const log = join(home, "launchctl.log");
+  const launchctl = join(home, "launchctl");
+  // refuses the first bootstrap, as launchd does while the old service is still going away
+  writeFileSync(launchctl, `#!/bin/sh\necho "$*" >> '${log}'\nif [ "$1" = bootstrap ] && [ ! -f '${log}.once' ]; then touch '${log}.once'; echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; fi\n`);
+  chmodSync(launchctl, 0o755);
+  const agtermctl = fakeBin(home, "agtermctl");
+  const said: string[] = [];
+  await install({ home, repo: "/repo", node: "/bin/node", launchctl, agtermctl: agtermctl.path, uid: 501, log: (s: string) => said.push(s), retryMs: 1 });
+  const plistPath = join(home, "Library", "LaunchAgents", "local.flows.plist");
+  assert.deepEqual(readFileSync(log, "utf8").split("\n").filter(Boolean), ["bootout gui/501/local.flows", `bootstrap gui/501 ${plistPath}`, `bootstrap gui/501 ${plistPath}`]);
+  assert.ok(!said.some((s) => /Bootstrap failed/.test(s)), said.join("\n"));
 });
