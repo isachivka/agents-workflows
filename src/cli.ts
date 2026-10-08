@@ -29,7 +29,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow install                           launchd agent, agterm and Claude hooks, skills, PATH link
   flow daemon                            run flowd in the foreground
 
-Inside a flow session the step is found from AGTERM_SESSION_ID; elsewhere pass --run and --step.
+Inside a flow session the step is found from FLOW_SESSION (zmx) or AGTERM_SESSION_ID; elsewhere pass --run and --step.
 FLOWD_URL overrides the daemon address (default http://127.0.0.1:7420).`;
 
 interface Args {
@@ -142,7 +142,7 @@ export async function main(argv: string[]): Promise<number> {
     const input = await stdinJson();
     return hook("/claude", { event, session: process.env.FLOW_SESSION, claude: str(input.session_id), source: str(input.source) });
   }
-  const session = process.env.AGTERM_SESSION_ID || undefined;
+  const session = process.env.FLOW_SESSION || process.env.AGTERM_SESSION_ID || undefined;
   try {
     const a = parseArgs(rest);
     switch (cmd) {

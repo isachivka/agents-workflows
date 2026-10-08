@@ -190,3 +190,13 @@ test("claude-hook: turn events go out only from a flows session, with Claude's s
     { path: "/claude", event: "compacted", session: "S1" },
   ]);
 });
+
+test("FLOW_SESSION names the session over AGTERM_SESSION_ID (a zmx session inside an agterm pane)", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  const shown = await flow(["show"], { FLOWD_URL: s.base, FLOW_SESSION: "S1", AGTERM_SESSION_ID: "S-pane" });
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.match(shown.stdout, /Do B for p#1/);
+  await s.close();
+});
