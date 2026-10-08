@@ -9,7 +9,8 @@ export const zmxName = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "-");
  * socket directory, never agterm's, whose `zmx prune` would kill them. Ids are `zmx:<name>`.
  */
 export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; opener?: string; submitDelayMs?: number }): Terminal {
-  const zmx = (args: string[], stdin?: string, cwd?: string) => run(o.bin, args, stdin, { env: { ...process.env, ZMX_DIR: o.dir }, cwd });
+  const zmx = (args: string[], stdin?: string, cwd?: string, env: Record<string, string> = {}) =>
+    run(o.bin, args, stdin, { env: { ...process.env, ...env, ZMX_DIR: o.dir }, cwd });
   const nameOf = (session: string) => session.replace(/^zmx:/, "");
   const screen = async (session: string) => {
     const out = await zmx(["screen", nameOf(session)]);
@@ -20,10 +21,13 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
     async spawn(s) {
       const name = zmxName(s.name);
       mkdirSync(o.dir, { recursive: true });
-      // zmx types the words into the session's shell, quoting each; `exec` makes the agent the
-      // session's process, so the session ends with it. FLOW_SESSION is how `flow` and the Claude
-      // hooks inside name the session (ZMX_SESSION is set by agterm's own zmx panes too).
-      await zmx(["run", name, "-d", "exec", "env", `FLOW_SESSION=zmx:${name}`, "/bin/zsh", "-lc", s.command], undefined, s.cwd);
+      // zmx types the command into the session's shell, so only a fixed line goes that way: the
+      // prompt (any text, newlines and tabs too) travels in the environment, which a new session
+      // takes from the zmx that creates it. `exec` makes the agent the session's process, so the
+      // session ends with it. FLOW_SESSION is how `flow` and the Claude hooks inside name the
+      // session (ZMX_SESSION is set by agterm's own zmx panes too).
+      await zmx(["run", name, "-d", "exec", "/bin/zsh", "-lc", `p=$FLOW_PROMPT; unset FLOW_PROMPT; exec ${s.spawn} "$p"`],
+        undefined, s.cwd, { FLOW_SESSION: `zmx:${name}`, FLOW_PROMPT: s.prompt });
       const labels = Object.entries(s.labels ?? {}).map(([k, v]) => `${k}=${zmxName(v)}`);
       if (labels.length) await zmx(["set", name, ...labels]);
       return `zmx:${name}`;

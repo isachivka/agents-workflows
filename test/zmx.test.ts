@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentLine } from "../src/agterm.ts";
 import { zmxTerminal } from "../src/zmx.ts";
 
 /** A fake `zmx`: logs `$ZMX_DIR|$PWD|[arg]…<stdin>` per call, answers `list` and `screen` from files. */
@@ -15,6 +14,7 @@ function fakeZmx() {
   writeFileSync(join(dir, "screen"), "44 120 24 2 10 0\n❯ \nline two\n");
   writeFileSync(bin, `#!/bin/sh
 printf '%s|%s|' "$ZMX_DIR" "$PWD" >> '${log}'
+[ -n "$FLOW_SESSION" ] && printf '{%s}{%s}' "$FLOW_SESSION" "$FLOW_PROMPT" >> '${log}'
 for a in "$@"; do printf '[%s]' "$a" >> '${log}'; done
 if [ "$1" = type ]; then printf '<' >> '${log}'; cat >> '${log}'; printf '>' >> '${log}'; fi
 echo >> '${log}'
@@ -32,18 +32,19 @@ esac
   };
 }
 
-test("spawn: zmx run in the role's cwd, exec'ing the agent with FLOW_SESSION, then labels; the id is zmx:<name>", async () => {
+test("spawn: zmx run in the role's cwd with FLOW_SESSION and the prompt in its environment, then labels; the id is zmx:<name>", async () => {
   const z = fakeZmx();
   const cwd = mkdtempSync(join(tmpdir(), "flows-cwd-"));
   const id = await zmxTerminal({ bin: z.bin, dir: z.sockets }).spawn({
-    cwd, command: agentLine("claude --x", "it's go"), workspace: "zmx", name: "flows-pr loop#3-pm",
+    cwd, spawn: "claude --x", prompt: "it's\ngo", workspace: "zmx", name: "flows-pr loop#3-pm",
     labels: { run: "pr loop.3", role: "pm" },
   });
   assert.equal(id, "zmx:flows-pr-loop-3-pm");
   assert.ok(existsSync(z.sockets), "the socket directory is created");
   const real = (await import("node:fs")).realpathSync(cwd);
   assert.equal(z.calls(),
-    `${z.sockets}|${real}|[run][flows-pr-loop-3-pm][-d][exec][env][FLOW_SESSION=zmx:flows-pr-loop-3-pm][/bin/zsh][-lc][claude --x 'it'\\''s go']\n` +
+    // only a fixed command line is typed into the session's shell; the prompt never passes through it
+    `${z.sockets}|${real}|{zmx:flows-pr-loop-3-pm}{it's\ngo}[run][flows-pr-loop-3-pm][-d][exec][/bin/zsh][-lc][p=$FLOW_PROMPT; unset FLOW_PROMPT; exec claude --x "$p"]\n` +
     `${z.sockets}|${process.cwd()}|[set][flows-pr-loop-3-pm][run=pr-loop.3][role=pm]\n`);
 });
 

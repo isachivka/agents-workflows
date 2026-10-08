@@ -230,7 +230,9 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
     ["POST", /^\/claude$/, (_p, b) => {
       if (typeof b.session !== "string" || !b.session) return {};
       if (b.event === "compacted") void f.submit({ type: "claude.compacted", data: { session: b.session }, source: "claude" });
-      else if (["start", "active", "completed", "blocked"].includes(b.event)) {
+      // PostToolUse fires on every tool call: an active that changes nothing is not worth an event
+      else if (b.event === "active" && f.store.sessionStatus(b.session) === "active") return {};
+      else if (["start", "active", "completed", "blocked", "idle"].includes(b.event)) {
         void f.submit({ type: "claude.status", data: { session: b.session, event: b.event, claude: b.claude, source: b.source }, source: "claude" });
       }
       return {};

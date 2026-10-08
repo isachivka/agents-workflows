@@ -6,7 +6,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { agentLine, expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
+import { expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
@@ -101,8 +101,6 @@ export class Flowd {
   private closing = false;
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
-  /** the Claude session id each zmx session's own agent reports from (a nested `claude -p` has another) */
-  private claudeOf = new Map<string, string>();
   private spawning = new Set<string>();
   private flushRun: Promise<void> | undefined;
   private timers: ReturnType<typeof setInterval>[] = [];
@@ -418,16 +416,22 @@ export class Flowd {
         // Claude Code's own hooks: the turn signal for zmx sessions, which have no agterm to report it
         const session = String(d.session ?? "");
         if (!session.startsWith("zmx:") || !this.store.runBySession(session)) return {};
+        // Only the agent's own Claude moves the turn, not a `claude -p` it runs: the id it reported
+        // first is kept (in the store, so a restart keeps it too). A compaction gives the agent a
+        // new id mid-turn; /clear and a resume do at its prompt — mid-turn they are a nested claude.
         const claude = str(d.claude);
-        const known = this.claudeOf.get(session);
+        const known = this.store.sessionClaude(session);
+        const current = this.store.sessionStatus(session);
         if (d.event === "start") {
-          // a fresh claude is the agent only if none is known; /clear, a compaction or a resume
-          // give the same agent a new id
-          if (claude && (!known || ["clear", "compact", "resume"].includes(String(d.source)))) this.claudeOf.set(session, claude);
+          const moves = d.source === "compact" || ((d.source === "clear" || d.source === "resume") && current !== "active");
+          if (claude && (!known || moves)) this.store.setSessionClaude(session, claude, this.now());
           return {};
         }
-        if (claude && known && claude !== known) return {}; // a nested `claude -p` the agent ran
-        if (claude && !known) this.claudeOf.set(session, claude); // first word since flowd started
+        if (claude && known && claude !== known) return {};
+        if (claude && !known) this.store.setSessionClaude(session, claude, this.now());
+        // idle_prompt: Claude has sat at its prompt for a minute. It heals a turn whose Stop was
+        // missed (flowd down, an Esc); otherwise it says nothing new.
+        if (d.event === "idle") return current === "active" ? this.sessionTurn(session, "completed") : {};
         const status = ({ active: "active", completed: "completed", blocked: "blocked" } as Record<string, SessionStatus>)[String(d.event)];
         return status ? this.sessionTurn(session, status) : { error: `unknown Claude event ${String(d.event)}` };
       }
@@ -775,15 +779,17 @@ export class Flowd {
       const cwd = expandHome(renderTemplate(role.cwd ?? p.cwd, renderData(run)));
       const zmx = p.terminal === "zmx";
       const terminal = zmx ? this.termOf("zmx:") : this.agterm;
-      // a zmx session's name is its id, so one per run and role; zmx has no workspaces, its sessions list as "zmx"
-      const name = zmx ? zmxName(`flows-${run.id}-${row.role}`) : renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
+      // a zmx session's name is its id: one per spawn (the outbox row), so a respawn never types
+      // into the old agent and a retry of the same spawn finds its session; zmx has no workspaces,
+      // its sessions list as "zmx"
+      const name = zmx ? zmxName(`flows-${run.id}-${row.role}-${row.id}`) : renderTemplate(role.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: row.role });
       const workspace = zmx ? "zmx" : p.workspace ?? run.process;
       const labels = zmx ? { run: run.id.replace("#", "."), role: row.role } : undefined;
       // an earlier attempt may have opened the session and lost the answer (flowd died, the socket
       // broke): take that session rather than start the agent twice
       const opened = row.attempts > 0 ? await this.unboundSession(terminal, workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
-      const session = opened ?? await terminal.spawn({ cwd, command: agentLine(role.spawn, row.text), workspace, name, labels });
+      const session = opened ?? await terminal.spawn({ cwd, spawn: role.spawn, prompt: row.text, workspace, name, labels });
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });

@@ -6,8 +6,10 @@ export interface SessionInfo { id: string; name: string; cwd: string; workspace:
 
 export interface SpawnOpts {
   cwd: string;
-  /** the agent's command line (`agentLine`); the terminal runs it in a login zsh */
-  command: string;
+  /** the role's spawn command (`claude …`), run in a login zsh with the prompt as its last argument */
+  spawn: string;
+  /** the agent's first prompt */
+  prompt: string;
   workspace: string; name: string;
   /** labels on the session (zmx) */
   labels?: Record<string, string>;
@@ -74,7 +76,7 @@ export function realAgterm(
   const a: Agterm = {
     async spawn(o) {
       // a login shell, so claude is on PATH
-      const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", `/bin/zsh -lc ${shq(o.command)}`, "--workspace-name", o.workspace,
+      const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", `/bin/zsh -lc ${shq(agentLine(o.spawn, o.prompt))}`, "--workspace-name", o.workspace,
         "--create-workspace", "--no-select", "--name", o.name, "--json"]);
       const id = JSON.parse(out)?.result?.id;
       if (typeof id !== "string") throw new Error(`agtermctl session new: no id in ${out.slice(0, 200)}`);

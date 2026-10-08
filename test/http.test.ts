@@ -257,3 +257,19 @@ test("sessions: zmx's are listed while a run holds one, and focus goes to the se
   assert.ok(!s.agterm.calls.includes("focus zmx:Z1"));
   await s.close();
 });
+
+test("/claude: a repeated active is not stored (PostToolUse fires on every tool call)", async () => {
+  const { FakeAgterm } = await import("./daemon-helpers.ts");
+  const zmx = Object.assign(new FakeAgterm(), { prefix: "zmx:Z" });
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", "terminal: zmx\n", "z") }, { zmx });
+  await s.call("POST", "/api/runs", { process: "z" });
+  await settle(s.f);
+  for (const event of ["active", "active", "active", "completed", "active"]) {
+    await s.call("POST", "/claude", { event, session: "zmx:Z1", claude: "c1" });
+    await settle(s.f);
+  }
+  const n = (s.f.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'claude.status'").get() as { n: number }).n;
+  assert.equal(n, 3);
+  assert.equal(s.f.store.sessionStatus("zmx:Z1"), "active");
+  await s.close();
+});

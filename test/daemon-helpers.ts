@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Flowd, type FlowdOptions } from "../src/daemon.ts";
-import { EMPTY_INPUT_COLUMN, type SessionInfo, type SpawnOpts, type Terminal } from "../src/agterm.ts";
+import { EMPTY_INPUT_COLUMN, agentLine, type SessionInfo, type SpawnOpts, type Terminal } from "../src/agterm.ts";
 
 export class FakeAgterm implements Terminal {
   calls: string[] = [];
@@ -20,7 +20,7 @@ export class FakeAgterm implements Terminal {
     if (this.failSpawn > 0) { this.failSpawn--; throw new Error("no agterm"); }
     const id = `${this.prefix}${++this.n}`;
     const labels = o.labels ? ` | ${Object.entries(o.labels).map(([k, v]) => `${k}=${v}`).join(" ")}` : "";
-    this.calls.push(`spawn ${id} ${o.workspace} | ${o.name} | ${o.cwd} | ${o.command}${labels}`);
+    this.calls.push(`spawn ${id} ${o.workspace} | ${o.name} | ${o.cwd} | ${agentLine(o.spawn, o.prompt)}${labels}`);
     this.sessions.push({ id, name: o.name, cwd: o.cwd, workspace: o.workspace });
     if (this.lostSpawn > 0) { this.lostSpawn--; throw new Error("lost the answer"); }
     return id;

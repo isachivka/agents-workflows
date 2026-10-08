@@ -27,9 +27,9 @@ esac
 
 test("spawn passes every flag, runs the command in a login zsh and returns the new session id", async () => {
   const f = fakeAgtermctl();
-  const id = await realAgterm(f.bin).spawn({ cwd: "/w", command: "claude x", workspace: "pr-loop", name: "pr-loop#1 pm" });
+  const id = await realAgterm(f.bin).spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "pr-loop", name: "pr-loop#1 pm" });
   assert.equal(id, "S-NEW");
-  assert.equal(f.calls(), "[session][new][--cwd][/w][--command][/bin/zsh -lc 'claude x'][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n");
+  assert.equal(f.calls(), `[session][new][--cwd][/w][--command][/bin/zsh -lc 'claude '\\''x'\\'''][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n`);
 });
 
 // Live on 2026-10-04: a line typed together with its newline landed in Claude's composer

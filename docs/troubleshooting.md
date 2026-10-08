@@ -78,7 +78,7 @@ The entry stays active and fails after 10 minutes.
 - Check: `agtermctl hooks list`. The two `… agterm-hook` lines must be there, without failures.
 - Fix: `flow install`, which rewrites them and runs `agtermctl hooks reload`.
 - A zmx session (`terminal: zmx`) gets its turns from Claude Code's hooks instead: `~/.claude/settings.json`
-  must have flows' `claude-hook start|active|completed|blocked` entries. `flow install` writes them;
+  must have flows' `claude-hook start|active|completed|blocked|idle` entries. `flow install` writes them;
   a Claude already running keeps the hooks it started with.
 
 ## Looking at a zmx session
@@ -86,8 +86,9 @@ The entry stays active and fails after 10 minutes.
 - List them: `ZMX_DIR=~/.local/state/flows/zmx zmx list` (agterm's zmx is
   `/Applications/agterm.app/Contents/MacOS/zmx`). Each is labelled with its run and role.
 - Watch or take over one: the run's terminal button, or
-  `ZMX_DIR=~/.local/state/flows/zmx zmx attach flows-<process>-<n>-<role>`; detach with zmx's
+  `ZMX_DIR=~/.local/state/flows/zmx zmx attach flows-<process>-<n>-<role>-<k>`; detach with zmx's
   detach key, which leaves the agent running.
+- Agents of finished runs keep running until they exit: `zmx kill <name>` ends one.
 - Never point agterm's own zmx commands (`zmx prune`) at this directory, or flows' at agterm's
   `/tmp/agterm-zmx-*`: prune kills sessions no agterm pane claims.
 

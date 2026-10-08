@@ -120,15 +120,18 @@ export async function install(o: InstallOpts = {}): Promise<void> {
     ["PostToolUse", turn("active")],
     ["Stop", turn("completed")],
     ["Notification", turn("blocked"), "permission_prompt"],
+    ["Notification", turn("idle"), "idle_prompt"],
   ];
   const before = JSON.stringify(settings.hooks);
-  for (const [event, command, matcher] of wanted) {
-    // drop flows' entry from an earlier install (possibly another node or repo path), keep everyone else's
-    const groups = (settings.hooks[event] ?? [])
-      .map((g: { hooks?: { command?: string }[] }) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !/cli\.ts' claude-hook \w+$/.test(h.command ?? "")) }))
+  const ourHook = (h: { command?: string }) => /cli\.ts' claude-hook \w+$/.test(h.command ?? "");
+  // drop flows' entries from an earlier install (possibly another node or repo path), keep everyone else's
+  for (const event of new Set(wanted.map(([e]) => e))) {
+    settings.hooks[event] = (settings.hooks[event] ?? [])
+      .map((g: { hooks?: { command?: string }[] }) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !ourHook(h)) }))
       .filter((g: { hooks: unknown[] }) => g.hooks.length > 0);
-    groups.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] });
-    settings.hooks[event] = groups;
+  }
+  for (const [event, command, matcher] of wanted) {
+    settings.hooks[event].push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] });
   }
   if (JSON.stringify(settings.hooks) !== before) {
     if (existsSync(settingsPath)) copyFileSync(settingsPath, `${settingsPath}.bak-flows`);

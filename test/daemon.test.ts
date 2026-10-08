@@ -865,12 +865,12 @@ test("a start over max_runs queues; it starts when a run ends, and the rest hear
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");
 const zmxFake = () => Object.assign(new FakeAgterm(), { prefix: "zmx:Z" });
 
-test("a terminal: zmx process spawns through zmx, named flows-<run>-<role> and labelled; an agterm process through agterm", async () => {
+test("a terminal: zmx process spawns through zmx, named flows-<run>-<role>-<spawn> and labelled; an agterm process through agterm", async () => {
   const zmx = zmxFake();
   const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...ZMX }), { zmx });
   await f.submit(start("z"));
   await settle(f);
-  assert.ok(zmx.calls[0]?.startsWith("spawn zmx:Z1 zmx | flows-z-1-pm | /tmp | claude '▶ flow: step b · z#1 it.1"), zmx.calls[0]);
+  assert.ok(zmx.calls[0]?.startsWith("spawn zmx:Z1 zmx | flows-z-1-pm-1 | /tmp | claude '▶ flow: step b · z#1 it.1"), zmx.calls[0]);
   assert.ok(zmx.calls[0].endsWith(" | run=z.1 role=pm"), zmx.calls[0]);
   assert.equal(f.store.getRun("z#1")!.roles.pm, "zmx:Z1");
   await f.submit(start("p"));
@@ -969,4 +969,53 @@ test("Claude hook statuses for an agterm session are ignored: agterm reports tho
   await f.submit(hook("S1", "active", "c1"));
   assert.equal(f.store.sessionStatus("S1"), "completed");
   await f.close();
+});
+
+test("each spawn of a zmx role gets its own session name: a respawn never types into the old agent", async () => {
+  const zmx = zmxFake();
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...ZMX }), { zmx });
+  await f.submit(start("z"));
+  await settle(f);
+  await f.submit({ type: "role.respawn", run: "z#1", data: { role: "pm" }, source: "ui" });
+  await settle(f);
+  const names = zmx.calls.filter((c) => c.startsWith("spawn")).map((c) => c.split(" | ")[1]);
+  assert.equal(names.length, 2, zmx.calls.join("\n"));
+  assert.notEqual(names[0], names[1]);
+  assert.match(names[0], /^flows-z-1-pm-\d+$/);
+  await f.close();
+});
+
+test("Claude idle at its prompt ends a turn flowd still thinks is active (a Stop missed while flowd was down, an Esc)", async () => {
+  const zmx = zmxFake();
+  const { f } = await startFlowd(makeHome({ ...STEP_FILES, ...ZMX }), { zmx });
+  await f.submit(start("z"));
+  await settle(f);
+  await f.submit(hook("zmx:Z1", "active", "c1"));
+  await f.submit(hook("zmx:Z1", "idle", "c1"));
+  assert.equal(f.store.sessionStatus("zmx:Z1"), "completed");
+  await f.submit(hook("zmx:Z1", "blocked", "c1"));
+  await f.submit(hook("zmx:Z1", "idle", "c1"));
+  assert.equal(f.store.sessionStatus("zmx:Z1"), "blocked"); // idle heals only a stale active
+  await f.close();
+});
+
+test("the agent's Claude id survives a flowd restart; a nested claude -p or --resume mid-turn cannot take it", async () => {
+  const home = makeHome({ ...STEP_FILES, ...ZMX });
+  const zmx = zmxFake();
+  const A = await startFlowd(home, { zmx });
+  await A.f.submit(start("z"));
+  await settle(A.f);
+  await A.f.submit(hook("zmx:Z1", "start", "c1", "startup"));
+  await A.f.submit(hook("zmx:Z1", "active", "c1"));
+  await A.f.close();
+  const B = await startFlowd(home, { zmx });
+  await settle(B.f);
+  await B.f.submit(hook("zmx:Z1", "start", "nested", "startup"));
+  await B.f.submit(hook("zmx:Z1", "completed", "nested"));
+  await B.f.submit(hook("zmx:Z1", "start", "nested2", "resume"));
+  await B.f.submit(hook("zmx:Z1", "completed", "nested2"));
+  assert.equal(B.f.store.sessionStatus("zmx:Z1"), "active");
+  await B.f.submit(hook("zmx:Z1", "completed", "c1"));
+  assert.equal(B.f.store.sessionStatus("zmx:Z1"), "completed");
+  await B.f.close();
 });

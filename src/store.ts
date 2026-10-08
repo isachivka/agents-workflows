@@ -54,6 +54,8 @@ export class Store {
     // added after the first release: older databases lack it
     const cols = this.db.prepare("PRAGMA table_info(events)").all() as Row[];
     if (!cols.some((c) => c.name === "subscription")) this.db.exec("ALTER TABLE events ADD COLUMN subscription TEXT");
+    const sessionCols = this.db.prepare("PRAGMA table_info(sessions)").all() as Row[];
+    if (!sessionCols.some((c) => c.name === "claude")) this.db.exec("ALTER TABLE sessions ADD COLUMN claude TEXT");
   }
 
   close(): void { this.db.close(); }
@@ -175,6 +177,18 @@ export class Store {
     this.db
       .prepare("INSERT INTO sessions (session_id, status, status_at) VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET status = excluded.status, status_at = excluded.status_at")
       .run(session, status, at);
+  }
+
+  /** The Claude Code session id a zmx session's own agent reports from. */
+  sessionClaude(session: string): string | null {
+    const row = this.db.prepare("SELECT claude FROM sessions WHERE session_id = ?").get(session) as Row | undefined;
+    return row?.claude ?? null;
+  }
+
+  setSessionClaude(session: string, claude: string, at = Date.now()): void {
+    this.db
+      .prepare("INSERT INTO sessions (session_id, status, status_at, claude) VALUES (?, 'idle', ?, ?) ON CONFLICT(session_id) DO UPDATE SET claude = excluded.claude")
+      .run(session, at, claude);
   }
 
   sessionStatus(session: string): string | null {

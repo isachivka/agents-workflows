@@ -45,7 +45,7 @@ test("install wires launchd, agterm and Claude hooks, the skill and the PATH lin
   assert.deepEqual(settings.hooks.UserPromptSubmit, [{ hooks: [turn("active")] }]);
   assert.deepEqual(settings.hooks.PostToolUse, [{ hooks: [turn("active")] }]);
   assert.deepEqual(settings.hooks.Stop, [{ hooks: [{ type: "command", command: "s" }] }, { hooks: [turn("completed")] }]);
-  assert.deepEqual(settings.hooks.Notification, [{ matcher: "permission_prompt", hooks: [turn("blocked")] }]);
+  assert.deepEqual(settings.hooks.Notification, [{ matcher: "permission_prompt", hooks: [turn("blocked")] }, { matcher: "idle_prompt", hooks: [turn("idle")] }]);
   assert.ok(existsSync(join(home, ".claude", "settings.json.bak-flows")));
 
   assert.equal(readlinkSync(join(home, ".claude", "skills", "flow")), "/repo/skills/flow");

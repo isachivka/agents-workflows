@@ -183,7 +183,7 @@ Sets flows up for the current user, and can be re-run at any time:
 | a link to `bin/flow` | `~/.local/bin/flow` |
 | the launchd agent `local.flows`, running `flow daemon` with `RunAtLoad` and `KeepAlive` | `~/Library/LaunchAgents/local.flows.plist`, log in `~/.local/state/flows/flowd.log` |
 | agterm hook lines `on status … agterm-hook` and `on session.closed … agterm-hook`, then `agtermctl hooks reload` | `~/.config/agterm/hooks.conf` |
-| Claude Code hooks (a backup is written first): `PostCompact` → `flow claude-hook compacted`; `SessionStart` → `start`, `UserPromptSubmit` and `PostToolUse` → `active`, `Stop` → `completed`, `Notification` (`permission_prompt`) → `blocked`. The last five run as `[ -z "$FLOW_SESSION" ] \|\| … claude-hook <event>`, so Claude sessions outside flows' zmx sessions never start node for them. | `~/.claude/settings.json`, backup `settings.json.bak-flows` |
+| Claude Code hooks (a backup is written first): `PostCompact` → `flow claude-hook compacted`; `SessionStart` → `start`, `UserPromptSubmit` and `PostToolUse` → `active`, `Stop` → `completed`, `Notification` (`permission_prompt`) → `blocked`, `Notification` (`idle_prompt`) → `idle`. All but the first run as `[ -z "$FLOW_SESSION" ] \|\| … claude-hook <event>`, so Claude sessions outside flows' zmx sessions never start node for them. | `~/.claude/settings.json`, backup `settings.json.bak-flows` |
 | links to the `flow` and `flow-author` skills | `~/.claude/skills/flow`, `~/.claude/skills/flow-author` |
 
 The hooks and the plist call node by its absolute path (found with `command -v node` in a login
@@ -212,7 +212,7 @@ Not for hand use; `flow install` wires them.
 |---|---|---|
 | `flow agterm-hook` | agterm, on `status` and `session.closed` | Posts `AGT_EVENT_KIND`, `AGT_EVENT_STATUS` and `AGT_SESSION_ID` to `/agterm`. |
 | `flow claude-hook compacted` | Claude Code's `PostCompact` hook | Posts the session (`FLOW_SESSION`, else `AGTERM_SESSION_ID`) to `/claude`. |
-| `flow claude-hook start\|active\|completed\|blocked` | Claude Code's `SessionStart`, `UserPromptSubmit`/`PostToolUse`, `Stop`, `Notification` (`permission_prompt`) hooks | Only with `FLOW_SESSION` set: posts it with Claude's `session_id` (and `source` on `SessionStart`) from the hook's stdin to `/claude`. Without it, exits at once. |
+| `flow claude-hook start\|active\|completed\|blocked\|idle` | Claude Code's `SessionStart`, `UserPromptSubmit`/`PostToolUse`, `Stop`, `Notification` (`permission_prompt`, `idle_prompt`) hooks | Only with `FLOW_SESSION` set: posts it with Claude's `session_id` (and `source` on `SessionStart`) from the hook's stdin to `/claude`. Without it, exits at once. |
 
 Both give up after 2 s, never print and always exit 0, so a stopped flowd never slows agterm or
 Claude down.
