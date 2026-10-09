@@ -100,7 +100,7 @@ From the installed copy of this skill, the repo is
 - An `sh` entry runs in a login `zsh` as you, no sandbox, in its own `cwd:` (a template) or the
   process `cwd`. Exit 0 is done with the last output line as the note; anything else fails with
   the exit code and stderr, and `on_fail` decides. Besides `FLOW_VAR_<NAME>` it gets `FLOW_RUN`,
-  `FLOW_PROCESS`, `FLOW_ITERATION` and `FLOW_EVENT_<KEY>`. It is killed after `timeout` (default
+  `FLOW_PROCESS`, `FLOW_ITERATION` and `FLOW_EVENT_<KEY>`. It is killed, with everything it started, after `timeout` (default
   30 minutes), and a flowd restart mid-command fails it — make commands safe to run again.
 - `max_runs` is how many runs work at once. A start by hand or by an event beyond it waits in line
   (`queued`) and starts by itself; a cron start is skipped. Keep the limit where people can keep up

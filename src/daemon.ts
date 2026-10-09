@@ -1,4 +1,4 @@
-import { execFile, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -64,6 +64,15 @@ export interface RunSummary {
   queue: { position: number; open: number; max: number } | null;
   created: number; updated: number;
   plan: PlanItem[];
+}
+
+/** Ends a detached child and everything it started; it may have exited already. */
+function killGroup(c: ChildProcess): void {
+  try {
+    if (c.pid) process.kill(-c.pid, "SIGTERM");
+  } catch {
+    c.kill();
+  }
 }
 
 const AGTERM_STATUSES = new Set(["active", "completed", "idle", "blocked"]);
@@ -166,7 +175,7 @@ export class Flowd {
 
   async close(): Promise<void> {
     this.closing = true;
-    for (const c of this.children) c.kill(); // a restart fails what was cut off: see init
+    for (const c of this.children) killGroup(c); // a restart fails what was cut off: see init
     for (const t of this.timers) clearInterval(t);
     for (const c of this.crons) c.stop();
     clearTimeout(this.reloadTimer);
@@ -850,21 +859,35 @@ export class Flowd {
   private runShell(run: string, entry: string, command: string, cwd: string, env: Record<string, string>, timeoutMs: number): Promise<void> {
     const [bin, ...args] = this.o.shell ?? ["/bin/zsh", "-lc"];
     return new Promise((resolve) => {
-      const child = execFile(bin, [...args, command], { cwd: expandHome(cwd), env: { ...process.env, ...env }, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-        (err, stdout, stderr) => {
-          this.children.delete(child);
-          if (this.closing) return resolve(); // cut off by shutdown: the next start fails the entry
-          const out = String(stdout).trim();
-          let outcome: "done" | "failed" = "done";
-          let note = out.split("\n").pop() || "exit 0";
-          if (err) {
-            outcome = "failed";
-            const e = err as { killed?: boolean; signal?: string | null; code?: unknown; message: string };
-            note = e.killed && e.signal ? `timed out after ${formatDuration(timeoutMs)}`
-              : `exit ${typeof e.code === "number" ? e.code : 1}: ${(String(stderr).trim() || out || e.message).slice(-500)}`;
-          }
-          resolve(this.submit({ type: "entry.report", data: { run, entry, outcome, note: note.slice(0, 500), by: "system" }, source: "flowd" }).then(() => undefined));
-        });
+      let timedOut = false;
+      // its own process group, so a timeout or a restart ends what the command started too, not
+      // only the shell: a compound command's children would run on (and hold the output open)
+      const child = spawn(bin, [...args, command], { cwd: expandHome(cwd), env: { ...process.env, ...env }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+      const stdout: string[] = [], stderr: string[] = [];
+      let size = 0;
+      const take = (into: string[]) => (b: Buffer) => { if ((size += b.length) < 16 * 1024 * 1024) into.push(String(b)); };
+      child.stdout!.on("data", take(stdout));
+      child.stderr!.on("data", take(stderr));
+      const timer = setTimeout(() => { timedOut = true; killGroup(child); }, timeoutMs);
+      let ended = false;
+      const end = (code: number | null, error?: Error) => {
+        if (ended) return; // a spawn error may be followed by close
+        ended = true;
+        clearTimeout(timer);
+        this.children.delete(child);
+        if (this.closing) return resolve(); // cut off by shutdown: the next start fails the entry
+        const out = stdout.join("").trim();
+        let outcome: "done" | "failed" = "done";
+        let note = out.split("\n").pop() || "exit 0";
+        if (code !== 0 || error) {
+          outcome = "failed";
+          note = timedOut ? `timed out after ${formatDuration(timeoutMs)}`
+            : `exit ${code ?? 1}: ${(stderr.join("").trim() || out || error?.message || "killed").slice(-500)}`;
+        }
+        resolve(this.submit({ type: "entry.report", data: { run, entry, outcome, note: note.slice(0, 500), by: "system" }, source: "flowd" }).then(() => undefined));
+      };
+      child.on("error", (e) => end(null, e));
+      child.on("close", (code) => end(code));
       this.children.add(child);
     });
   }

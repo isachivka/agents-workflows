@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { realpathSync, writeFileSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, previouses, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
@@ -742,21 +742,32 @@ test("a shell entry sees the run's vars and runs in its cwd", async () => {
   await f.close();
 });
 
-test("a shell entry that runs too long is killed and fails as timed out", async () => {
-  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: slow, sh: 'sleep 5', timeout: 1s}\n") });
+test("a shell entry that runs too long is killed with everything it started and fails as timed out", async () => {
+  // a compound command keeps sh as a parent: killing sh alone leaves sleep running (and, with dash,
+  // holding the output open until it ends)
+  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: slow, sh: 'true; sh -c \"sleep 2; touch $FLOW_VAR_MARK\"', timeout: 1s}\n") });
+  const mark = join(home, "survived");
   const { f } = await startFlowd(home, shellOpts);
-  await f.submit(start("p"));
+  const t0 = Date.now();
+  await f.submit({ type: "run.start", data: { process: "p", vars: { mark } }, source: "test" });
   await settle(f);
   const e = f.store.getRun("p#1")!.entries.slow;
   assert.deepEqual([e.status, e.note], ["failed", "timed out after 1s"]);
+  assert.ok(Date.now() - t0 < 2_000, `took ${Date.now() - t0}ms`);
+  await new Promise((r) => setTimeout(r, 1_500));
+  assert.equal(existsSync(mark), false, "the command's children outlived the timeout");
   await f.close();
 });
 
 test("a shell entry cut off by a restart fails so on_fail decides", async () => {
-  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: slow, sh: 'sleep 30'}\n") });
+  const home = makeHome({ ...STEP_FILES, ...SH("  - {id: slow, sh: 'true; sh -c \"sleep 2; touch $FLOW_VAR_MARK\"'}\n") });
+  const mark = join(home, "survived");
   const A = await startFlowd(home, shellOpts);
-  await A.f.submit(start("p"));
+  await A.f.submit({ type: "run.start", data: { process: "p", vars: { mark } }, source: "test" });
+  await new Promise((r) => setTimeout(r, 300)); // the command is running
   await A.f.close();
+  await new Promise((r) => setTimeout(r, 2_500));
+  assert.equal(existsSync(mark), false, "the command's children outlived the restart");
   const B = await startFlowd(home, shellOpts);
   await settle(B.f);
   const e = B.f.store.getRun("p#1")!.entries.slow;
