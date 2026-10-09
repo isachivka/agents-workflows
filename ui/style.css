@@ -17,8 +17,9 @@
   font: 16px/1.5 "Onest", ui-sans-serif, -apple-system, system-ui, sans-serif;
   color-scheme: light dark;
 }
+/* dark: the system says so, or ?theme=dark asked for it (a web view that cannot follow the system) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #161513; --top: #1c1b18; --fg: #ece9e2; --muted: #a3a097; --faint: #7d7a72; --line: #2f2d29;
     --box: #1f1e1b; --chip: #2a2925; --code: #252420;
     --accent: #7ea2ff; --accent-ink: #10172e; --accent-soft: #1f2a4a; --accent-text: #b4c7ff;
@@ -27,6 +28,16 @@
     --bad: #ef7b72; --bad-soft: #3a1d1a; --bad-text: #f3a49c;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #161513; --top: #1c1b18; --fg: #ece9e2; --muted: #a3a097; --faint: #7d7a72; --line: #2f2d29;
+  --box: #1f1e1b; --chip: #2a2925; --code: #252420;
+  --accent: #7ea2ff; --accent-ink: #10172e; --accent-soft: #1f2a4a; --accent-text: #b4c7ff;
+  --you: #e8a04a; --you-soft: #3d2a12; --you-text: #f6c88c; --you-bg: #221b12;
+  --ok: #6fbf86; --ok-soft: #1d3324; --ok-text: #9ed3ab;
+  --bad: #ef7b72; --bad-soft: #3a1d1a; --bad-text: #f3a49c;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); }
 a { color: var(--accent); }

@@ -58,7 +58,9 @@ mkdir -p ~/.config/flows && cp -Rn examples/* ~/.config/flows/
 - `~/.local/bin/flow`.
 
 `flow` is now at `~/.local/bin/flow`; make sure `~/.local/bin` is on your `PATH`, or call
-`bin/flow` from the checkout. Then open http://127.0.0.1:7420.
+`bin/flow` from the checkout. Then open http://127.0.0.1:7420. The UI follows the system's light or
+dark mode; where it cannot see it (a web view inside another app), add `?theme=dark` or
+`?theme=light` to the address, before the `#` (`?theme=auto` forgets the choice).
 
 ## Quickstart: the demo
 
