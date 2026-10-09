@@ -482,6 +482,8 @@ export class Flowd {
         return this.apply(run, { kind: "stop" });
       case "run.set":
         return this.apply(run, { kind: "set", vars: stringVars(d.vars) });
+      case "run.ping":
+        return this.apply(run, { kind: "ping" });
       case "role.bind": {
         const session = str(d.session) ?? null;
         const by = d.by === "spawn" ? "spawn" : "human";

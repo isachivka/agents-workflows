@@ -73,6 +73,12 @@ report. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
   input box, which the screen text cannot tell from typed text. Send or clear the draft and the
   line goes out within a second. When the caret cannot be read, the line goes out as before.
 - A line whose step moved on before it went out is dropped.
+- Besides step lines a session can get notices that ask nothing of the step: its place in a
+  run queue, or a ping. The UI's **Ping** button, on a run whose step waits for an event (a
+  review, a merge, CI), types a line asking the agent to nudge whoever the run waits on, with the
+  wait's age, `vars.pr` and `vars.slack_thread`. It goes to the step's agent, or for a human step
+  to any agent of the run with a session. The run does not change: the agent nudges and ends its
+  turn, the step keeps waiting.
 - An agent can close a step only after its line was typed: an early `flow done` is refused with
   `step <id> has not reached the agent yet`. This stops a double `flow done` from closing the next
   step of the same role.

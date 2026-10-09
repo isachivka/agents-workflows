@@ -44,6 +44,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs` | `{process, bind?: {role: session}, vars?: {key: value}}` (vars are set before the first entry) | `{run}`, plus `queued: {position, open, max}` when the process was at `max_runs` and the run waits in line |
 | GET | `/api/runs/:id` | | `RunSummary` plus `entries` (per-entry state), `events` (newest first) and `sessions` (`{sessionId: agterm status}`) |
 | POST | `/api/runs/:id/pause` · `/resume` · `/stop` | | `{run}` |
+| POST | `/api/runs/:id/ping` | | `{run}`; types a request to nudge whoever the current step waits on (a review, a merge) into the step's agent, or any agent of the run with a session for a human step; the run does not change. Refused (409) unless the run is running and its current step waits for an event |
 | POST | `/api/runs/:id/vars` | `{vars: {k: v}}` | `{run}` |
 | POST | `/api/runs/:id/entries/:entry/done` · `/failed` | `{note?, evidence?}` | `{run}`; closes the entry as the human (`failed` needs a note) |
 | POST | `/api/runs/:id/entries/:entry/skip` | `{note}` | `{run}`; a skip needs a reason |

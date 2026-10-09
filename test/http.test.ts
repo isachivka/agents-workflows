@@ -24,6 +24,8 @@ test("runs: start, list, detail by an encoded id, overrides, refusals", async ()
   assert.equal(again.status, 409);
   assert.match(again.body.error, /only a running run can be paused/);
   await s.call("POST", "/api/runs/p%231/resume");
+  const ping = await s.call("POST", "/api/runs/p%231/ping");
+  assert.deepEqual([ping.status, ping.body.error], [409, "p#1 is not waiting for anyone: step b is active"]);
   const skip = await s.call("POST", "/api/runs/p%231/entries/b/skip", {});
   assert.deepEqual([skip.status, skip.body.error], [409, "a skip needs a reason"]);
   assert.equal((await s.call("POST", "/api/runs/p%231/entries/b/done", { note: "by hand" })).status, 200);

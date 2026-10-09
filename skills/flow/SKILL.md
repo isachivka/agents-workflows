@@ -61,6 +61,11 @@ retry, no limit to raise. Tell the user and end your turn. Lines like
 `▶ flow: <run> is queued — now 1st in line …` only tell you the place; do nothing. The run's first
 `▶ flow: step …` line comes by itself when its turn comes.
 
+A line `▶ flow: the user asks you to ping whoever <run> is waiting on …` asks for a nudge, not a
+report: find who holds the step up (requested reviewers, owners), write to them where the team
+talks (the Slack thread it names, else a PR comment), tell the user whom you pinged and end your
+turn. Do not `flow done` or `flow wait`: the step keeps waiting for its event.
+
 A refusal (`flow: …`, exit 1) is an answer, not a glitch. `step X has not reached the agent yet`
 means you already reported and the next step is on its way — wait for its line.
 If `flow show` says no step is active for this session, do nothing and tell the user.

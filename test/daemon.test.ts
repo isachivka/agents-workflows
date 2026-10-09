@@ -1019,3 +1019,17 @@ test("the agent's Claude id survives a flowd restart; a nested claude -p or --re
   assert.equal(B.f.store.sessionStatus("zmx:Z1"), "completed");
   await B.f.close();
 });
+
+test("a ping types the request into the waiting step's agent and leaves the run as it was", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: pm, wait_for: test.ping}\n") }));
+  agterm.addSession("S1");
+  await f.submit({ type: "run.start", data: { process: "p", bind: { pm: "S1" }, vars: { pr: "https://github.com/o/r/pull/7" } }, source: "test" });
+  await settle(f);
+  assert.deepEqual(await f.submit({ type: "run.ping", run: "p#1", data: {}, source: "ui" }), { run: "p#1" });
+  clock.t += 20_000;
+  await settle(f);
+  assert.ok(agterm.typed().some((c) => c.startsWith("type S1 ▶ flow: the user asks you to ping whoever p#1 is waiting on — step c has waited 0m for test.ping. PR: https://github.com/o/r/pull/7.")), agterm.typed().join("\n"));
+  assert.equal(f.store.getRun("p#1")!.entries.c.status, "waiting");
+  assert.match((await f.submit({ type: "run.ping", run: "p#9", data: {}, source: "ui" })).error ?? "", /p#9/);
+  await f.close();
+});

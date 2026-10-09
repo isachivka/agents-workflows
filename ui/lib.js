@@ -97,6 +97,7 @@ const PATHS = {
   alert: html`<path d="M12 3l10 18H2z" /><path d="M12 10v5M12 18v.5" />`,
   terminal: html`<rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M13 15h4" />`,
   external: html`<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />`,
+  bell: html`<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" /><path d="M10 21a2 2 0 0 0 4 0" />`,
   again: html`<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />`,
 };
 export const Icon = ({ name, size = 20 }) => html`<svg class="ic" width=${size} height=${size} viewBox="0 0 24 24" fill="none"

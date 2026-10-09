@@ -136,6 +136,7 @@ export type Input =
   | { kind: "tick" }
   | { kind: "hold-free" }
   | { kind: "queued"; position: number; open: number; max: number }
+  | { kind: "ping" }
   | { kind: "set"; vars: Record<string, string> }
   | { kind: "pause" }
   | { kind: "resume" }

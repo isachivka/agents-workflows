@@ -47,6 +47,19 @@ export const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "t
 export const queueText = (run: string, position: number, open: number, max: number) =>
   `▶ flow: ${run} is queued — now ${ordinal(position)} in line (${open} of ${max} runs open). Nothing to do: it starts by itself.`;
 
+/** 2d, 5h, 12m: how long, rounded down to the largest whole unit */
+const ageText = (ms: number) => {
+  for (const [unit, size] of [["d", 86_400_000], ["h", 3_600_000]] as const) if (ms >= size) return `${Math.floor(ms / size)}${unit}`;
+  return `${Math.floor(ms / 60_000)}m`;
+};
+
+export const pingText = (run: RunState, entry: string, on: string, waited: number) =>
+  `▶ flow: the user asks you to ping whoever ${run.id} is waiting on — step ${entry} has waited ${ageText(waited)} for ${on}. ` +
+  (run.vars.pr ? `PR: ${run.vars.pr}. ` : "") +
+  (run.vars.slack_thread ? `Slack thread: ${run.vars.slack_thread}. ` : "") +
+  "Find who that is (requested reviewers, owners) and nudge them where the team talks (the thread, else the PR), then end your turn. " +
+  `Do not report the step: the flow keeps waiting for ${on}.`;
+
 export const nudgeText = (run: RunState, entry: string) =>
   `▶ flow: step ${entry} · ${run.id} it.${run.iteration} — run \`flow show\` for the instructions`;
 
@@ -470,6 +483,19 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       run.queuePos = input.position;
       // only roles that already have a session hear it: a notice never spawns an agent
       for (const [role, session] of Object.entries(run.roles)) if (session) deliver(role, queueText(run.id, input.position, input.open, input.max));
+      return done();
+    }
+    case "ping": {
+      if (run.status !== "running") return fail(`${run.id} is ${run.status}`);
+      const s = cur ? st(cur.id) : undefined;
+      if (!cur || !s) return fail(`${run.id} is not waiting for anyone: it has no current step`);
+      if (cur.kind === "delay") return fail(`${run.id} is not waiting for anyone: step ${cur.id} is a pause`);
+      if (s.status !== "waiting" || !cur.waitFor || s.queued) return fail(`${run.id} is not waiting for anyone: step ${cur.id} is ${s.queued ? "queued for a hold" : s.status}`);
+      // the step's own agent if it has one; a human step's wait is pinged by any agent of the run
+      const own = cur.kind === "agent" && run.roles[cur.role!] ? cur.role! : undefined;
+      const role = own ?? Object.keys(p.roles).find((r) => run.roles[r]);
+      if (!role) return fail(`no agent of ${run.id} has a session to send the ping from`);
+      deliver(role, pingText(run, cur.id, cur.waitFor.on, now - (s.startedAt ?? now)));
       return done();
     }
     case "hold-free": {

@@ -476,3 +476,40 @@ test("an agent closes its own step while it waits again, once the step has reach
   assert.equal(s.run.current, "c");
   assert.ok(s.kinds().includes("unwatch"));
 });
+
+test("a ping asks the run's agent to nudge whoever the waiting step is on, and changes nothing else", () => {
+  const s = new Sim(ONE_ROLE("  - {step: d, role: pm, wait_for: gh.checks}\n"), STEPS, { pm: "S1" })
+    .send({ kind: "set", vars: { pr: "https://github.com/o/r/pull/7", slack_thread: "https://x.slack.com/archives/C1/p1" } })
+    .send({ kind: "start" });
+  s.now += 2 * 86_400_000 + 3 * 3_600_000;
+  const before = structuredClone(s.run);
+  s.send({ kind: "ping" });
+  assert.equal(s.error, undefined);
+  assert.deepEqual(s.run, before);
+  assert.deepEqual(s.actions, [{ kind: "deliver", role: "pm", text:
+    "▶ flow: the user asks you to ping whoever p#1 is waiting on — step d has waited 2d for gh.checks. " +
+    "PR: https://github.com/o/r/pull/7. Slack thread: https://x.slack.com/archives/C1/p1. " +
+    "Find who that is (requested reviewers, owners) and nudge them where the team talks (the thread, else the PR), then end your turn. " +
+    "Do not report the step: the flow keeps waiting for gh.checks." }]);
+});
+
+test("a ping on a human step that waits goes to an agent of the run with a session", () => {
+  const yaml = `description: d\ncwd: /tmp\nroles: {pm: {spawn: c}, dev: {spawn: c}}\nsteps:\n  - {step: b, role: human, wait_for: gh.merged}\n`;
+  const s = new Sim(yaml, STEPS, { dev: "S2" }).send({ kind: "start" });
+  s.send({ kind: "ping" });
+  assert.equal(s.error, undefined);
+  assert.equal(s.actions.length, 1);
+  assert.match(s.delivered()[0], /^dev: ▶ flow: the user asks you to ping whoever p#1 is waiting on — step b has waited 0m for gh\.merged\. Find who/);
+});
+
+test("a ping is refused when nothing is awaited from someone, or no agent can send it", () => {
+  const active = new Sim(ONE_ROLE("  - {step: b, role: pm}\n"), STEPS, { pm: "S1" }).send({ kind: "start" }).send({ kind: "ping" });
+  assert.equal(active.error, "p#1 is not waiting for anyone: step b is active");
+  const pause = new Sim(ONE_ROLE("  - {id: tail, wait: 1h}\n"), STEPS, { pm: "S1" }).send({ kind: "start" }).send({ kind: "ping" });
+  assert.equal(pause.error, "p#1 is not waiting for anyone: step tail is a pause");
+  const alone = new Sim(ONE_ROLE("  - {step: d, role: pm, wait_for: gh.checks}\n"), STEPS).send({ kind: "start" }).send({ kind: "ping" });
+  assert.equal(alone.error, "no agent of p#1 has a session to send the ping from");
+  const paused = new Sim(ONE_ROLE("  - {step: d, role: pm, wait_for: gh.checks}\n"), STEPS, { pm: "S1" })
+    .send({ kind: "start" }).send({ kind: "pause" }).send({ kind: "ping" });
+  assert.equal(paused.error, "p#1 is paused");
+});

@@ -106,6 +106,7 @@ function WaitingCard({ r, now }) {
       ${(s === "failed" || s === "stopped") && html`<a class="btn primary" href="#/run/${enc(r.id)}">${t("act.sortOut")}</a>`}
       ${s === "failed" && html`<button class="btn" onClick=${post(`/entries/${enc(cur.id)}/retry`)}>${t("act.retry")}</button>`}
       ${s === "agentAsks" && sid && html`<button class="btn primary" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: cur.role })}</button>`}
+      <${PingButton} r=${r} setErr=${setErr} />
       <a class="btn quiet" href="#/run/${enc(r.id)}">${t("act.details")}</a>
     </div>
   </article>`;
@@ -133,8 +134,19 @@ function WorkingCard({ r, now }) {
       ${url && html`<a class="btn" href=${url} target="_blank" rel="noreferrer">${t("act.openPr")}<${Icon} name="external" /></a>`}
       <${SlackLink} vars=${r.vars} />
       ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.terminal")}</button>`}
+      <${PingButton} r=${r} setErr=${setErr} />
     </div>
   </article>`;
+}
+
+// a run waits for someone (a review, a merge) and has an agent that can nudge them
+const canPing = (r) => r.status === "running" && Boolean(r.waitingOn) && Object.values(r.roles).some(Boolean);
+
+function PingButton({ r, setErr }) {
+  const [sent, setSent] = useState(false);
+  if (!canPing(r)) return null;
+  const ping = attempt(async () => { await api("POST", `/api/runs/${enc(r.id)}/ping`, {}); setSent(true); }, setErr);
+  return html`<button class="btn quiet" disabled=${sent} title=${t("why.ping")} onClick=${ping}><${Icon} name=${sent ? "check" : "bell"} />${t(sent ? "act.pinged" : "act.ping")}</button>`;
 }
 
 function FinishedRow({ r, now }) {
@@ -179,6 +191,7 @@ function Run({ arg: id }) {
         <p class="muted small">${repoName(r.vars) ? `${repoName(r.vars)} · ` : ""}${runTitle(r) ? `${runLabel(r.id)} · ` : ""}${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
       </div>
       ${live && html`<div class="acts">
+        <${PingButton} r=${r} setErr=${setErr} />
         ${r.status === "paused" && html`<button class="btn" onClick=${post("/resume")}>${t("act.resume")}</button>`}
         ${r.status === "running" && html`<button class="btn" onClick=${post("/pause")}>${t("act.pause")}</button>`}
         <button class="btn danger" onClick=${stop}>${t("act.stop")}</button>

@@ -167,7 +167,7 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
       if (!d) throw new HttpError(404, { error: `no run ${id}` });
       return d;
     }],
-    ["POST", /^\/api\/runs\/([^/]+)\/(pause|resume|stop)$/, ([id, verb]) => submit({ type: `run.${verb}`, run: id, data: {}, source: "ui" })],
+    ["POST", /^\/api\/runs\/([^/]+)\/(pause|resume|stop|ping)$/, ([id, verb]) => submit({ type: `run.${verb}`, run: id, data: {}, source: "ui" })],
     ["POST", /^\/api\/runs\/([^/]+)\/vars$/, ([id], b) => submit({ type: "run.set", run: id, data: { vars: b.vars ?? {} }, source: "ui" })],
     ["POST", /^\/api\/runs\/([^/]+)\/entries\/([^/]+)\/(done|failed|skip|retry|goto)$/, ([id, entry, verb], b) =>
       submit(verb === "done" || verb === "failed"
