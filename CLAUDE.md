@@ -33,6 +33,7 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses |
 | `src/agterm.ts` | the `Terminal` interface; agterm behind it, the only caller of `agtermctl`; shell quoting |
 | `src/zmx.ts` | the zmx terminal: headless sessions through the `zmx` CLI, the only caller of `zmx` |
+| `src/transcripts.ts` | finds a role's Claude conversation in `~/.claude/projects` (read-only), for "restore session" |
 | `src/plugins.ts` | plugin interface and host: loading, events, watches with backoff, actions |
 | `src/daemon.ts` | `Flowd`: event loop, routing, action execution, outbox flush, ticks, cron, reloads, restart recovery |
 | `src/http.ts` | JSON API, SSE, static UI, hook endpoints, the Host/Origin/content-type guard |

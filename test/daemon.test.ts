@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, previouses, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
@@ -1042,5 +1042,31 @@ test("a ping types the request into the waiting step's agent and leaves the run 
   assert.ok(agterm.typed().some((c) => c.startsWith("type S1 ▶ flow: the user asks you to ping whoever p#1 is waiting on — step c has waited 0m for test.ping. PR: https://github.com/o/r/pull/7.")), agterm.typed().join("\n"));
   assert.equal(f.store.getRun("p#1")!.entries.c.status, "waiting");
   assert.match((await f.submit({ type: "run.ping", run: "p#9", data: {}, source: "ui" })).error ?? "", /p#9/);
+  await f.close();
+});
+
+test("a finished run's Claude agent comes back in a new session, resuming its conversation", async () => {
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n") });
+  const projects = join(home, "claude-projects");
+  const { f, agterm } = await startFlowd(home, { claudeProjects: projects });
+  agterm.addSession("S9");
+  await f.submit(start("p", { pm: "S9" }));
+  await settle(f);
+  await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
+  assert.equal(f.store.getRun("p#1")!.status, "done");
+  assert.deepEqual(f.runSummary(f.store.getRun("p#1")!).resumable, ["pm"]);
+  // still open: nothing to restore, it is just shown
+  assert.deepEqual(await f.restoreSession("p#1", "pm"), { session: "S9" });
+  assert.ok(agterm.calls.includes("focus S9"));
+  agterm.sessions = []; // the last step closed it
+  assert.match((await f.restoreSession("p#1", "pm") as { error: string }).error, /no conversation of p#1 pm/);
+  mkdirSync(join(projects, "-tmp"), { recursive: true });
+  writeFileSync(join(projects, "-tmp", "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
+    message: { content: "▶ flow: step b · p#1 it.1 — run `flow show` for the instructions" } }) + "\n");
+  assert.deepEqual(await f.restoreSession("p#1", "pm"), { session: "S1" });
+  assert.ok(agterm.calls.includes("spawn S1 p | p#1 pm (restored) | /tmp/w | claude --resume 'c1'"), agterm.calls.join("\n"));
+  assert.ok(agterm.calls.includes("focus S1"));
+  assert.equal(f.store.getRun("p#1")!.status, "done");
+  assert.match((await f.restoreSession("p#1", "nope") as { error: string }).error, /no role nope/);
   await f.close();
 });

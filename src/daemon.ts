@@ -8,6 +8,7 @@ import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
+import { findClaudeSession } from "./transcripts.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -31,6 +32,8 @@ export interface FlowdOptions {
   log?: (m: string) => void;
   /** Claude Code's config, read to tell whether a spawn's folder is trusted */
   claudeConfig?: string;
+  /** Claude Code's transcripts, `<dir>/<project>/<session>.jsonl`. Default `~/.claude/projects` */
+  claudeProjects?: string;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
@@ -62,9 +65,13 @@ export interface RunSummary {
   heldBy: { hold: string; run: string | null } | null;
   /** a queued run: its place in line and how full its process is */
   queue: { position: number; open: number; max: number } | null;
+  /** agent roles run by Claude in agterm: their conversation can be reopened once the session is gone */
+  resumable: string[];
   created: number; updated: number;
   plan: PlanItem[];
 }
+
+const isClaude = (spawn: string) => basename(spawn.trim().split(/\s+/)[0]) === "claude";
 
 /** Ends a detached child and everything it started; it may have exited already. */
 function killGroup(c: ChildProcess): void {
@@ -969,6 +976,7 @@ export class Flowd {
       waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
       heldBy: s?.queued ? { hold: s.queued.hold, run: this.holders()[s.queued.hold] ?? null } : null,
       queue: run.status === "queued" ? this.queueOf(run) : null,
+      resumable: p && p.terminal !== "zmx" ? Object.keys(p.roles).filter((r) => isClaude(p.roles[r].spawn)) : [],
       created: times?.created ?? 0, updated: times?.updated ?? 0,
       plan: (p?.entries ?? []).map((e) => {
         const st = run.entries[e.id];
@@ -981,6 +989,33 @@ export class Flowd {
         };
       }),
     };
+  }
+
+  /**
+   * Brings back a role's Claude conversation once its session is gone (the run's last step closed
+   * it): a new agterm session where it ran, `<spawn> --resume <id>`. The run itself does not change.
+   */
+  async restoreSession(runId: string, role: string): Promise<{ session: string } | { error: string }> {
+    const run = this.store.getRun(runId);
+    if (!run) return { error: `no run ${runId}` };
+    const p = this.defs.processes[run.process];
+    const r = p?.roles[role];
+    if (!p || !r) return { error: `no role ${role} in ${run.process}` };
+    if (p.terminal === "zmx" || !isClaude(r.spawn)) return { error: `${role} is not a Claude agent in agterm: its conversation cannot be reopened from here` };
+    const open = run.roles[role];
+    if (open && (await this.agterm.tree()).some((x) => x.id === open)) {
+      await this.agterm.focus(open);
+      return { session: open };
+    }
+    const entries = p.entries.filter((e) => e.role === role).map((e) => e.id);
+    const root = this.o.claudeProjects ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+    const found = await findClaudeSession(root, run.id, entries, (this.store.runTimes(run.id)?.created ?? 0) - 60_000);
+    if (!found) return { error: `no conversation of ${run.id} ${role} in ${root}: Claude keeps none, or it was deleted` };
+    const name = `${renderTemplate(r.name ?? "{{run.id}} {{role}}", { ...renderData(run), role })} (restored)`;
+    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: `${r.spawn} --resume ${shq(found.id)}`, prompt: "", workspace: p.workspace ?? run.process, name });
+    await this.agterm.focus(session);
+    this.log(`${run.id} ${role}: reopened Claude session ${found.id} in ${session}`);
+    return { session };
   }
 
   runSummaries(all = false): RunSummary[] {

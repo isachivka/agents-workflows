@@ -178,6 +178,11 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
       if ("error" in r) throw new HttpError(409, r);
       return r;
     }],
+    ["POST", /^\/api\/runs\/([^/]+)\/roles\/([^/]+)\/restore$/, async ([id, role]) => {
+      const r = await f.restoreSession(id, role);
+      if ("error" in r) throw new HttpError(409, r);
+      return r;
+    }],
     ["POST", /^\/api\/runs\/([^/]+)\/roles\/([^/]+)\/(rebind|respawn)$/, ([id, role, verb], b) =>
       submit(verb === "rebind"
         ? { type: "role.bind", run: id, data: { role, session: String(b.session ?? ""), by: "human" }, source: "ui" }

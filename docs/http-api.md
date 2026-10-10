@@ -52,16 +52,18 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | GET | `/api/runs/:id/entries/:entry/prompt` | | `{text}`, what `flow show` prints for that entry |
 | POST | `/api/runs/:id/roles/:role/rebind` | `{session}` | `{run}` |
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
+| POST | `/api/runs/:id/roles/:role/restore` | | `{session}`; reopens the role's Claude conversation (`<spawn> --resume <id>`, found in `~/.claude/projects` by the step lines flowd typed into it) in a new agterm session and focuses it; an open session is just focused. The run does not change. 409 when the role is not Claude in agterm or no conversation is found |
 
 `RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
-waitingOn, roles, vars, needsYou, agentWait, waitUntil, heldBy, queue, created, updated, plan}`, where `created` and
+waitingOn, roles, vars, needsYou, agentWait, waitUntil, heldBy, queue, resumable, created, updated, plan}`, where `created` and
 `updated` are ms, when the run was created and last saved, `plan` lists every entry as
 `{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after}`
 (`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"`,
 `"end"` or `{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the
 current entry's agent declared a wait (else `null`), `waitUntil` is when a pause entry ends (ms),
 `heldBy` is `{hold, run}` while the current entry queues for a `hold` (`run`: who has it), `queue`
-is `{position, open, max}` for a run with status `queued` (waiting for a free slot), and `needsYou` is true for a `needs-human`
+is `{position, open, max}` for a run with status `queued` (waiting for a free slot), `resumable`
+lists the roles a `restore` can bring back (Claude agents in agterm), and `needsYou` is true for a `needs-human`
 run, one standing on an open human step, or one whose agent waits with `human: true`.
 
 ## Agents and events

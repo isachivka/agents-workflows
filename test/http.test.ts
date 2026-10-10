@@ -24,6 +24,8 @@ test("runs: start, list, detail by an encoded id, overrides, refusals", async ()
   assert.equal(again.status, 409);
   assert.match(again.body.error, /only a running run can be paused/);
   await s.call("POST", "/api/runs/p%231/resume");
+  const restore = await s.call("POST", "/api/runs/p%231/roles/nope/restore");
+  assert.deepEqual([restore.status, restore.body.error], [409, "no role nope in p"]);
   const ping = await s.call("POST", "/api/runs/p%231/ping");
   assert.deepEqual([ping.status, ping.body.error], [409, "p#1 is not waiting for anyone: step b is active"]);
   const skip = await s.call("POST", "/api/runs/p%231/entries/b/skip", {});

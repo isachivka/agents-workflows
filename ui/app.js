@@ -44,6 +44,7 @@ function useRounds(runs, since) {
 
 function Now() {
   const { data, error } = useData("/api/runs?all=1");
+  const { data: sessions } = useData("/api/sessions", false);
   const now = useNow();
   const [older, setOlder] = useState(false);
   const dayStart = new Date(now).setHours(0, 0, 0, 0);
@@ -77,7 +78,7 @@ function Now() {
       <h2><${Icon} name="check" />${older ? t("now.recent") : t("now.finished")}</h2>
       ${rows.length === 0 && html`<p class="muted">${t("now.noneToday")}</p>`}
       ${rows.length > 0 && html`<div class="box rows">${rows.map((x) => (x.r
-        ? html`<${FinishedRow} r=${x.r} now=${now} key=${x.r.id} />`
+        ? html`<${FinishedRow} r=${x.r} now=${now} sessions=${sessions} key=${x.r.id} />`
         : html`<${RoundRow} round=${x.round} now=${now} key=${`${x.round.run}/${x.round.iteration}`} />`))}</div>`}
       ${!older && finished.length > today.length && html`<button class="btn quiet" onClick=${() => setOlder(true)}>${t("now.older")}</button>`}
     </section>`}`;
@@ -149,8 +150,19 @@ function PingButton({ r, setErr }) {
   return html`<button class="btn quiet" disabled=${sent} title=${t("why.ping")} onClick=${ping}><${Icon} name=${sent ? "check" : "bell"} />${t(sent ? "act.pinged" : "act.ping")}</button>`;
 }
 
-function FinishedRow({ r, now }) {
+// a Claude agent whose session is gone (the last step closed it): its conversation can come back
+const goneAgents = (r, sessions) => (sessions && !isOpen(r)
+  ? r.resumable.filter((role) => r.roles[role] && !sessions.some((x) => x.id === r.roles[role])) : []);
+
+function RestoreButton({ r, role, many, setErr, cls = "btn quiet" }) {
+  const restore = attempt(() => api("POST", `/api/runs/${enc(r.id)}/roles/${enc(role)}/restore`, {}), setErr);
+  return html`<button class=${cls} title=${t("why.restore")} onClick=${restore}><${Icon} name="again" />${many ? t("act.restoreOf", { role }) : t("act.restore")}</button>`;
+}
+
+function FinishedRow({ r, now, sessions }) {
+  const [err, setErr] = useState(null);
   const last = [...r.plan].reverse().find((e) => e.note);
+  const gone = goneAgents(r, sessions);
   return html`<div class="row">
     <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
     <a href="#/run/${enc(r.id)}"><b>${runTitle(r) || runLabel(r.id)}</b></a>
@@ -158,7 +170,9 @@ function FinishedRow({ r, now }) {
     ${last && html`<span class="muted grow note" title=${last.note}>— ${last.note}</span>`}
     ${prUrl(r.vars) && html`<a class="small" href=${prUrl(r.vars)} target="_blank" rel="noreferrer">PR<${Icon} name="external" /></a>`}
     <${SlackLink} vars=${r.vars} cls="small" />
+    ${gone.map((role) => html`<${RestoreButton} r=${r} role=${role} many=${gone.length > 1} setErr=${setErr} cls="btn quiet small" key=${role} />`)}
     <span class="muted small" style="margin-left:auto">${ago(r.updated, now)}</span>
+    ${err && html`<span class="err-box small" role="alert">${err}</span>`}
   </div>`;
 }
 
@@ -361,7 +375,9 @@ function Agents({ r, post, setErr, live }) {
         <div class="agent-row"><b class="who grow">${role}</b>
           ${sid ? html`<${Pill} tone=${status === "active" ? "work" : status === "blocked" ? "you" : "calm"}>${t(`sess.${status}`)}<//>`
             : live && html`<span class="muted small">${t("run.noSession")}</span>`}
-          ${sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}>${t("act.terminal")}</button>`}</div>
+          ${sessions && goneAgents(r, sessions).includes(role)
+            ? html`<${RestoreButton} r=${r} role=${role} setErr=${setErr} />`
+            : sid && html`<button class="btn quiet" onClick=${focus(sid, setErr)}>${t("act.terminal")}</button>`}</div>
         ${live && html`<details class="more small"><summary>${t("run.agentMore")}</summary><div class="ov">
           <div><button class="btn" onClick=${() => { if (confirm(t("confirm.respawn", { role }))) post(`/roles/${enc(role)}/respawn`)(); }}>${t("act.respawn")}</button></div>
           <div><select value=${pick[role] || ""} onChange=${(e) => setPick({ ...pick, [role]: e.target.value })}>

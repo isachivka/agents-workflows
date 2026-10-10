@@ -29,6 +29,7 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml` 
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses. |
 | `src/agterm.ts` | The `Terminal` interface (spawn, type, press, text, tree, userInput, focus) and agterm behind it: the only caller of `agtermctl`; shell quoting. |
 | `src/zmx.ts` | The zmx terminal: headless sessions through the `zmx` CLI in flows' own socket directory. The daemon picks a session's terminal by its id (`zmx:` or not). |
+| `src/transcripts.ts` | Finds a role's Claude Code conversation in `~/.claude/projects` by the step lines flowd typed into it, so a finished run's agent can be resumed. Read-only. |
 | `src/plugins.ts` | The plugin interface and host: loading, events, watches with backoff, actions. |
 | `src/daemon.ts` | `Flowd`: the event loop, routing, executing actions, the outbox flush, ticks, cron, definition reloads, restart recovery. |
 | `src/http.ts` | The JSON API, the SSE stream, the static UI, the hook endpoints, the Host/Origin/content-type guard. |

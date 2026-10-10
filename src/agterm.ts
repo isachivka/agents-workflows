@@ -8,7 +8,7 @@ export interface SpawnOpts {
   cwd: string;
   /** the role's spawn command (`claude …`), run in a login zsh with the prompt as its last argument */
   spawn: string;
-  /** the agent's first prompt */
+  /** the agent's first prompt; empty: none (a resumed conversation) */
   prompt: string;
   workspace: string; name: string;
   /** labels on the session (zmx) */
@@ -44,7 +44,7 @@ export const EMPTY_INPUT_COLUMN = 2;
 export const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** The agent's command line: `<spawn> '<prompt>'`, the prompt one verbatim argument. */
-export const agentLine = (spawn: string, prompt: string) => `${spawn} ${shq(prompt)}`;
+export const agentLine = (spawn: string, prompt: string) => (prompt ? `${spawn} ${shq(prompt)}` : spawn);
 
 export function expandHome(path: string, home = homedir()): string {
   if (path === "~") return home;

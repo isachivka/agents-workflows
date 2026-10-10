@@ -450,7 +450,9 @@ After a successful `flow done`, run as your very last command:
 `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"`
 ```
 
-The run is over by then, so flowd takes the closed session calmly. When the workspace is shared
+The run is over by then, so flowd takes the closed session calmly. The conversation is not lost:
+under "Recently finished" the UI offers **Restore session**, which opens it again with
+`claude --resume` in a new session. When the workspace is shared
 — `max_runs` above 1, or a `workspace:` other processes use too — close only your own session
 instead: `agtermctl session close --target "$AGTERM_SESSION_ID"`.
 
