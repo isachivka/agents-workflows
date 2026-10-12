@@ -116,7 +116,7 @@ asks for a PR.
 
 | Option | Values | Meaning |
 |---|---|---|
-| `from` | `requested`, a login, or logins separated by commas | Whose reviews and comments count. `requested`: every **user** ever requested as a reviewer on the PR, read from its timeline, so a reviewer who already reviewed and left the current requests still counts, and one assigned after the wait armed counts too. Teams never count as people. With `from`, bots and the PR's author never count. |
+| `from` | `requested`, a login, or logins separated by commas | Whose reviews and comments count. `requested`: every **user** ever requested as a reviewer on the PR, read from its timeline, so a reviewer who already reviewed and left the current requests still counts, and one assigned after the wait armed counts too. A team is not a person, but whoever reviews on its behalf (a code-owner team is often the only request, and GitHub drops it once a member reviews) counts as requested from that review on. With `from`, bots and the PR's author never count. |
 | `only` | `decisions` | Only `APPROVED` and `CHANGES_REQUESTED` reviews count; comments and `COMMENTED` reviews do not. |
 | `already` | `true` | On the first poll, a decision that is already there fires at once, unless it is the one that last woke this entry (`previous`), or older than it. A `goto` back to the wait in the same iteration therefore needs a new decision: the one that already woke it does not count again. |
 

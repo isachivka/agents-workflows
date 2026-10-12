@@ -193,7 +193,7 @@ test("a poll that works again clears the error the last one reported", async () 
 
 // --- gh.review from the reviewer: recorded GraphQL answers ---
 
-type Rv = { id: string; by: string; bot?: boolean; state: string; at: string };
+type Rv = { id: string; by: string; bot?: boolean; state: string; at: string; forTeams?: string[] };
 type Cm = { id: string; by: string; bot?: boolean; at: string };
 const answer = (o: { state?: string; author?: string; decision?: string | null; requested?: (string | { team: string } | { bot: string } | null)[]; reviews?: Rv[]; comments?: Cm[]; totals?: [number, number]; errors?: string[] }) => ({
   ...(o.errors ? { errors: o.errors.map((message) => ({ message })) } : {}),
@@ -203,7 +203,7 @@ const answer = (o: { state?: string; author?: string; decision?: string | null; 
     reviewDecision: o.decision ?? null,
     timelineItems: { nodes: (o.requested ?? []).map((r) => ({ requestedReviewer:
       r === null ? null : typeof r === "string" ? { __typename: "User", login: r } : "team" in r ? { __typename: "Team", slug: r.team } : { __typename: "Bot", login: r.bot } })) },
-    reviews: { totalCount: o.totals?.[0] ?? (o.reviews ?? []).length, nodes: (o.reviews ?? []).map((r) => ({ id: r.id, url: `https://g/pull/7#${r.id}`, state: r.state, submittedAt: r.at, author: { __typename: r.bot ? "Bot" : "User", login: r.by } })) },
+    reviews: { totalCount: o.totals?.[0] ?? (o.reviews ?? []).length, nodes: (o.reviews ?? []).map((r) => ({ id: r.id, url: `https://g/pull/7#${r.id}`, state: r.state, submittedAt: r.at, author: { __typename: r.bot ? "Bot" : "User", login: r.by }, onBehalfOf: { nodes: (r.forTeams ?? []).map((slug) => ({ slug })) } })) },
     comments: { totalCount: o.totals?.[1] ?? (o.comments ?? []).length, nodes: (o.comments ?? []).map((c) => ({ id: c.id, url: `https://g/pull/7#${c.id}`, createdAt: c.at, author: { __typename: c.bot ? "Bot" : "User", login: c.by } })) },
   } } },
 });
@@ -217,6 +217,21 @@ test("parseReviewAnswer: requested users from the timeline, never teams or bots"
   assert.throws(() => parseReviewAnswer({ errors: [{ message: "Could not resolve to a PullRequest" }] }), /Could not resolve/);
   // partial data (say a team the token cannot read) is still an answer
   assert.deepEqual(parseReviewAnswer(answer({ requested: ["alice"], errors: ["Resource not accessible by integration"] })).requested, ["alice"]);
+});
+
+test("a member who reviewed for a requested team counts as requested, from then on", () => {
+  // only a code-owner team was requested; one of its members approved on its behalf
+  const a = parseReviewAnswer(answer({
+    requested: [{ team: "owners" }],
+    reviews: [
+      { id: "R1", by: "frank", state: "APPROVED", at: day(2), forTeams: ["owners"] },
+      { id: "R2", by: "eve", state: "COMMENTED", at: day(3) },
+    ],
+    comments: [{ id: "C1", by: "frank", at: day(4) }],
+  }));
+  assert.deepEqual(a.requested, ["frank"]);
+  assert.deepEqual(countedItems(a, { from: "requested" }).map((i) => i.id), ["R1", "C1"]);
+  assert.deepEqual(countedItems(a, { from: "requested", only: "decisions" }).map((i) => i.id), ["R1"]);
 });
 
 test("countedItems: requested people only, never bots or the author; decisions only on request; oldest first", () => {

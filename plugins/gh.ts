@@ -100,7 +100,7 @@ const REVIEW_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
       timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], first: 100) {
         nodes { ... on ReviewRequestedEvent { requestedReviewer { __typename ... on User { login } } } }
       }
-      reviews(last: 50) { totalCount nodes { id url state submittedAt author { __typename login } } }
+      reviews(last: 50) { totalCount nodes { id url state submittedAt author { __typename login } onBehalfOf(first: 10) { nodes { slug } } } }
       comments(last: 50) { totalCount nodes { id url createdAt author { __typename login } } }
     }
   }
@@ -112,7 +112,11 @@ export interface ReviewAnswer {
   totals: { reviews: number; comments: number };
 }
 
-/** The PR's author, decision, every user ever review-requested (teams and bots dropped), its reviews and comments. */
+/**
+ * The PR's author, decision, its reviews and comments, and who counts as requested: every user ever
+ * review-requested (bots dropped), plus whoever reviewed on behalf of a requested team (a code-owner
+ * team is often the only request, and GitHub clears it once a member reviews).
+ */
 export function parseReviewAnswer(json: unknown): ReviewAnswer {
   const j = json as { errors?: { message: string }[]; data?: { repository?: { pullRequest?: Record<string, any> | null } | null } };
   const pr = j.data?.repository?.pullRequest;
@@ -122,6 +126,9 @@ export function parseReviewAnswer(json: unknown): ReviewAnswer {
     .map((n: any) => n?.requestedReviewer)
     .filter((r: any) => r?.__typename === "User" && r.login)
     .map((r: any) => String(r.login));
+  for (const r of pr.reviews?.nodes ?? []) {
+    if (r?.author?.__typename !== "Bot" && r?.author?.login && (r.onBehalfOf?.nodes ?? []).length) requested.push(String(r.author.login));
+  }
   const who = (a: any) => ({ by: String(a?.login ?? ""), bot: a?.__typename === "Bot" });
   const items: ReviewItem[] = [
     ...(pr.reviews?.nodes ?? []).map((r: any) => ({ id: String(r.id), kind: "review" as const, ...who(r.author), state: String(r.state ?? ""), at: String(r.submittedAt ?? ""), url: String(r.url ?? "") })),
