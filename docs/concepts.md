@@ -96,7 +96,8 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
   before its answer was lost, say to a flowd crash) and takes it instead of starting a second agent.
 - A role with `beside: <role>` runs in the split pane of that role's agterm session: flowd opens
   the split (`agtermctl session split on`), waits for its shell to be at the prompt and types
-  `cd <cwd> && <spawn> '<first line>'` there. When that role has no session yet, its agent is
+  `cd <cwd> && /bin/zsh -lc '<spawn> <first line>'` there (`zsh -lc`, as in a main pane: that
+  shell is interactive, and an alias of yours would otherwise change the command). When that role has no session yet, its agent is
   started first with no line. The split pane is the session `<agterm id>:right`: typing, reading the
   screen and keys go to `--pane right`, and agterm's status events say which pane set a status, so
   the two agents' turns never mix (the hook reads the pane from the event on its stdin). A closed

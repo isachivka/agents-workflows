@@ -101,7 +101,9 @@ export function realAgterm(
         if (i >= 50) throw new Error(`the split pane of ${beside} has no shell at its prompt (something else runs there)`);
         await new Promise((r) => setTimeout(r, 200));
       }
-      await a.type(pane, `cd ${shq(o.cwd)} && ${agentLine(o.spawn, o.prompt)}`);
+      // the split's shell is interactive, so the user's aliases apply there (a `codex` alias that adds
+      // a flag the spawn has too stopped a live run): run it as a main-pane spawn does, in `zsh -lc`
+      await a.type(pane, `cd ${shq(o.cwd)} && /bin/zsh -lc ${shq(agentLine(o.spawn, o.prompt))}`);
       return pane;
     },
     async type(session, text) {

@@ -121,5 +121,5 @@ test("spawnBeside opens the split, waits for its shell, types the agent's comman
   const id = await realAgterm(f.bin, 0).spawnBeside({ cwd: "/w", spawn: "codex", prompt: "x", workspace: "W", name: "n" }, "S3");
   assert.equal(id, "S3:right");
   const T = "[session][type][--stdin][--target][S3][--pane][right]";
-  assert.equal(f.calls(), `[session][split][on][--target][S3]\n[tree][--json]\n${T}<cd '/w' && codex 'x'>\n${T}<\n>\n`);
+  assert.equal(f.calls(), `[session][split][on][--target][S3]\n[tree][--json]\n${T}<cd '/w' && /bin/zsh -lc 'codex '\\''x'\\'''>\n${T}<\n>\n`);
 });
