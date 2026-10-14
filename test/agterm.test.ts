@@ -15,10 +15,14 @@ for a in "$@"; do printf '[%s]' "$a" >> '${log}'; done
 case " $* " in *" --stdin "*) printf '<' >> '${log}'; cat >> '${log}'; printf '>' >> '${log}' ;; esac
 echo >> '${log}'
 if [ -n "$FAKE_FAIL" ]; then echo boom >&2; exit 3; fi
+# the split's shell runs a program once a command was typed into it (unless FAKE_STUCK)
+case " $* " in *" --pane right "*) [ "$1 $2" = "session type" ] && [ -z "$FAKE_STUCK" ] && tail -c 200 '${log}' | grep -q 'zsh -lc' && touch '${dir}/started' ;; esac
+shell='"splitForegroundShell":"zsh",'; [ -f '${dir}/started' ] && shell=''
 case "$1 $2" in
+  "session text") echo '➜ ~' ;;
   "session new") echo '{"ok":true,"result":{"id":"S-NEW"}}' ;;
   "surface cursor") echo '{"ok":true,"result":{"id":"surface:S1:left","cursor":{"column":7}}}' ;;
-  "tree --json") echo '{"ok":true,"result":{"tree":{"workspaces":[{"name":"W","sessions":[{"id":"S1","name":"one","cwd":"/x","status":"active","title":"t","surfaces":[{"id":"surface:S1:right","kind":"right"},{"id":"surface:S1:left","kind":"left"}]},{"id":"S2","name":"two","cwd":"/y"},{"id":"S3","name":"three","cwd":"/z","status":"active","statusPane":"right","hasSplit":true,"splitForegroundShell":"zsh","surfaces":[{"id":"surface:S3:left","kind":"left"},{"id":"surface:S3:right","kind":"right"}]}]}]}}}' ;;
+  "tree --json") echo '{"ok":true,"result":{"tree":{"workspaces":[{"name":"W","sessions":[{"id":"S1","name":"one","cwd":"/x","status":"active","title":"t","surfaces":[{"id":"surface:S1:right","kind":"right"},{"id":"surface:S1:left","kind":"left"}]},{"id":"S2","name":"two","cwd":"/y"},{"id":"S3","name":"three","cwd":"/z","status":"active","statusPane":"right","hasSplit":true,'"$shell"'"surfaces":[{"id":"surface:S3:left","kind":"left"},{"id":"surface:S3:right","kind":"right"}]}]}]}}}' ;;
 esac
 `);
   chmodSync(bin, 0o755);
@@ -116,10 +120,28 @@ test("a split pane is addressed as <session>:right: typing, reading, keys and fo
   assert.equal(f.calls(), `${T}<hi>\n${T}<\n>\n${T}<\r>\n[session][text][--target][S3][--pane][right]\n[session][select][--target][S3]\n[session][focus][split][--target][S3]\n[-a][agterm]\n`);
 });
 
-test("spawnBeside opens the split, waits for its shell, types the agent's command there", async () => {
+test("spawnBeside opens the split, waits for its settled prompt, types the agent's command, sees it start", async () => {
   const f = fakeAgtermctl();
-  const id = await realAgterm(f.bin, 0).spawnBeside({ cwd: "/w", spawn: "codex", prompt: "x", workspace: "W", name: "n" }, "S3");
+  const id = await realAgterm(f.bin, 0, f.bin, 1).spawnBeside({ cwd: "/w", spawn: "codex", prompt: "x", workspace: "W", name: "n" }, "S3");
   assert.equal(id, "S3:right");
   const T = "[session][type][--stdin][--target][S3][--pane][right]";
-  assert.equal(f.calls(), `[session][split][on][--target][S3]\n[tree][--json]\n${T}<cd '/w' && /bin/zsh -lc 'codex '\\''x'\\'''>\n${T}<\n>\n`);
+  const calls = f.calls().split("\n").filter(Boolean);
+  assert.equal(calls[0], "[session][split][on][--target][S3]");
+  // the prompt is read twice, the same both times, before anything is typed
+  const typed = calls.indexOf(`${T}<cd '/w' && /bin/zsh -lc 'codex '\\''x'\\'''>`);
+  assert.ok(typed > 0, calls.join("\n"));
+  assert.equal(calls.slice(0, typed).filter((c) => c === "[session][text][--target][S3][--pane][right]").length, 2);
+  assert.equal(calls[typed + 1], `${T}<`);
+  assert.equal(calls.at(-1), "[tree][--json]");
+});
+
+test("spawnBeside fails when the agent never starts in the split", async () => {
+  const f = fakeAgtermctl();
+  process.env.FAKE_STUCK = "1";
+  try {
+    await assert.rejects(realAgterm(f.bin, 0, f.bin, 1).spawnBeside({ cwd: "/w", spawn: "codex", prompt: "x", workspace: "W", name: "n" }, "S3"),
+      /the agent did not start in the split pane of S3/);
+  } finally {
+    delete process.env.FAKE_STUCK;
+  }
 });

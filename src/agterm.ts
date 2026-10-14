@@ -83,6 +83,7 @@ export function realAgterm(
   bin = process.env.FLOWS_AGTERMCTL || "agtermctl",
   submitDelayMs = 500,
   opener = process.env.FLOWS_OPEN || "open",
+  pollMs = 200,
 ): Agterm {
   const a: Agterm = {
     async spawn(o) {
@@ -95,15 +96,32 @@ export function realAgterm(
     },
     async spawnBeside(o, beside) {
       const pane = `${beside}:right`;
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
       await run(bin, ["session", "split", "on", "--target", beside]);
       // the split's shell must be at its prompt, or the command lands in whatever runs there
       for (let i = 0; !(await a.tree()).find((s) => s.id === pane)?.atShell; i++) {
         if (i >= 50) throw new Error(`the split pane of ${beside} has no shell at its prompt (something else runs there)`);
-        await new Promise((r) => setTimeout(r, 200));
+        await sleep(pollMs);
+      }
+      // agterm counts a shell that is still starting as "at its shell": wait until its prompt is drawn
+      // and still (typed earlier, the line landed ahead of the prompt; zsh read it, but a shell
+      // that flushes typeahead would not)
+      let last = "";
+      for (let i = 0; ; i++) {
+        const shown = (await a.text(pane)).trimEnd();
+        if (shown && shown === last) break;
+        if (i >= 50) throw new Error(`the shell in the split pane of ${beside} shows no settled prompt`);
+        last = shown;
+        await sleep(pollMs * 2);
       }
       // the split's shell is interactive, so the user's aliases apply there (a `codex` alias that adds
       // a flag the spawn has too stopped a live run): run it as a main-pane spawn does, in `zsh -lc`
       await a.type(pane, `cd ${shq(o.cwd)} && /bin/zsh -lc ${shq(agentLine(o.spawn, o.prompt))}`);
+      // the agent is up once the pane no longer runs its shell
+      for (let i = 0; (await a.tree()).find((s) => s.id === pane)?.atShell; i++) {
+        if (i >= 50) throw new Error(`the agent did not start in the split pane of ${beside}: its shell is still at the prompt`);
+        await sleep(pollMs);
+      }
       return pane;
     },
     async type(session, text) {
