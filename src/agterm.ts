@@ -150,7 +150,8 @@ export function realAgterm(
     },
     async text(session) {
       const { id, pane } = paneOf(session);
-      return run(bin, ["session", "text", "--target", id, ...pane]);
+      // without --pane agterm reads the focused pane, which in a split may be the other agent's
+      return run(bin, ["session", "text", "--target", id, ...(pane.length ? pane : ["--pane", "left"])]);
     },
     async press(session, keys) {
       const { id, pane } = paneOf(session);

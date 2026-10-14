@@ -145,3 +145,10 @@ test("spawnBeside fails when the agent never starts in the split", async () => {
     delete process.env.FAKE_STUCK;
   }
 });
+
+// Seen live: a split session's main pane read without --pane gave the focused split's screen.
+test("text of a main pane names the pane: agterm would read whichever pane has focus", async () => {
+  const f = fakeAgtermctl();
+  await realAgterm(f.bin).text("S1");
+  assert.equal(f.calls(), "[session][text][--target][S1][--pane][left]\n");
+});
