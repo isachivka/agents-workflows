@@ -9,7 +9,7 @@ import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, ren
 import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
-import { agentOf, lineSkills } from "./skills.ts";
+import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -822,8 +822,8 @@ export class Flowd {
       const opened = row.attempts > 0 && !role.beside ? await this.unboundSession(terminal, workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
       const session = opened ?? (role.beside
-        ? await this.spawnBeside(run, row.role, role.beside, { cwd, spawn: role.spawn, prompt: this.lineFor(run, row), workspace, name })
-        : await terminal.spawn({ cwd, spawn: role.spawn, prompt: this.lineFor(run, row), workspace, name, labels }));
+        ? await this.spawnBeside(run, row.role, role.beside, { cwd, spawn: agentSpawn(role.spawn), prompt: this.lineFor(run, row), workspace, name })
+        : await terminal.spawn({ cwd, spawn: agentSpawn(role.spawn), prompt: this.lineFor(run, row), workspace, name, labels }));
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
@@ -857,7 +857,7 @@ export class Flowd {
       const h = p.roles[host];
       const cwd = expandHome(renderTemplate(h.cwd ?? p.cwd, renderData(run)));
       const name = renderTemplate(h.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: host });
-      session = await this.agterm.spawn({ cwd, spawn: h.spawn, prompt: "", workspace: o.workspace, name });
+      session = await this.agterm.spawn({ cwd, spawn: agentSpawn(h.spawn), prompt: "", workspace: o.workspace, name });
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: host, session, by: "spawn" }, source: "flowd" });
       this.log(`${run.id}: started ${host} in ${session} for ${role} to run beside`);
@@ -1099,7 +1099,7 @@ export class Flowd {
     const found = await (agent === "claude" ? findClaudeSession : findCodexSession)(root, run.id, entries, since);
     if (!found) return { error: `no conversation of ${run.id} ${role} in ${root}: ${agent === "claude" ? "Claude" : "Codex"} keeps none, or it was deleted` };
     const name = `${renderTemplate(r.name ?? "{{run.id}} {{role}}", { ...renderData(run), role })} (restored)`;
-    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: agent === "claude" ? `${r.spawn} --resume ${shq(found.id)}` : `${r.spawn} resume ${shq(found.id)}`, prompt: "", workspace: p.workspace ?? run.process, name });
+    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: agent === "claude" ? `${r.spawn} --resume ${shq(found.id)}` : `${agentSpawn(r.spawn)} resume ${shq(found.id)}`, prompt: "", workspace: p.workspace ?? run.process, name });
     await this.agterm.focus(session);
     this.log(`${run.id} ${role}: reopened ${agent} session ${found.id} in ${session}`);
     return { session };

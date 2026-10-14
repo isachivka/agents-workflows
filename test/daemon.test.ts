@@ -1088,7 +1088,7 @@ test("a step's skills reach the agent in its own line: /name for Claude, $name f
   await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
   clock.t += 20_000;
   await settle(f);
-  assert.ok(agterm.calls.some((c) => c.startsWith("spawn ") && c.endsWith("codex --yolo '▶ flow: step c · p#1 it.1 — run `flow show` for the instructions · skills for this step: $flow $deliver (follow them)'")), agterm.calls.join("\n"));
+  assert.ok(agterm.calls.some((c) => c.startsWith("spawn ") && c.endsWith("codex --no-daemon --yolo '▶ flow: step c · p#1 it.1 — run `flow show` for the instructions · skills for this step: $flow $deliver (follow them)'")), agterm.calls.join("\n"));
   await f.close();
 });
 
@@ -1133,7 +1133,7 @@ test("a finished run's Codex agent comes back with codex resume", async () => {
     JSON.stringify({ timestamp: new Date().toISOString(), type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "▶ flow: step b · p#1 it.1 — run `flow show` for the instructions" }] } }),
   ].join("\n") + "\n");
   assert.deepEqual(await f.restoreSession("p#1", "cx"), { session: "S1" });
-  assert.ok(agterm.calls.includes("spawn S1 p | p#1 cx (restored) | /tmp/w | codex --yolo resume 'cx1'"), agterm.calls.join("\n"));
+  assert.ok(agterm.calls.includes("spawn S1 p | p#1 cx (restored) | /tmp/w | codex --no-daemon --yolo resume 'cx1'"), agterm.calls.join("\n"));
   await f.close();
 });
 
@@ -1151,7 +1151,7 @@ test("a role beside another runs in the split pane of its session, addressed as 
   await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
   clock.t += 20_000;
   await settle(f);
-  assert.ok(agterm.calls.some((c) => c.startsWith("beside S1:right | /tmp | codex '▶ flow: step c · p#1 it.1")), agterm.calls.join("\n"));
+  assert.ok(agterm.calls.some((c) => c.startsWith("beside S1:right | /tmp | codex --no-daemon '▶ flow: step c · p#1 it.1")), agterm.calls.join("\n"));
   assert.equal(f.store.getRun("p#1")!.roles.peer, "S1:right");
   // its turn comes with agterm's pane: the right pane's status is the peer's, not the lead's
   await f.submit({ type: "agterm.status", data: { session: "S1", status: "active", pane: "right" }, source: "agterm" });
@@ -1170,7 +1170,7 @@ test("a role beside another whose session is not up yet brings that agent up fir
   await f.submit(start("p"));
   await settle(f);
   assert.equal(agterm.calls[0], "spawn S1 p | p#1 lead | /tmp | claude");
-  assert.ok(agterm.calls[1].startsWith("beside S1:right | /tmp | codex '▶ flow: step c"), agterm.calls[1]);
+  assert.ok(agterm.calls[1].startsWith("beside S1:right | /tmp | codex --no-daemon '▶ flow: step c"), agterm.calls[1]);
   const run = f.store.getRun("p#1")!;
   assert.deepEqual([run.roles.lead, run.roles.peer], ["S1", "S1:right"]);
   await f.close();

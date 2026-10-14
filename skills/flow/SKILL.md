@@ -57,7 +57,8 @@ the flows UI; a new `▶ flow:` line arrives then.
 
 ## Starting a run, and waiting in line
 
-`flow start <process> --bind <role>=$AGTERM_SESSION_ID` may answer
+`flow start <process> --bind <role>=$AGTERM_SESSION_ID` (in agterm's split pane:
+`$AGTERM_SESSION_ID:right`) may answer
 `<run> queued: 2nd in line, 5 of 5 runs open`. That is success: the hand-over is done, nothing to
 retry, no limit to raise. Tell the user and end your turn. Lines like
 `▶ flow: <run> is queued — now 1st in line …` only tell you the place; do nothing. The run's first

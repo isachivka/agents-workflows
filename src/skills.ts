@@ -19,3 +19,11 @@ export const skillRefs = (names: string[], agent: "claude" | "codex" | "other"):
  */
 export const lineSkills = (names: string[], agent: "claude" | "codex" | "other"): string[] =>
   skillRefs(agent === "codex" ? [...new Set(["flow", ...names])] : names, agent);
+
+/**
+ * The spawn command as flowd runs it. Codex gets `--no-daemon`: by default its tool commands (and
+ * hooks) run in a shared background server that keeps the environment of whichever session started
+ * it, so `flow` in a Codex agent saw another session's `AGTERM_SESSION_ID` (seen live).
+ */
+export const agentSpawn = (spawn: string): string =>
+  agentOf(spawn) === "codex" && !/(^|\s)--no-daemon(\s|$)/.test(spawn) ? spawn.replace(/^(\s*\S+)/, "$1 --no-daemon") : spawn;

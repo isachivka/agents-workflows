@@ -107,6 +107,14 @@ From the installed copy of this skill, the repo is
 - `max_runs` is how many runs work at once. A start by hand or by an event beyond it waits in line
   (`queued`) and starts by itself; a cron start is skipped. Keep the limit where people can keep up
   with what the runs produce (reviews), not where the machine can.
+- A run does one entry at a time: two roles never work at once in one run, even side by side
+  (`beside`). Parallel work is two runs, or one agent handing work to the other (a peer chat while
+  its step waits with `flow wait`).
+- `skills:` names must be skills the role's agent can load where it works: the project's
+  `.claude/skills` (`.agents/skills` for Codex), the user's, or a plugin's (`plugin:skill`). A
+  skill in a parent folder of the role's `cwd` is not one; point the prompt at its file instead.
+- A step whose agent talks to another (peer chat) ends each turn waiting for the answer with
+  `flow wait --note "…"`; the answer arrives as a new turn.
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
   for the user.
 
