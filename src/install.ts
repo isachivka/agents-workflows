@@ -156,5 +156,8 @@ export async function install(o: InstallOpts = {}): Promise<void> {
   }
 
   for (const skill of ["flow", "flow-author"]) link(join(repo, "skills", skill), join(home, ".claude", "skills", skill), say);
+  // Codex agents load the same skills (as $flow) when Codex is installed
+  const codex = o.home ? join(home, ".codex") : process.env.CODEX_HOME ?? join(home, ".codex");
+  if (existsSync(codex)) for (const skill of ["flow", "flow-author"]) link(join(repo, "skills", skill), join(codex, "skills", skill), say);
   say("done. UI: http://127.0.0.1:7420");
 }

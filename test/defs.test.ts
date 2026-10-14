@@ -201,3 +201,11 @@ test("terminal: agterm by default, zmx on request, nothing else", () => {
   assert.equal(parseProcess("p", src("terminal: zmx\n"), ctx).terminal, "zmx");
   assert.deepEqual(errorsOf(() => parseProcess("p", src("terminal: tmux\n"), ctx)), ["terminal must be agterm or zmx"]);
 });
+
+test("compact needs a Claude agent: Codex says nothing when it is done", () => {
+  const yaml = (spawn: string) => `description: d\ncwd: /tmp\nroles: {cx: {spawn: "${spawn}"}}\nsteps:\n  - {do: clear, role: cx}\n  - {do: compact, role: cx}\n`;
+  assert.deepEqual(errorsOf(() => parseProcess("p", yaml("codex --yolo"), ctx)), ["steps[2]: do: compact needs a Claude agent; role cx runs codex"]);
+  assert.doesNotThrow(() => parseProcess("p", yaml("claude"), ctx));
+  const zmx = `description: d\ncwd: /tmp\nterminal: zmx\nroles: {cx: {spawn: codex}}\nsteps:\n  - {do: clear, role: cx}\n`;
+  assert.deepEqual(errorsOf(() => parseProcess("p", zmx, ctx)), ["role cx runs codex, which needs terminal: agterm (its turns reach flowd through agterm)"]);
+});

@@ -157,7 +157,10 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
   moves the selection to "Yes, I trust this folder" and presses Enter. A process that spawns an
   agent into a folder has already decided to trust it. If flowd cannot select "Yes", the run stops
   with the reason and resumes on the agent's first `active`. flowd never writes `~/.claude.json`;
-  Claude records the answer itself.
+  Claude records the answer itself. Codex asks "Trust this folder?" with "Trust and continue"
+  already selected: for a folder `~/.codex/config.toml` does not list as trusted
+  (`[projects."<path>"]`, `trust_level = "trusted"`), flowd watches for it the same way and presses
+  Enter.
 - An entry's `timeout` fails it when it stays `active` or `waiting` that long, whether or not its
   agent declared a wait. `compact` fails
   after 10 minutes without a report. Timeouts do not run while the run is paused.

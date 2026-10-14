@@ -46,3 +46,17 @@ test("skips transcripts last written before the run started, and a missing root"
   assert.equal((await findClaudeSession(dir, "p#1", ["build"], old - 60_000))?.id, "a");
   assert.equal(await findClaudeSession(join(dir, "nope"), "p#1", ["build"], 0), null);
 });
+
+test("finds a Codex session from its rollout files under sessions/YYYY/MM/DD", async () => {
+  const { findCodexSession } = await import("../src/transcripts.ts");
+  const meta = (id: string, cwd: string) => line({ type: "session_meta", payload: { id, cwd } });
+  const said = (text: string, at: string, role = "user") =>
+    line({ timestamp: at, type: "response_item", payload: { type: "message", role, content: [{ type: "input_text", text }] } });
+  const dir = root({
+    "2026/10/01/rollout-a.jsonl": [meta("cx-a", "/w/repo"), said("▶ flow: step build · p#1 it.1 — run `flow show` · skills for this step: $flow", "2026-10-01T10:00:00Z")],
+    "2026/10/02/rollout-b.jsonl": [meta("cx-b", "/w/repo"), said("▶ flow: step build · p#1 it.2 — run `flow show`", "2026-10-02T10:00:00Z")],
+    "2026/10/02/rollout-c.jsonl": [meta("cx-c", "/w/x"), said("▶ flow: step build · p#1 it.3", "2026-10-02T11:00:00Z", "assistant")],
+  });
+  assert.deepEqual(await findCodexSession(dir, "p#1", ["build"], 0), { id: "cx-b", cwd: "/w/repo", at: Date.parse("2026-10-02T10:00:00Z") });
+  assert.equal(await findCodexSession(dir, "p#1", ["other"], 0), null);
+});

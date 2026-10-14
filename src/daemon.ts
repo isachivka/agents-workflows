@@ -8,8 +8,8 @@ import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
-import { findClaudeSession } from "./transcripts.ts";
-import { agentOf, skillRefs } from "./skills.ts";
+import { findClaudeSession, findCodexSession } from "./transcripts.ts";
+import { agentOf, lineSkills } from "./skills.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -35,6 +35,8 @@ export interface FlowdOptions {
   claudeConfig?: string;
   /** Claude Code's own directory: transcripts in `projects/`, the user's skills, installed plugins. Default `$CLAUDE_CONFIG_DIR`, else `~/.claude` */
   claudeDir?: string;
+  /** Codex's own directory: `config.toml` (trusted folders), `sessions/`. Default `$CODEX_HOME`, else `~/.codex` */
+  codexDir?: string;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
@@ -71,8 +73,6 @@ export interface RunSummary {
   created: number; updated: number;
   plan: PlanItem[];
 }
-
-const isClaude = (spawn: string) => basename(spawn.trim().split(/\s+/)[0]) === "claude";
 
 /** Ends a detached child and everything it started; it may have exited already. */
 function killGroup(c: ChildProcess): void {
@@ -815,8 +815,9 @@ export class Flowd {
       if (row.entry_id) await this.submit({ type: "entry.delivered", run: run.id, entry: row.entry_id, data: {}, source: "flowd" });
       // Claude stops at its folder-trust dialog before it reads the first line: answer it,
       // beside delivery so other sessions are not held up
-      if (row.entry_id && basename(role.spawn.trim().split(/\s+/)[0]) === "claude" && !this.claudeTrusts(cwd)) {
-        this.background(this.answerTrust(run.id, row.entry_id, session, cwd));
+      const agent = agentOf(role.spawn);
+      if (row.entry_id && ((agent === "claude" && !this.claudeTrusts(cwd)) || (agent === "codex" && !this.codexTrusts(cwd)))) {
+        this.background(this.answerTrust(run.id, row.entry_id, session, cwd, agent));
       }
     } catch (e) {
       this.log(`spawn ${run.id} ${row.role}: ${msg(e)}`);
@@ -833,21 +834,25 @@ export class Flowd {
    * The process spawned an agent into this folder, so it trusts it: select "Yes, I trust this
    * folder" (Down, then Enter once the marker is on it). Never writes ~/.claude.json.
    */
-  private async answerTrust(run: string, entry: string, session: string, cwd: string): Promise<void> {
+  private async answerTrust(run: string, entry: string, session: string, cwd: string, agent: "claude" | "codex"): Promise<void> {
     const pause = () => new Promise((r) => setTimeout(r, this.o.trustPollMs ?? 1_000));
-    const yesSelected = (screen: string) => /❯\s*(\d+\.\s*)?Yes, I trust this folder/.test(screen);
+    // Claude's dialog starts on "No, exit" (Down, then Enter); Codex's on "Trust and continue" (Enter)
+    const d = agent === "claude"
+      ? { who: "Claude Code", marker: "Yes, I trust this folder", yes: /❯\s*(\d+\.\s*)?Yes, I trust this folder/, choice: "Yes, I trust this folder", down: true }
+      : { who: "Codex", marker: "Trust this folder?", yes: /›\s*1\.\s*Trust and continue/, choice: "Trust and continue", down: false };
+    const yesSelected = (screen: string) => d.yes.test(screen);
     const stop = (why: string) => this.submit({
       type: "entry.start-blocked", run, entry, source: "flowd",
-      data: { reason: `${entry}: Claude Code asks whether to trust ${cwd} and flowd could not ${why} — open the session and choose "Yes, I trust this folder"` },
+      data: { reason: `${entry}: ${d.who} asks whether to trust ${cwd} and flowd could not ${why} — open the session and choose "${d.choice}"` },
     });
     try {
       let screen = "";
-      for (let i = 0; i < 30 && !screen.includes("Yes, I trust this folder"); i++) {
+      for (let i = 0; i < 30 && !screen.includes(d.marker); i++) {
         if (i) await pause();
         screen = await this.termOf(session).text(session);
       }
-      if (!screen.includes("Yes, I trust this folder")) return; // no dialog: the start watchdog covers any other hang
-      if (!yesSelected(screen)) {
+      if (!screen.includes(d.marker)) return; // no dialog: the start watchdog covers any other hang
+      if (!yesSelected(screen) && d.down) {
         await this.termOf(session).press(session, "\x1b[B");
         await pause();
         screen = await this.termOf(session).text(session);
@@ -857,7 +862,7 @@ export class Flowd {
         return;
       }
       await this.termOf(session).press(session, "\r");
-      this.log(`answered Claude's folder-trust dialog for ${cwd}`);
+      this.log(`answered ${d.who}'s folder-trust dialog for ${cwd}`);
     } catch (e) {
       await stop(`answer it (${msg(e)})`);
     }
@@ -911,10 +916,34 @@ export class Flowd {
   private lineFor(run: RunState, row: OutboxRow): string {
     const p = this.defs.processes[run.process];
     const entry = row.entry_id ? p?.entries.find((e) => e.id === row.entry_id) : undefined;
-    const skills = entry?.step ? this.defs.steps[entry.step]?.skills ?? [] : [];
     const role = p?.roles[row.role];
-    if (!skills.length || !role || !row.text.startsWith("▶ flow: step ")) return row.text;
-    return `${row.text} · skills for this step: ${skillRefs(skills, agentOf(role.spawn)).join(" ")} (follow them)`;
+    if (!role || !row.text.startsWith("▶ flow: step ")) return row.text;
+    const refs = lineSkills(entry?.step ? this.defs.steps[entry.step]?.skills ?? [] : [], agentOf(role.spawn));
+    return refs.length ? `${row.text} · skills for this step: ${refs.join(" ")} (follow them)` : row.text;
+  }
+
+  private codexDir(): string {
+    return this.o.codexDir ?? process.env.CODEX_HOME ?? join(homedir(), ".codex");
+  }
+
+  /** Read-only, like claudeTrusts: Codex keeps `[projects."<path>"]` with `trust_level = "trusted"` in config.toml. */
+  private codexTrusts(cwd: string): boolean {
+    let toml: string;
+    try {
+      toml = readFileSync(join(this.codexDir(), "config.toml"), "utf8");
+    } catch {
+      return true;
+    }
+    let real = cwd;
+    try { real = realpathSync(cwd); } catch { /* not there yet */ }
+    const trusted = new Set<string>();
+    let table: string | null = null;
+    for (const line of toml.split("\n")) {
+      const head = /^\s*\[(.*)\]\s*$/.exec(line);
+      if (head) { table = /^projects\."(.*)"$/.exec(head[1].trim())?.[1] ?? null; continue; }
+      if (table !== null && /^\s*trust_level\s*=\s*"trusted"/.test(line)) trusted.add(table);
+    }
+    return trusted.has(cwd) || trusted.has(real);
   }
 
   /** Read-only. No config, or one that cannot be read, is no reason to stop a run. */
@@ -996,7 +1025,7 @@ export class Flowd {
       waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
       heldBy: s?.queued ? { hold: s.queued.hold, run: this.holders()[s.queued.hold] ?? null } : null,
       queue: run.status === "queued" ? this.queueOf(run) : null,
-      resumable: p && p.terminal !== "zmx" ? Object.keys(p.roles).filter((r) => isClaude(p.roles[r].spawn)) : [],
+      resumable: p && p.terminal !== "zmx" ? Object.keys(p.roles).filter((r) => agentOf(p.roles[r].spawn) !== "other") : [],
       created: times?.created ?? 0, updated: times?.updated ?? 0,
       plan: (p?.entries ?? []).map((e) => {
         const st = run.entries[e.id];
@@ -1021,20 +1050,22 @@ export class Flowd {
     const p = this.defs.processes[run.process];
     const r = p?.roles[role];
     if (!p || !r) return { error: `no role ${role} in ${run.process}` };
-    if (p.terminal === "zmx" || !isClaude(r.spawn)) return { error: `${role} is not a Claude agent in agterm: its conversation cannot be reopened from here` };
+    const agent = agentOf(r.spawn);
+    if (p.terminal === "zmx" || agent === "other") return { error: `${role} is not a Claude or Codex agent in agterm: its conversation cannot be reopened from here` };
     const open = run.roles[role];
     if (open && (await this.agterm.tree()).some((x) => x.id === open)) {
       await this.agterm.focus(open);
       return { session: open };
     }
     const entries = p.entries.filter((e) => e.role === role).map((e) => e.id);
-    const root = join(this.claudeDir(), "projects");
-    const found = await findClaudeSession(root, run.id, entries, (this.store.runTimes(run.id)?.created ?? 0) - 60_000);
-    if (!found) return { error: `no conversation of ${run.id} ${role} in ${root}: Claude keeps none, or it was deleted` };
+    const root = agent === "claude" ? join(this.claudeDir(), "projects") : join(this.codexDir(), "sessions");
+    const since = (this.store.runTimes(run.id)?.created ?? 0) - 60_000;
+    const found = await (agent === "claude" ? findClaudeSession : findCodexSession)(root, run.id, entries, since);
+    if (!found) return { error: `no conversation of ${run.id} ${role} in ${root}: ${agent === "claude" ? "Claude" : "Codex"} keeps none, or it was deleted` };
     const name = `${renderTemplate(r.name ?? "{{run.id}} {{role}}", { ...renderData(run), role })} (restored)`;
-    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: `${r.spawn} --resume ${shq(found.id)}`, prompt: "", workspace: p.workspace ?? run.process, name });
+    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: agent === "claude" ? `${r.spawn} --resume ${shq(found.id)}` : `${r.spawn} resume ${shq(found.id)}`, prompt: "", workspace: p.workspace ?? run.process, name });
     await this.agterm.focus(session);
-    this.log(`${run.id} ${role}: reopened Claude session ${found.id} in ${session}`);
+    this.log(`${run.id} ${role}: reopened ${agent} session ${found.id} in ${session}`);
     return { session };
   }
 

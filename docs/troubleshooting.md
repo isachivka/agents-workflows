@@ -56,14 +56,15 @@ not submit, an agent that crashed on start.
 - Fix: deal with whatever is on the screen. As soon as the agent starts its turn the run resumes
   by itself. If the session is gone, use **respawn** on the run page.
 
-## A run stopped with "Claude Code asks whether to trust <folder> and flowd could not …"
+## A run stopped with "Claude Code (or Codex) asks whether to trust <folder> and flowd could not …"
 
-flowd answers Claude's folder-trust dialog by itself (Down, then Enter on "Yes, I trust this
-folder"). This stop means it could not: the dialog looked different, the selection did not move,
-or `agtermctl` failed.
+flowd answers the folder-trust dialog by itself: Claude's with Down, then Enter on "Yes, I trust
+this folder"; Codex's with Enter on "Trust and continue". This stop means it could not: the dialog
+looked different, the selection did not move, or `agtermctl` failed.
 
-- Fix: open the session (`↗`), choose "Yes, I trust this folder". The agent starts and the run
-  resumes by itself. Claude remembers the folder, so the next spawn there does not ask.
+- Fix: open the session (`↗`), choose "Yes, I trust this folder" ("Trust and continue" in Codex).
+  The agent starts and the run resumes by itself. The agent remembers the folder, so the next spawn
+  there does not ask.
 
 ## `compact` never finishes
 

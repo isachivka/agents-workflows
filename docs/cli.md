@@ -184,7 +184,7 @@ Sets flows up for the current user, and can be re-run at any time:
 | the launchd agent `local.flows`, running `flow daemon` with `RunAtLoad` and `KeepAlive` | `~/Library/LaunchAgents/local.flows.plist`, log in `~/.local/state/flows/flowd.log` |
 | agterm hook lines `on status … agterm-hook` and `on session.closed … agterm-hook`, then `agtermctl hooks reload` | `~/.config/agterm/hooks.conf` |
 | Claude Code hooks (a backup is written first): `PostCompact` → `flow claude-hook compacted`; `SessionStart` → `start`, `UserPromptSubmit` and `PostToolUse` → `active`, `Stop` → `completed`, `Notification` (`permission_prompt`) → `blocked`, `Notification` (`idle_prompt`) → `idle`. All but the first run as `[ -z "$FLOW_SESSION" ] \|\| … claude-hook <event>`, so Claude sessions outside flows' zmx sessions never start node for them. | `~/.claude/settings.json`, backup `settings.json.bak-flows` |
-| links to the `flow` and `flow-author` skills | `~/.claude/skills/flow`, `~/.claude/skills/flow-author` |
+| links to the `flow` and `flow-author` skills | `~/.claude/skills/flow`, `~/.claude/skills/flow-author`; with Codex installed (`~/.codex` exists, or `$CODEX_HOME`) also `~/.codex/skills/` |
 
 The hooks and the plist call node by its absolute path (found with `command -v node` in a login
 shell) and `src/cli.ts` in this checkout. A re-install replaces flows' own hook lines, hook entry

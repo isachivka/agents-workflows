@@ -51,6 +51,15 @@ test("install wires launchd, agterm and Claude hooks, the skill and the PATH lin
   assert.equal(readlinkSync(join(home, ".claude", "skills", "flow")), "/repo/skills/flow");
   assert.equal(readlinkSync(join(home, ".claude", "skills", "flow-author")), "/repo/skills/flow-author");
   assert.equal(readlinkSync(join(home, ".local", "bin", "flow")), "/repo/bin/flow");
+  assert.equal(existsSync(join(home, ".codex", "skills")), false, "no Codex here: nothing written for it");
+});
+
+test("with Codex installed, its skills get flow and flow-author too", async () => {
+  const home = mkdtempSync(join(tmpdir(), "flows-install-"));
+  mkdirSync(join(home, ".codex"));
+  await install({ home, repo: "/repo", node: "/bin/node", launchctl: fakeBin(home, "launchctl").path, agtermctl: fakeBin(home, "agtermctl").path, uid: 501, log: () => {}, retryMs: 1 });
+  assert.equal(readlinkSync(join(home, ".codex", "skills", "flow")), "/repo/skills/flow");
+  assert.equal(readlinkSync(join(home, ".codex", "skills", "flow-author")), "/repo/skills/flow-author");
 });
 
 // nvm puts the node version in its path; after an upgrade a re-install must replace flows'

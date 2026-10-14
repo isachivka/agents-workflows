@@ -12,3 +12,10 @@ export const agentOf = (spawn: string): "claude" | "codex" | "other" => {
  */
 export const skillRefs = (names: string[], agent: "claude" | "codex" | "other"): string[] =>
   names.map((n) => (agent === "codex" ? `$${n}` : `/${n}`));
+
+/**
+ * The skills a step line names. Codex always gets `$flow` first: Claude takes the flow skill up by
+ * itself on a `▶ flow:` line, Codex is told (and again after a `/clear`).
+ */
+export const lineSkills = (names: string[], agent: "claude" | "codex" | "other"): string[] =>
+  skillRefs(agent === "codex" ? [...new Set(["flow", ...names])] : names, agent);

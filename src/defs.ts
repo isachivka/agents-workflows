@@ -1,3 +1,4 @@
+import { agentOf } from "./skills.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -118,6 +119,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     if (def.cwd !== undefined && typeof def.cwd !== "string") err(`role ${r}: cwd must be a string`);
     if (def.name !== undefined && (typeof def.name !== "string" || !def.name.trim())) err(`role ${r}: name must be a string`);
     roles[r] = { spawn: def.spawn, cwd: typeof def.cwd === "string" ? def.cwd : undefined, name: typeof def.name === "string" ? def.name : undefined };
+    if (terminal === "zmx" && agentOf(def.spawn) === "codex") err(`role ${r} runs codex, which needs terminal: agterm (its turns reach flowd through agterm)`);
   }
 
   const triggers: Trigger[] = [];
@@ -174,6 +176,8 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       if (SESSION_ACTIONS.has(r.do)) {
         if (!role || !roles[role]) err(`${at}: do: ${r.do} needs a declared agent role`);
         if (r.do === "type" && typeof r.text !== "string") err(`${at}: do: type needs text`);
+        // flowd learns a compaction ended from Claude Code's PostCompact hook; Codex has none
+        if (r.do === "compact" && role && roles[role] && agentOf(roles[role].spawn) === "codex") err(`${at}: do: compact needs a Claude agent; role ${role} runs codex`);
       } else if (!ctx.actionNames.has(r.do)) {
         err(`${at}: unknown action ${r.do}`);
       }

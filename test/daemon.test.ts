@@ -1087,6 +1087,51 @@ test("a step's skills reach the agent in its own line: /name for Claude, $name f
   await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
   clock.t += 20_000;
   await settle(f);
-  assert.ok(agterm.calls.some((c) => c.startsWith("spawn ") && c.endsWith("codex --yolo '▶ flow: step c · p#1 it.1 — run `flow show` for the instructions · skills for this step: $deliver (follow them)'")), agterm.calls.join("\n"));
+  assert.ok(agterm.calls.some((c) => c.startsWith("spawn ") && c.endsWith("codex --yolo '▶ flow: step c · p#1 it.1 — run `flow show` for the instructions · skills for this step: $flow $deliver (follow them)'")), agterm.calls.join("\n"));
+  await f.close();
+});
+
+const CODEX_DIALOG = ["Folder access", " /tmp", "Trust this folder? Codex can read, edit, and run files here.", "› 1. Trust and continue", "  2. Back to Agent Command Center", "enter continue · esc back"].join("\n");
+const CODEX_P = "description: d\ncwd: /tmp\nroles: {cx: {spawn: codex --yolo}}\nsteps:\n  - {step: b, role: cx}\n";
+
+test("flowd answers Codex's folder-trust question with Enter; a folder Codex trusts is left alone", async () => {
+  const home = makeHome({ ...STEP_FILES, "processes/p.yaml": CODEX_P, "codex/config.toml": '[projects."/elsewhere"]\ntrust_level = "trusted"\n' });
+  const agterm = new FakeAgterm();
+  agterm.screens.set("S1", CODEX_DIALOG);
+  agterm.onPress = (s, k) => { if (k === "\r") agterm.screens.set(s, "codex is up"); };
+  const { f } = await startFlowd(home, { agterm, trustPollMs: 1 });
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm), ['press S1 "\\r"']);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
+  await f.close();
+
+  const trusted = makeHome({ ...STEP_FILES, "processes/p.yaml": CODEX_P, "codex/config.toml": 'model = "x"\n\n[projects."/tmp"]\ntrust_level = "trusted"\n' });
+  const quiet = new FakeAgterm();
+  quiet.screens.set("S1", CODEX_DIALOG);
+  const b = await startFlowd(trusted, { agterm: quiet, trustPollMs: 1 });
+  await b.f.submit(start("p"));
+  await settle(b.f);
+  assert.deepEqual(pressed(quiet), []);
+  await b.f.close();
+});
+
+test("a finished run's Codex agent comes back with codex resume", async () => {
+  const home = makeHome({ ...STEP_FILES, "processes/p.yaml": CODEX_P, "codex/config.toml": '[projects."/tmp"]\ntrust_level = "trusted"\n' });
+  const { f, agterm } = await startFlowd(home);
+  agterm.addSession("S9");
+  await f.submit(start("p", { cx: "S9" }));
+  await settle(f);
+  await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
+  assert.deepEqual(f.runSummary(f.store.getRun("p#1")!).resumable, ["cx"]);
+  agterm.sessions = [];
+  const day = join(home, "codex", "sessions", "2026", "10", "14");
+  mkdirSync(day, { recursive: true });
+  writeFileSync(join(day, "rollout-x.jsonl"), [
+    JSON.stringify({ type: "session_meta", payload: { id: "cx1", cwd: "/tmp/w" } }),
+    JSON.stringify({ timestamp: new Date().toISOString(), type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "▶ flow: step b · p#1 it.1 — run `flow show` for the instructions" }] } }),
+  ].join("\n") + "\n");
+  assert.deepEqual(await f.restoreSession("p#1", "cx"), { session: "S1" });
+  assert.ok(agterm.calls.includes("spawn S1 p | p#1 cx (restored) | /tmp/w | codex --yolo resume 'cx1'"), agterm.calls.join("\n"));
   await f.close();
 });

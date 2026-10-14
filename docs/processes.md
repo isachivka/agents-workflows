@@ -98,7 +98,7 @@ roles:
 
 | Key | Meaning |
 |---|---|
-| `spawn` | Required. The command that starts the agent. It runs as `/bin/zsh -lc '<spawn> <first line>'`: a login shell, so `claude` is on `PATH`, but your `.zshrc` aliases are not loaded. Write `--dangerously-skip-permissions` yourself if you want it. |
+| `spawn` | Required. The command that starts the agent. It runs as `/bin/zsh -lc '<spawn> <first line>'`: a login shell, so `claude` is on `PATH`, but your `.zshrc` aliases are not loaded. Write `--dangerously-skip-permissions` yourself if you want it. The program decides how flowd talks to it: `claude` (Claude Code), `codex` (Codex CLI: `codex --dangerously-bypass-approvals-and-sandbox`), or anything else, typed to the same way. A Codex agent gets `$flow` and the step's skills as `$name` in each step line, its folder-trust question answered, `/clear` as for Claude, and no `do: compact` (Codex reports no end of a compaction; `flow check` refuses it). Codex's turns reach flowd through agterm's Codex status hook, so a Codex role needs `terminal: agterm`. |
 | `cwd` | Optional template, rendered when the role is spawned. Defaults to the process `cwd`. |
 | `name` | Optional template for the agterm session name, rendered when the role is spawned: `run` (with `{{run.date}}`), `vars` and `{{role}}`. Defaults to `{{run.id}} {{role}}`. A daily run reads well as `"sync {{run.date}}"`. |
 
@@ -208,6 +208,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | YAML | `yaml: …`, `a process file must be a YAML mapping` |
 | process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1`, `workspace must be a name`, `terminal must be agterm or zmx` |
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |
+| codex | `steps[N]: do: compact needs a Claude agent; role X runs codex`, `role X runs codex, which needs terminal: agterm (its turns reach flowd through agterm)` |
 | triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping`, `trigger N: with must be a mapping`, `trigger N: with only applies to on: triggers` |
 | entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do, wait_for, wait or sh`, `steps[N]: wait is a pause on its own; it cannot go with step, do or wait_for`, `steps[N]: sh must be a command`, `steps[N]: sh runs on its own; it cannot go with step, do, wait or role`, `steps[N]: cwd on a step is only for sh, and must be a path`, `steps[N]: step and do are exclusive` |
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
@@ -453,7 +454,7 @@ After a successful `flow done`, run as your very last command:
 
 The run is over by then, so flowd takes the closed session calmly. The conversation is not lost:
 under "Recently finished" the UI offers **Restore session**, which opens it again with
-`claude --resume` in a new session. When the workspace is shared
+`claude --resume` (`codex resume` for a Codex agent) in a new session. When the workspace is shared
 — `max_runs` above 1, or a `workspace:` other processes use too — close only your own session
 instead: `agtermctl session close --target "$AGTERM_SESSION_ID"`.
 
