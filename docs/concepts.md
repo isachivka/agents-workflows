@@ -94,6 +94,14 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
   `.zshrc` aliases are not loaded. A failed spawn is retried up to three times; a retry first looks
   for a session of that workspace and name that no open run has (one an earlier attempt opened
   before its answer was lost, say to a flowd crash) and takes it instead of starting a second agent.
+- A role with `beside: <role>` runs in the split pane of that role's agterm session: flowd opens
+  the split (`agtermctl session split on`), waits for its shell to be at the prompt and types
+  `cd <cwd> && <spawn> '<first line>'` there. When that role has no session yet, its agent is
+  started first with no line. The split pane is the session `<agterm id>:right`: typing, reading the
+  screen and keys go to `--pane right`, and agterm's status events say which pane set a status, so
+  the two agents' turns never mix (the hook reads the pane from the event on its stdin). A closed
+  session closes both panes; a split pane that is gone (agterm reports a closed split only as
+  hidden) is found on the tick.
 - A process with `terminal: zmx` spawns into a headless [zmx](https://github.com/neurosnap/zmx)
   session instead: `zmx run flows-<process>-<n>-<role>-<k> -d exec /bin/zsh -lc 'p=$FLOW_PROMPT;
   unset FLOW_PROMPT; exec <spawn> "$p"'` in the role's cwd, with `ZMX_DIR=~/.local/state/flows/zmx`

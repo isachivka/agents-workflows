@@ -209,3 +209,17 @@ test("compact needs a Claude agent: Codex says nothing when it is done", () => {
   const zmx = `description: d\ncwd: /tmp\nterminal: zmx\nroles: {cx: {spawn: codex}}\nsteps:\n  - {do: clear, role: cx}\n`;
   assert.deepEqual(errorsOf(() => parseProcess("p", zmx, ctx)), ["role cx runs codex, which needs terminal: agterm (its turns reach flowd through agterm)"]);
 });
+
+test("beside: a role that runs in the split pane of another role's session", () => {
+  const p = (roles: string, extra = "") => `description: d\ncwd: /tmp\n${extra}roles: {${roles}}\nsteps:\n  - {do: clear, role: lead}\n`;
+  const ok = parseProcess("p", p("lead: {spawn: claude}, peer: {spawn: codex, beside: lead}"), ctx);
+  assert.equal(ok.roles.peer.beside, "lead");
+  assert.deepEqual(errorsOf(() => parseProcess("p", p("lead: {spawn: claude}, peer: {spawn: codex, beside: ghost}"), ctx)), ["role peer: beside names no role ghost"]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", p("lead: {spawn: claude, beside: lead}"), ctx)), ["role lead: beside names no role lead"]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", p("lead: {spawn: claude}, a: {spawn: c, beside: lead}, b: {spawn: c, beside: a}"), ctx)),
+    ["role b: beside a, which itself runs beside another role"]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", p("lead: {spawn: claude}, a: {spawn: c, beside: lead}, b: {spawn: c, beside: lead}"), ctx)),
+    ["role b: beside lead, whose split pane role a already takes"]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", p("lead: {spawn: claude}, a: {spawn: c, beside: lead}", "terminal: zmx\n"), ctx)),
+    ["role a: beside needs terminal: agterm (zmx sessions have no split pane)"]);
+});

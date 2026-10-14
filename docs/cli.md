@@ -5,7 +5,7 @@
 a link to it at `~/.local/bin/flow`.
 
 **Finding the step.** Inside an agent's session, `flow` finds the step from `FLOW_SESSION` (a zmx
-session) or `AGTERM_SESSION_ID` (an agterm one):
+session) or `AGTERM_SESSION_ID` (an agterm one; `<id>:right` in its split pane):
 the open run bound to that session, and that run's current entry if it belongs to the session's
 role. Anywhere else, name it with `--run <id> --step <entry>`.
 
@@ -210,7 +210,7 @@ Not for hand use; `flow install` wires them.
 
 | Command | Called by | Does |
 |---|---|---|
-| `flow agterm-hook` | agterm, on `status` and `session.closed` | Posts `AGT_EVENT_KIND`, `AGT_EVENT_STATUS` and `AGT_SESSION_ID` to `/agterm`. |
+| `flow agterm-hook` | agterm, on `status` and `session.closed` | Posts `AGT_EVENT_KIND`, `AGT_EVENT_STATUS`, `AGT_SESSION_ID` and the pane that set the status (from the event JSON on stdin) to `/agterm`. |
 | `flow claude-hook compacted` | Claude Code's `PostCompact` hook | Posts the session (`FLOW_SESSION`, else `AGTERM_SESSION_ID`) to `/claude`. |
 | `flow claude-hook start\|active\|completed\|blocked\|idle` | Claude Code's `SessionStart`, `UserPromptSubmit`/`PostToolUse`, `Stop`, `Notification` (`permission_prompt`, `idle_prompt`) hooks | Only with `FLOW_SESSION` set: posts it with Claude's `session_id` (and `source` on `SessionStart`) from the hook's stdin to `/claude`. Without it, exits at once. |
 
@@ -223,6 +223,7 @@ Claude down.
 |---|---|---|
 | `FLOW_SESSION` | `flow` and `flow claude-hook` in a zmx session | Set by flowd when it spawns into zmx; tells `flow` which session is asking. Wins over `AGTERM_SESSION_ID`. |
 | `AGTERM_SESSION_ID` | `flow` in an agent's session | Set by agterm; tells `flow` which session is asking. |
+| `AGTERM_PANE` | `flow` in an agent's session | Set by agterm. `right` (the split pane) makes the session `<AGTERM_SESSION_ID>:right`, as flowd names a role running `beside` another. |
 | `FLOWD_URL` | `flow` | Where flowd is. Default `http://127.0.0.1:7420`. |
 | `FLOWD_HOST` | `flow daemon`, `flow install` | The address flowd listens on. Default `127.0.0.1`. `0.0.0.0` lets a phone on your Wi-Fi open `http://<the Mac's IP>:7420` — and lets anyone on that network drive flowd (see [architecture](architecture.md#security-model)). `flow install` writes it into the launchd plist when set, and keeps the one already there otherwise. |
 | `FLOWD_PORT` | `flow daemon`, `flow` | The port flowd listens on, and the CLI's default port. Default 7420. |

@@ -6,7 +6,7 @@ import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
-import { expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
+import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
 import { agentOf, lineSkills } from "./skills.ts";
@@ -357,20 +357,25 @@ export class Flowd {
     }
   }
 
-  /** zmx sends no closed event: a held zmx session missing from `zmx list` has ended. */
-  private async checkZmx(): Promise<void> {
-    const held = [...this.heldSessions()].filter((s) => s.startsWith("zmx:"));
-    if (!this.zmx || !held.length) return;
-    let live: Set<string>;
-    try {
-      live = new Set((await this.zmx.tree()).map((s) => s.id));
-    } catch (e) {
-      this.log(`zmx list: ${msg(e)}`);
-      return;
-    }
-    for (const session of held) {
-      if (!live.has(session) && this.store.sessionStatus(session) !== "closed") {
-        void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
+  /**
+   * Sessions that send no closed event: a zmx session (missing from `zmx list`) and a split pane
+   * (agterm reports a closed split as hidden; gone from the tree once its pane is destroyed).
+   */
+  private async checkUnannounced(): Promise<void> {
+    const held = [...this.heldSessions()];
+    for (const [term, ids] of [[this.zmx, held.filter((s) => s.startsWith("zmx:"))], [this.agterm, held.filter((s) => s.endsWith(":right"))]] as const) {
+      if (!term || !ids.length) continue;
+      let live: Set<string>;
+      try {
+        live = new Set((await term.tree()).map((s) => s.id));
+      } catch (e) {
+        this.log(`session list: ${msg(e)}`);
+        continue;
+      }
+      for (const session of ids) {
+        if (!live.has(session) && this.store.sessionStatus(session) !== "closed") {
+          void this.submit({ type: "agterm.closed", data: { session }, source: "flowd" });
+        }
       }
     }
   }
@@ -427,7 +432,15 @@ export class Flowd {
       case "agterm.closed": {
         const session = String(d.session ?? "");
         if (!session) return { error: "no session" };
-        return this.sessionTurn(session, (e.type === "agterm.closed" ? "closed" : AGTERM_STATUSES.has(String(d.status)) ? d.status : "idle") as SessionStatus);
+        if (e.type === "agterm.closed") {
+          // a closed session takes its split pane with it
+          if (!session.endsWith(":right") && this.heldSessions().has(`${session}:right`)) await this.sessionTurn(`${session}:right`, "closed");
+          return this.sessionTurn(session, "closed");
+        }
+        // a status belongs to the pane that set it; the scratch pane runs no agent of flows
+        if (d.pane === "scratch") return {};
+        const pane = d.pane === "right" && !session.endsWith(":right") ? `${session}:right` : session;
+        return this.sessionTurn(pane, (AGTERM_STATUSES.has(String(d.status)) ? d.status : "idle") as SessionStatus);
       }
       case "claude.status": {
         // Claude Code's own hooks: the turn signal for zmx sessions, which have no agterm to report it
@@ -722,7 +735,7 @@ export class Flowd {
   }
 
   async tickNow(): Promise<void> {
-    await this.checkZmx();
+    await this.checkUnannounced();
     return this.enqueue(async () => {
       for (const run of this.store.openRuns()) {
         if (run.status !== "running") continue;
@@ -806,9 +819,11 @@ export class Flowd {
       const labels = zmx ? { run: run.id.replace("#", "."), role: row.role } : undefined;
       // an earlier attempt may have opened the session and lost the answer (flowd died, the socket
       // broke): take that session rather than start the agent twice
-      const opened = row.attempts > 0 ? await this.unboundSession(terminal, workspace, name) : undefined;
+      const opened = row.attempts > 0 && !role.beside ? await this.unboundSession(terminal, workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
-      const session = opened ?? await terminal.spawn({ cwd, spawn: role.spawn, prompt: this.lineFor(run, row), workspace, name, labels });
+      const session = opened ?? (role.beside
+        ? await this.spawnBeside(run, row.role, role.beside, { cwd, spawn: role.spawn, prompt: this.lineFor(run, row), workspace, name })
+        : await terminal.spawn({ cwd, spawn: role.spawn, prompt: this.lineFor(run, row), workspace, name, labels }));
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
@@ -828,6 +843,26 @@ export class Flowd {
     } finally {
       this.spawning.delete(key);
     }
+  }
+
+  /**
+   * A role beside another runs in the split pane of that role's session. When that session is not
+   * up yet, its agent is started first with no line: it gets its own step line when its step comes.
+   */
+  private async spawnBeside(run: RunState, role: string, host: string, o: SpawnOpts): Promise<string> {
+    if (!this.agterm.spawnBeside) throw new Error("this terminal has no split panes");
+    let session = run.roles[host];
+    if (!session) {
+      const p = this.defs.processes[run.process]!;
+      const h = p.roles[host];
+      const cwd = expandHome(renderTemplate(h.cwd ?? p.cwd, renderData(run)));
+      const name = renderTemplate(h.name ?? "{{run.id}} {{role}}", { ...renderData(run), role: host });
+      session = await this.agterm.spawn({ cwd, spawn: h.spawn, prompt: "", workspace: o.workspace, name });
+      this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
+      await this.submit({ type: "role.bind", run: run.id, data: { role: host, session, by: "spawn" }, source: "flowd" });
+      this.log(`${run.id}: started ${host} in ${session} for ${role} to run beside`);
+    }
+    return this.agterm.spawnBeside(o, session);
   }
 
   /**

@@ -18,7 +18,7 @@ if [ -n "$FAKE_FAIL" ]; then echo boom >&2; exit 3; fi
 case "$1 $2" in
   "session new") echo '{"ok":true,"result":{"id":"S-NEW"}}' ;;
   "surface cursor") echo '{"ok":true,"result":{"id":"surface:S1:left","cursor":{"column":7}}}' ;;
-  "tree --json") echo '{"ok":true,"result":{"tree":{"workspaces":[{"name":"W","sessions":[{"id":"S1","name":"one","cwd":"/x","status":"active","title":"t","surfaces":[{"id":"surface:S1:right","kind":"right"},{"id":"surface:S1:left","kind":"left"}]},{"id":"S2","name":"two","cwd":"/y"}]}]}}}' ;;
+  "tree --json") echo '{"ok":true,"result":{"tree":{"workspaces":[{"name":"W","sessions":[{"id":"S1","name":"one","cwd":"/x","status":"active","title":"t","surfaces":[{"id":"surface:S1:right","kind":"right"},{"id":"surface:S1:left","kind":"left"}]},{"id":"S2","name":"two","cwd":"/y"},{"id":"S3","name":"three","cwd":"/z","status":"active","statusPane":"right","hasSplit":true,"splitForegroundShell":"zsh","surfaces":[{"id":"surface:S3:left","kind":"left"},{"id":"surface:S3:right","kind":"right"}]}]}]}}}' ;;
 esac
 `);
   chmodSync(bin, 0o755);
@@ -49,6 +49,9 @@ test("tree flattens workspaces into sessions", async () => {
   assert.deepEqual(await realAgterm(f.bin).tree(), [
     { id: "S1", name: "one", cwd: "/x", workspace: "W", status: "active", title: "t", overlay: false, surface: "surface:S1:left" },
     { id: "S2", name: "two", cwd: "/y", workspace: "W", status: undefined, title: undefined, overlay: false, surface: undefined },
+    { id: "S3", name: "three", cwd: "/z", workspace: "W", status: undefined, title: undefined, overlay: false, surface: "surface:S3:left" },
+    // the split pane is a session of its own, `<id>:right`, with the status agterm says is its
+    { id: "S3:right", name: "three (right)", cwd: "/z", workspace: "W", status: "active", title: undefined, overlay: false, surface: "surface:S3:right", atShell: true },
   ]);
 });
 
@@ -100,4 +103,23 @@ test("userInput: the caret past the prompt is the user typing; no surface or an 
   } finally {
     delete process.env.FAKE_FAIL;
   }
+});
+
+test("a split pane is addressed as <session>:right: typing, reading, keys and focus go to that pane", async () => {
+  const f = fakeAgtermctl();
+  const a = realAgterm(f.bin, 0, f.bin);
+  await a.type("S3:right", "hi");
+  await a.press("S3:right", "\r");
+  await a.text("S3:right");
+  await a.focus("S3:right");
+  const T = "[session][type][--stdin][--target][S3][--pane][right]";
+  assert.equal(f.calls(), `${T}<hi>\n${T}<\n>\n${T}<\r>\n[session][text][--target][S3][--pane][right]\n[session][select][--target][S3]\n[session][focus][split][--target][S3]\n[-a][agterm]\n`);
+});
+
+test("spawnBeside opens the split, waits for its shell, types the agent's command there", async () => {
+  const f = fakeAgtermctl();
+  const id = await realAgterm(f.bin, 0).spawnBeside({ cwd: "/w", spawn: "codex", prompt: "x", workspace: "W", name: "n" }, "S3");
+  assert.equal(id, "S3:right");
+  const T = "[session][type][--stdin][--target][S3][--pane][right]";
+  assert.equal(f.calls(), `[session][split][on][--target][S3]\n[tree][--json]\n${T}<cd '/w' && codex 'x'>\n${T}<\n>\n`);
 });

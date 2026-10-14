@@ -129,20 +129,27 @@ async function stdinJson(): Promise<Record<string, unknown>> {
   }
 }
 
+/** This agterm pane as flowd names it: the session id, `<id>:right` in its split pane. */
+const agtermSession = () =>
+  process.env.AGTERM_SESSION_ID ? `${process.env.AGTERM_SESSION_ID}${process.env.AGTERM_PANE === "right" ? ":right" : ""}` : "";
+
 export async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === "agterm-hook") {
-    return hook("/agterm", { kind: process.env.AGT_EVENT_KIND, status: process.env.AGT_EVENT_STATUS, session: process.env.AGT_SESSION_ID });
+    // the event on stdin says which pane set a status (a split pane runs an agent of its own)
+    const event = await stdinJson();
+    const pane = str((event.payload as Record<string, unknown> | undefined)?.pane);
+    return hook("/agterm", { kind: process.env.AGT_EVENT_KIND, status: process.env.AGT_EVENT_STATUS, session: process.env.AGT_SESSION_ID, pane });
   }
   if (cmd === "claude-hook") {
     const event = rest[0];
-    if (event === "compacted") return hook("/claude", { event, session: process.env.FLOW_SESSION || process.env.AGTERM_SESSION_ID });
+    if (event === "compacted") return hook("/claude", { event, session: process.env.FLOW_SESSION || agtermSession() });
     // turn signals are for zmx sessions only: agterm reports an agterm session's turns itself
     if (!process.env.FLOW_SESSION) return 0;
     const input = await stdinJson();
     return hook("/claude", { event, session: process.env.FLOW_SESSION, claude: str(input.session_id), source: str(input.source) });
   }
-  const session = process.env.FLOW_SESSION || process.env.AGTERM_SESSION_ID || undefined;
+  const session = process.env.FLOW_SESSION || agtermSession() || undefined;
   try {
     const a = parseArgs(rest);
     switch (cmd) {

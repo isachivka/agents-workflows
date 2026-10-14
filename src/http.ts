@@ -229,7 +229,7 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
     ["POST", /^\/agterm$/, (_p, b) => {
       const session = typeof b.session === "string" ? b.session : "";
       if (session) {
-        void f.submit({ type: b.kind === "session.closed" ? "agterm.closed" : "agterm.status", data: { session, status: b.status }, source: "agterm" });
+        void f.submit({ type: b.kind === "session.closed" ? "agterm.closed" : "agterm.status", data: { session, status: b.status, pane: b.pane }, source: "agterm" });
       }
       return {};
     }],

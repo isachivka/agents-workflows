@@ -1135,3 +1135,54 @@ test("a finished run's Codex agent comes back with codex resume", async () => {
   assert.ok(agterm.calls.includes("spawn S1 p | p#1 cx (restored) | /tmp/w | codex --yolo resume 'cx1'"), agterm.calls.join("\n"));
   await f.close();
 });
+
+const PAIR = (first: "lead" | "peer") => ({
+  ...STEP_FILES,
+  "processes/p.yaml": `description: d\ncwd: /tmp\nroles: {lead: {spawn: claude}, peer: {spawn: codex, beside: lead}}\nsteps:\n${first === "lead"
+    ? "  - {step: b, role: lead}\n  - {step: c, role: peer}\n" : "  - {step: c, role: peer}\n  - {step: b, role: lead}\n"}`,
+});
+
+test("a role beside another runs in the split pane of its session, addressed as <session>:right", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome(PAIR("lead")));
+  await f.submit(start("p"));
+  await settle(f);
+  assert.ok(agterm.calls[0].startsWith("spawn S1 p | p#1 lead | /tmp | claude '▶ flow: step b"), agterm.calls[0]);
+  await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
+  clock.t += 20_000;
+  await settle(f);
+  assert.ok(agterm.calls.some((c) => c.startsWith("beside S1:right | /tmp | codex '▶ flow: step c · p#1 it.1")), agterm.calls.join("\n"));
+  assert.equal(f.store.getRun("p#1")!.roles.peer, "S1:right");
+  // its turn comes with agterm's pane: the right pane's status is the peer's, not the lead's
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "active", pane: "right" }, source: "agterm" });
+  assert.equal(f.store.sessionStatus("S1:right"), "active");
+  assert.notEqual(f.store.sessionStatus("S1"), "active");
+  // closing the session closes both panes
+  await f.submit({ type: "agterm.closed", data: { session: "S1" }, source: "agterm" });
+  await settle(f);
+  const run = f.store.getRun("p#1")!;
+  assert.deepEqual([run.roles.lead, run.roles.peer], [null, null]);
+  await f.close();
+});
+
+test("a role beside another whose session is not up yet brings that agent up first, with no line", async () => {
+  const { f, agterm } = await startFlowd(makeHome(PAIR("peer")));
+  await f.submit(start("p"));
+  await settle(f);
+  assert.equal(agterm.calls[0], "spawn S1 p | p#1 lead | /tmp | claude");
+  assert.ok(agterm.calls[1].startsWith("beside S1:right | /tmp | codex '▶ flow: step c"), agterm.calls[1]);
+  const run = f.store.getRun("p#1")!;
+  assert.deepEqual([run.roles.lead, run.roles.peer], ["S1", "S1:right"]);
+  await f.close();
+});
+
+test("a split pane that is gone closes its role on the next tick", async () => {
+  const { f, agterm, clock } = await startFlowd(makeHome(PAIR("peer")), { tickMs: 0 });
+  await f.submit(start("p"));
+  await settle(f);
+  agterm.sessions = agterm.sessions.filter((s) => s.id !== "S1:right");
+  clock.t += 10_000;
+  await f.tickNow();
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.roles.peer, null);
+  await f.close();
+});

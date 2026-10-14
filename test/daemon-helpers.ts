@@ -25,6 +25,12 @@ export class FakeAgterm implements Terminal {
     if (this.lostSpawn > 0) { this.lostSpawn--; throw new Error("lost the answer"); }
     return id;
   }
+  async spawnBeside(o: SpawnOpts, beside: string): Promise<string> {
+    const id = `${beside}:right`;
+    this.calls.push(`beside ${id} | ${o.cwd} | ${agentLine(o.spawn, o.prompt)}`);
+    this.sessions.push({ id, name: `${o.name}`, cwd: o.cwd, workspace: o.workspace });
+    return id;
+  }
   async type(session: string, text: string): Promise<void> {
     if (this.failType > 0) { this.failType--; throw new Error("session gone"); }
     this.calls.push(`type ${session} ${text}`);

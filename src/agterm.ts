@@ -2,7 +2,11 @@ import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
-export interface SessionInfo { id: string; name: string; cwd: string; workspace: string; status?: string; title?: string; overlay?: boolean; surface?: string }
+export interface SessionInfo {
+  id: string; name: string; cwd: string; workspace: string; status?: string; title?: string; overlay?: boolean; surface?: string;
+  /** a split pane whose shell is at its prompt: a command typed now runs */
+  atShell?: boolean;
+}
 
 export interface SpawnOpts {
   cwd: string;
@@ -30,9 +34,12 @@ export interface Terminal {
    * typing now would land on top. Cannot tell → false.
    */
   userInput(session: string): Promise<boolean>;
+  /** starts the agent in the split pane of `beside` (a session id) and returns `<beside>:right`; agterm only */
+  spawnBeside?(o: SpawnOpts, beside: string): Promise<string>;
 }
 
 export interface Agterm extends Terminal {
+  spawnBeside(o: SpawnOpts, beside: string): Promise<string>;
   reloadHooks(): Promise<void>;
   /** zero-based caret column of a surface (`agtermctl surface cursor`) */
   cursorColumn(surface: string): Promise<number>;
@@ -40,6 +47,10 @@ export interface Agterm extends Terminal {
 
 /** The caret column at an empty input box: right after `❯ ` (Claude Code) or `› ` (Codex). */
 export const EMPTY_INPUT_COLUMN = 2;
+
+/** `<session>:right` is that agterm session's split pane; a bare id is its main pane. */
+export const paneOf = (session: string): { id: string; pane: string[] } =>
+  session.endsWith(":right") ? { id: session.slice(0, -":right".length), pane: ["--pane", "right"] } : { id: session, pane: [] };
 
 export const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -82,11 +93,23 @@ export function realAgterm(
       if (typeof id !== "string") throw new Error(`agtermctl session new: no id in ${out.slice(0, 200)}`);
       return id;
     },
+    async spawnBeside(o, beside) {
+      const pane = `${beside}:right`;
+      await run(bin, ["session", "split", "on", "--target", beside]);
+      // the split's shell must be at its prompt, or the command lands in whatever runs there
+      for (let i = 0; !(await a.tree()).find((s) => s.id === pane)?.atShell; i++) {
+        if (i >= 50) throw new Error(`the split pane of ${beside} has no shell at its prompt (something else runs there)`);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      await a.type(pane, `cd ${shq(o.cwd)} && ${agentLine(o.spawn, o.prompt)}`);
+      return pane;
+    },
     async type(session, text) {
       // Claude's composer takes a newline typed with the text, or passed as an argument, as text, not Enter.
       // So: the text, a pause, then Enter alone on stdin.
       // ponytail: fixed pause, no read-back; read the screen back with `session text` and retry if it still misses.
-      const typeArgs = ["session", "type", "--stdin", "--target", session];
+      const { id, pane } = paneOf(session);
+      const typeArgs = ["session", "type", "--stdin", "--target", id, ...pane];
       await run(bin, typeArgs, text.replace(/\n$/, ""));
       await new Promise((r) => setTimeout(r, submitDelayMs));
       await run(bin, typeArgs, "\n");
@@ -95,7 +118,9 @@ export function realAgterm(
       await run(bin, ["hooks", "reload"]);
     },
     async focus(session) {
-      await run(bin, ["session", "select", "--target", session]);
+      const { id, pane } = paneOf(session);
+      await run(bin, ["session", "select", "--target", id]);
+      if (pane.length) await run(bin, ["session", "focus", "split", "--target", id]);
       // selecting inside agterm leaves agterm behind the browser, often in another Space
       try {
         await run(opener, ["-a", process.env.FLOWS_AGTERM_APP || "agterm"]);
@@ -104,10 +129,12 @@ export function realAgterm(
       }
     },
     async text(session) {
-      return run(bin, ["session", "text", "--target", session]);
+      const { id, pane } = paneOf(session);
+      return run(bin, ["session", "text", "--target", id, ...pane]);
     },
     async press(session, keys) {
-      await run(bin, ["session", "type", "--stdin", "--target", session], keys);
+      const { id, pane } = paneOf(session);
+      await run(bin, ["session", "type", "--stdin", "--target", id, ...pane], keys);
     },
     async cursorColumn(surface) {
       const column = Number(JSON.parse(await run(bin, ["surface", "cursor", "--target", surface, "--json"]))?.result?.cursor?.column);
@@ -119,8 +146,15 @@ export function realAgterm(
       const sessions: SessionInfo[] = [];
       for (const ws of out?.result?.tree?.workspaces ?? []) {
         for (const s of ws.sessions ?? []) {
-          sessions.push({ id: s.id, name: s.name ?? "", cwd: s.cwd ?? "", workspace: ws.name ?? "", status: s.status, title: s.title, overlay: s.overlay === true,
-            surface: (s.surfaces ?? []).find((x: { kind?: string }) => x.kind === "left")?.id });
+          const surface = (kind: string) => (s.surfaces ?? []).find((x: { kind?: string }) => x.kind === kind)?.id;
+          // the status belongs to the pane that set it (agterm's statusPane)
+          const right = s.statusPane === "right";
+          sessions.push({ id: s.id, name: s.name ?? "", cwd: s.cwd ?? "", workspace: ws.name ?? "", status: right ? undefined : s.status, title: s.title, overlay: s.overlay === true,
+            surface: surface("left") });
+          if (s.hasSplit) {
+            sessions.push({ id: `${s.id}:right`, name: `${s.name ?? ""} (right)`, cwd: s.splitCwd ?? s.cwd ?? "", workspace: ws.name ?? "", status: right ? s.status : undefined,
+              title: undefined, overlay: s.overlay === true || (s.paneOverlays ?? []).includes("right"), surface: surface("right"), atShell: Boolean(s.splitForegroundShell) });
+          }
         }
       }
       return sessions;

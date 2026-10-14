@@ -30,7 +30,11 @@ export interface Entry {
 }
 
 /** name: the agterm session name, a template over run and role (default "{{run.id}} {{role}}") */
-export interface Role { spawn: string; cwd?: string; name?: string }
+export interface Role {
+  spawn: string; cwd?: string; name?: string;
+  /** runs in the split pane (right) of this role's agterm session */
+  beside?: string;
+}
 export interface Trigger { cron?: string; on?: string; where: Dict; with: Dict }
 
 export interface Process {

@@ -115,11 +115,22 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   for (const [r, def] of Object.entries(isObj(raw.roles) ? raw.roles : {})) {
     if (r === "human") { err("role name human is reserved"); continue; }
     if (!isObj(def) || typeof def.spawn !== "string" || !def.spawn.trim()) { err(`role ${r}: spawn is required`); continue; }
-    for (const k of Object.keys(def)) if (k !== "spawn" && k !== "cwd" && k !== "name") err(`role ${r}: unknown key ${k}`);
+    for (const k of Object.keys(def)) if (k !== "spawn" && k !== "cwd" && k !== "name" && k !== "beside") err(`role ${r}: unknown key ${k}`);
     if (def.cwd !== undefined && typeof def.cwd !== "string") err(`role ${r}: cwd must be a string`);
     if (def.name !== undefined && (typeof def.name !== "string" || !def.name.trim())) err(`role ${r}: name must be a string`);
-    roles[r] = { spawn: def.spawn, cwd: typeof def.cwd === "string" ? def.cwd : undefined, name: typeof def.name === "string" ? def.name : undefined };
+    roles[r] = { spawn: def.spawn, cwd: typeof def.cwd === "string" ? def.cwd : undefined, name: typeof def.name === "string" ? def.name : undefined,
+      ...(typeof def.beside === "string" ? { beside: def.beside } : {}) };
     if (terminal === "zmx" && agentOf(def.spawn) === "codex") err(`role ${r} runs codex, which needs terminal: agterm (its turns reach flowd through agterm)`);
+  }
+
+  const taken = new Map<string, string>(); // host → the role in its split pane
+  for (const [r, role] of Object.entries(roles)) {
+    if (role.beside === undefined) continue;
+    if (role.beside === r || !roles[role.beside]) err(`role ${r}: beside names no role ${role.beside}`);
+    else if (roles[role.beside].beside !== undefined) err(`role ${r}: beside ${role.beside}, which itself runs beside another role`);
+    else if (taken.has(role.beside)) err(`role ${r}: beside ${role.beside}, whose split pane role ${taken.get(role.beside)} already takes`);
+    else if (terminal === "zmx") err(`role ${r}: beside needs terminal: agterm (zmx sessions have no split pane)`);
+    else taken.set(role.beside, r);
   }
 
   const triggers: Trigger[] = [];

@@ -17,7 +17,7 @@ const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts")
 function flow(args: string[], env: Record<string, string>, stdin = "") {
   const started = Date.now();
   return new Promise<{ code: number; stdout: string; stderr: string; ms: number }>((resolve) => {
-    const child = execFile(process.execPath, [CLI, ...args], { env: { ...process.env, AGTERM_SESSION_ID: "", FLOW_SESSION: "", ...env } }, (err, stdout, stderr) => {
+    const child = execFile(process.execPath, [CLI, ...args], { env: { ...process.env, AGTERM_SESSION_ID: "", AGTERM_PANE: "", FLOW_SESSION: "", ...env } }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
       resolve({ code, stdout, stderr, ms: Date.now() - started });
     });
@@ -198,5 +198,19 @@ test("FLOW_SESSION names the session over AGTERM_SESSION_ID (a zmx session insid
   const shown = await flow(["show"], { FLOWD_URL: s.base, FLOW_SESSION: "S1", AGTERM_SESSION_ID: "S-pane" });
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Do B for p#1/);
+  await s.close();
+});
+
+test("in a split pane flow is that pane's session, and agterm's hook carries the pane", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  await s.call("POST", "/api/runs", { process: "p", bind: { pm: "S1:right" } });
+  await settle(s.f);
+  const shown = await flow(["show"], { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1", AGTERM_PANE: "right" });
+  assert.match(shown.stdout, /^flow · p#1 · iteration 1 · step b/m);
+  const hooked = await flow(["agterm-hook"], { FLOWD_URL: s.base, AGT_EVENT_KIND: "status", AGT_EVENT_STATUS: "active", AGT_SESSION_ID: "S1" },
+    JSON.stringify({ kind: "status", session: "S1", payload: { status: "active", pane: "right" } }));
+  assert.equal(hooked.code, 0);
+  await settle(s.f);
+  assert.equal(s.f.store.sessionStatus("S1:right"), "active");
   await s.close();
 });
