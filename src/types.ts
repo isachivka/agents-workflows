@@ -49,7 +49,12 @@ export interface Process {
   source: string;
 }
 
-export interface StepDef { id: string; summary: string; body: string; source: string }
+export interface StepDef {
+  id: string; summary: string; body: string;
+  /** skills the agent should have loaded for this step: named in the line typed to it */
+  skills: string[];
+  source: string;
+}
 
 export interface Defs {
   processes: Record<string, Process>;

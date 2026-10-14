@@ -76,7 +76,12 @@ test("definitions: list, create, stale writes, invalid writes, delete", async ()
 
   assert.equal((await s.call("PUT", "/api/steps/d", { summary: "Dee", body: "Do D", mtime: null })).status, 200);
   const step = await s.call("GET", "/api/steps/d");
-  assert.deepEqual([step.body.summary, step.body.body], ["Dee", "Do D"]);
+  assert.deepEqual([step.body.summary, step.body.body, step.body.skills], ["Dee", "Do D", []]);
+  // the editor keeps a step's skills
+  assert.equal((await s.call("PUT", "/api/steps/e", { summary: "E", body: "Do E", skills: ["deliver", "bos:peer-chat"], mtime: null })).status, 200);
+  const e = await s.call("GET", "/api/steps/e");
+  assert.deepEqual(e.body.skills, ["deliver", "bos:peer-chat"]);
+  assert.match(e.body.text, /^---\nsummary: "E"\nskills: \["deliver", "bos:peer-chat"\]\n---\n/);
   const steps = await s.call("GET", "/api/steps");
   assert.deepEqual(steps.body.find((x: any) => x.id === "b").usedBy, ["p"]);
   assert.equal((await s.call("PUT", "/api/steps/d", { mtime: step.body.mtime })).status, 400);

@@ -9,6 +9,7 @@ import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, ren
 import { expandHome, shq, type SessionInfo, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession } from "./transcripts.ts";
+import { agentOf, skillRefs } from "./skills.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -32,8 +33,8 @@ export interface FlowdOptions {
   log?: (m: string) => void;
   /** Claude Code's config, read to tell whether a spawn's folder is trusted */
   claudeConfig?: string;
-  /** Claude Code's transcripts, `<dir>/<project>/<session>.jsonl`. Default `~/.claude/projects` */
-  claudeProjects?: string;
+  /** Claude Code's own directory: transcripts in `projects/`, the user's skills, installed plugins. Default `$CLAUDE_CONFIG_DIR`, else `~/.claude` */
+  claudeDir?: string;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
@@ -758,7 +759,7 @@ export class Flowd {
       if (this.now() - (this.lastTyped.get(session) ?? -Infinity) < (this.o.gapMs ?? 2_000)) continue;
       try {
         if (await this.termOf(session).userInput(session)) continue; // the line stays queued; retried on the next flush
-        await this.termOf(session).type(session, row.text);
+        await this.termOf(session).type(session, this.lineFor(run, row));
         this.store.markSent(row.id, this.now());
         this.lastTyped.set(session, this.now());
         if (row.entry_id) void this.submit({ type: "entry.delivered", run: row.run_id, entry: row.entry_id, data: {}, source: "flowd" });
@@ -807,7 +808,7 @@ export class Flowd {
       // broke): take that session rather than start the agent twice
       const opened = row.attempts > 0 ? await this.unboundSession(terminal, workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
-      const session = opened ?? await terminal.spawn({ cwd, spawn: role.spawn, prompt: row.text, workspace, name, labels });
+      const session = opened ?? await terminal.spawn({ cwd, spawn: role.spawn, prompt: this.lineFor(run, row), workspace, name, labels });
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
@@ -899,6 +900,24 @@ export class Flowd {
     });
   }
 
+  private claudeDir(): string {
+    return this.o.claudeDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+  }
+
+  /**
+   * A step line as the role's agent gets it: the step's skills named in it, so they reach the agent
+   * as the person's words (Claude: the files attached; Codex: `$name`), not inside `flow show`'s output.
+   */
+  private lineFor(run: RunState, row: OutboxRow): string {
+    const p = this.defs.processes[run.process];
+    const entry = row.entry_id ? p?.entries.find((e) => e.id === row.entry_id) : undefined;
+    const skills = entry?.step ? this.defs.steps[entry.step]?.skills ?? [] : [];
+    const role = p?.roles[row.role];
+    if (!skills.length || !role || !row.text.startsWith("▶ flow: step ")) return row.text;
+    const cwd = expandHome(renderTemplate(role.cwd ?? p!.cwd, renderData(run)));
+    return `${row.text} · skills for this step: ${skillRefs(skills, agentOf(role.spawn), cwd, this.claudeDir()).join(" ")} (follow them)`;
+  }
+
   /** Read-only. No config, or one that cannot be read, is no reason to stop a run. */
   private claudeTrusts(cwd: string): boolean {
     const path = this.o.claudeConfig ?? join(process.env.CLAUDE_CONFIG_DIR ?? homedir(), ".claude.json");
@@ -936,6 +955,8 @@ export class Flowd {
     if (s?.event) lines.push(`woken by: ${s.event.type}${s.event.outcome ? ` ${s.event.outcome}` : ""} ${JSON.stringify(s.event.data)}`);
     const vars = Object.entries(run.vars);
     if (vars.length) lines.push(`vars: ${vars.map(([k, v]) => `${k}=${v}`).join("  ")}`);
+    const skills = entry.step ? this.defs.steps[entry.step]?.skills ?? [] : [];
+    if (skills.length) lines.push(`skills: ${skills.join(", ")} (they came with the step's line; load any you do not have yet)`);
     lines.push("", prompt, "", entry.kind === "human"
       ? `Close it in the UI or with \`flow done --human --run ${shq(run.id)} --step ${entry.id}\``
       : "Report: `flow done [--note …] [--evidence URL]` · `flow failed --note …` · `flow set key=value` · ending your turn to wait on purpose: `flow wait --note …`");
@@ -1008,7 +1029,7 @@ export class Flowd {
       return { session: open };
     }
     const entries = p.entries.filter((e) => e.role === role).map((e) => e.id);
-    const root = this.o.claudeProjects ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
+    const root = join(this.claudeDir(), "projects");
     const found = await findClaudeSession(root, run.id, entries, (this.store.runTimes(run.id)?.created ?? 0) - 60_000);
     if (!found) return { error: `no conversation of ${run.id} ${role} in ${root}: Claude keeps none, or it was deleted` };
     const name = `${renderTemplate(r.name ?? "{{run.id}} {{role}}", { ...renderData(run), role })} (restored)`;

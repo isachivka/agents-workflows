@@ -113,6 +113,7 @@ export async function startFlowd(home: string, opts: Partial<FlowdOptions> = {})
     home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], now: () => clock.t,
     tickMs: 0, flushMs: 0, titleMs: 0, gapMs: 2_000, spawnGraceMs: 15_000, watchDefs: false, retryBaseMs: 10, log: () => {},
     claudeConfig: join(home, "no-claude.json"), // never the real ~/.claude.json
+    claudeDir: join(home, "claude"), // nor ~/.claude
     ...opts,
   });
   // an event loop that feeds itself never lets idle() return and writes to the database until the

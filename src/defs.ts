@@ -37,6 +37,9 @@ const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 const isObj = (v: unknown): v is Dict => typeof v === "object" && v !== null && !Array.isArray(v);
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** a skill as Claude Code and Codex name it: `deliver`, or `plugin:skill` */
+const SKILL_RE = /^[A-Za-z0-9][\w.-]*(:[A-Za-z0-9][\w.-]*)?$/;
+
 export function parseStep(id: string, text: string, source = ""): StepDef {
   const errors: string[] = [];
   if (!NAME_RE.test(id)) errors.push(`step id ${id} must match ${NAME_RE}`);
@@ -50,24 +53,28 @@ export function parseStep(id: string, text: string, source = ""): StepDef {
   } catch (e) {
     errors.push(`frontmatter: ${message(e)}`);
   }
-  for (const k of Object.keys(fm)) if (k !== "summary") errors.push(`unknown key ${k}`);
+  for (const k of Object.keys(fm)) if (k !== "summary" && k !== "skills") errors.push(`unknown key ${k}`);
   if (typeof fm.summary !== "string" || !fm.summary.trim()) errors.push("summary is required");
+  const skills = fm.skills ?? [];
+  if (!Array.isArray(skills) || !skills.every((x) => typeof x === "string" && SKILL_RE.test(x))) errors.push("skills must be a list of skill names (deliver, plugin:skill)");
   if (!m[2].trim()) errors.push("body is empty");
   if (errors.length) throw new DefError(errors);
-  return { id, summary: String(fm.summary).trim(), body: m[2].trim(), source };
+  return { id, summary: String(fm.summary).trim(), body: m[2].trim(), skills: skills as string[], source };
 }
 
-export function splitStep(text: string): { summary: string; body: string } {
+export function splitStep(text: string): { summary: string; body: string; skills: string[] } {
   const m = FRONTMATTER.exec(text.replace(/\r\n/g, "\n"));
-  if (!m) return { summary: "", body: text };
+  if (!m) return { summary: "", body: text, skills: [] };
   let summary = "";
+  let skills: string[] = [];
   try {
     const fm = parse(m[1]);
     if (isObj(fm) && typeof fm.summary === "string") summary = fm.summary;
+    if (isObj(fm) && Array.isArray(fm.skills)) skills = fm.skills.map(String);
   } catch {
     // lenient: the editor shows whatever is there
   }
-  return { summary, body: m[2].trim() };
+  return { summary, body: m[2].trim(), skills };
 }
 
 export const PROCESS_KEYS = new Set(["description", "cwd", "workspace", "terminal", "repeat", "max_runs", "triggers", "roles", "steps"]);

@@ -206,20 +206,21 @@ export function StepEditor({ arg: id }) {
   const isNew = Boolean(error && error.status === 404);
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
+  const [skills, setSkills] = useState("");
   const [mtime, setMtime] = useState(null);
   const [errors, setErrors] = useState([]);
   const [runId, setRunId] = useState("");
   const [preview, setPreview] = useState(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    if (data) { setSummary(data.summary); setBody(data.body); setMtime(data.mtime); setErrors(data.errors); setReady(true); }
+    if (data) { setSummary(data.summary); setBody(data.body); setSkills((data.skills || []).join(", ")); setMtime(data.mtime); setErrors(data.errors); setReady(true); }
     else if (isNew) setReady(true);
   }, [data, isNew]);
   if (error && !isNew) return html`<${Loading} error=${error} />`;
   if (!ready) return html`<${Loading} />`;
   const save = async () => {
     try {
-      const r = await api("PUT", `/api/steps/${enc(id)}`, { summary, body, mtime });
+      const r = await api("PUT", `/api/steps/${enc(id)}`, { summary, body, skills: skills.split(/[\s,]+/).filter(Boolean), mtime });
       setMtime(r.mtime);
       setErrors([]);
     } catch (e) {
@@ -246,7 +247,8 @@ export function StepEditor({ arg: id }) {
       ${!isNew && html`<button class="danger" onClick=${remove}>Delete</button>`}
     </div>
     ${errors.length > 0 && html`<pre class="err">${errors.join("\n")}</pre>`}
-    <div class="grid2"><label>summary</label><input value=${summary} onInput=${(e) => setSummary(e.target.value)} /></div>
+    <div class="grid2"><label>summary</label><input value=${summary} onInput=${(e) => setSummary(e.target.value)} />
+      <label>skills</label><input value=${skills} placeholder="deliver, aqa" title="Skills the agent should have for this step. They are named in the line typed to it: Claude gets the files attached, Codex $name." onInput=${(e) => setSkills(e.target.value)} /></div>
     <p class="muted">Placeholders: {{run.id}} {{run.process}} {{run.iteration}} {{vars.NAME}} {{event.type}} {{event.outcome}} {{event.data.KEY}}. A missing value stops the run for you instead of sending a broken prompt.</p>
     <textarea rows="22" value=${body} onInput=${(e) => setBody(e.target.value)} />
     <div class="bar">

@@ -103,7 +103,8 @@ function putDef(f: Flowd, kind: DefKind, name: string, b: Body) {
   let text: string | null = typeof b.text === "string" ? b.text : null;
   if (text === null && kind === "process" && b.object && typeof b.object === "object") text = stringify(b.object);
   if (text === null && kind === "step" && typeof b.summary === "string" && typeof b.body === "string") {
-    text = `---\nsummary: ${JSON.stringify(b.summary)}\n---\n${b.body.trim()}\n`;
+    const skills = Array.isArray(b.skills) && b.skills.length ? `skills: [${b.skills.map((x: unknown) => JSON.stringify(String(x))).join(", ")}]\n` : "";
+    text = `---\nsummary: ${JSON.stringify(b.summary)}\n${skills}---\n${b.body.trim()}\n`;
   }
   if (text === null) throw new HttpError(400, { error: "send text, or object (process), or summary and body (step)" });
   const r = writeDef(f.home, kind, name, text, typeof b.mtime === "number" ? b.mtime : null, f.defCtx());

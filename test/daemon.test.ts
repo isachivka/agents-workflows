@@ -1047,8 +1047,8 @@ test("a ping types the request into the waiting step's agent and leaves the run 
 
 test("a finished run's Claude agent comes back in a new session, resuming its conversation", async () => {
   const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n") });
-  const projects = join(home, "claude-projects");
-  const { f, agterm } = await startFlowd(home, { claudeProjects: projects });
+  const projects = join(home, "claude", "projects");
+  const { f, agterm } = await startFlowd(home);
   agterm.addSession("S9");
   await f.submit(start("p", { pm: "S9" }));
   await settle(f);
@@ -1068,5 +1068,28 @@ test("a finished run's Claude agent comes back in a new session, resuming its co
   assert.ok(agterm.calls.includes("focus S1"));
   assert.equal(f.store.getRun("p#1")!.status, "done");
   assert.match((await f.restoreSession("p#1", "nope") as { error: string }).error, /no role nope/);
+  await f.close();
+});
+
+test("a step's skills reach the agent in its own line: Claude gets the files attached, Codex $names", async () => {
+  const home = makeHome({
+    "steps/b.md": "---\nsummary: b\nskills: [deliver, aqa]\n---\nDo B\n",
+    "steps/c.md": "---\nsummary: c\nskills: [deliver]\n---\nDo C\n",
+    "processes/p.yaml": "description: d\ncwd: /tmp\nroles: {pm: {spawn: claude}, cx: {spawn: codex --yolo}}\nsteps:\n  - {step: b, role: pm}\n  - {step: c, role: cx}\n",
+  });
+  mkdirSync(join(home, "claude", "skills", "deliver"), { recursive: true });
+  writeFileSync(join(home, "claude", "skills", "deliver", "SKILL.md"), "---\nname: deliver\n---\nx\n");
+  const { f, agterm, clock } = await startFlowd(home);
+  agterm.addSession("S9");
+  await f.submit(start("p", { pm: "S9" }));
+  await settle(f);
+  const file = join(home, "claude", "skills", "deliver", "SKILL.md");
+  const shown = f.show({ run: "p#1", entry: "b" });
+  assert.ok("text" in shown && shown.text.includes("skills: deliver, aqa"), JSON.stringify(shown));
+  assert.ok(agterm.typed().includes(`type S9 ▶ flow: step b · p#1 it.1 — run \`flow show\` for the instructions · skills for this step: @${file} /aqa (follow them)`), agterm.typed().join("\n"));
+  await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
+  clock.t += 20_000;
+  await settle(f);
+  assert.ok(agterm.calls.some((c) => c.startsWith("spawn ") && c.endsWith("codex --yolo '▶ flow: step c · p#1 it.1 — run `flow show` for the instructions · skills for this step: $deliver (follow them)'")), agterm.calls.join("\n"));
   await f.close();
 });

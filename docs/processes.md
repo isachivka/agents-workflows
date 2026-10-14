@@ -30,7 +30,8 @@ Review the new commits in {{vars.worktree}} against "{{vars.task}}". Run the tes
 Something to fix: `flow failed --note "<what to fix>"`. Good: `flow done --note "<verdict>"`.
 ```
 
-- `summary` (required, the only frontmatter key): the headline a person reads for that step in the UI. Write it as a plain sentence saying who does what ("The dev fixes red CI"), not a label.
+- `summary` (required): the headline a person reads for that step in the UI. Write it as a plain sentence saying who does what ("The dev fixes red CI"), not a label.
+- `skills` (optional): the skills the agent needs for the step, `[deliver, aqa]` (`plugin:skill` for a plugin's). A skill named only in the prompt arrives inside `flow show`'s output, where an agent reads it as text and may not load it. These are named in the line flowd types, the person's own message: a Claude agent gets each one's `SKILL.md` (or command file) attached with `@path`, found in the role's `cwd` (`.claude/skills`, `.claude/commands`), then `~/.claude`, then the installed plugin, and `/name` when none is found; a Codex agent gets `$name`. `flow show` lists them too.
 - The body is the prompt an agent reads with `flow show`. It must not be empty.
 
 Placeholders, substituted when the step starts (`src/template.ts`, `renderData` in `src/engine.ts`):
@@ -203,7 +204,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | Rule | Message |
 |---|---|
 | step id, process name | `step id X must match …`, `process name X must match …` |
-| step frontmatter | `missing --- frontmatter --- block`, `frontmatter must be a mapping`, `unknown key X`, `summary is required`, `body is empty` |
+| step frontmatter | `missing --- frontmatter --- block`, `frontmatter must be a mapping`, `unknown key X`, `summary is required`, `skills must be a list of skill names (deliver, plugin:skill)`, `body is empty` |
 | YAML | `yaml: …`, `a process file must be a YAML mapping` |
 | process keys | `unknown key X`, `description is required`, `cwd is required`, `repeat must be true or false`, `max_runs must be an integer >= 1`, `workspace must be a name`, `terminal must be agterm or zmx` |
 | roles | `roles must be a mapping`, `role name human is reserved`, `role X: spawn is required`, `role X: cwd must be a string`, `role X: unknown key Y` |

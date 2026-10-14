@@ -99,8 +99,16 @@ test("step files need frontmatter with summary and a body", () => {
   assert.deepEqual(errorsOf(() => parseStep("x", "no frontmatter")), ["missing --- frontmatter --- block"]);
   const errs = errorsOf(() => parseStep("x", "---\nfoo: 1\n---\n"));
   assert.ok(errs.includes("unknown key foo") && errs.includes("summary is required") && errs.includes("body is empty"));
-  assert.deepEqual(splitStep("---\nsummary: s\n---\nbody\n"), { summary: "s", body: "body" });
-  assert.deepEqual(splitStep("garbage"), { summary: "", body: "garbage" });
+  assert.deepEqual(splitStep("---\nsummary: s\n---\nbody\n"), { summary: "s", body: "body", skills: [] });
+  assert.deepEqual(splitStep("garbage"), { summary: "", body: "garbage", skills: [] });
+});
+
+test("a step names the skills its agent should have loaded", () => {
+  assert.deepEqual(step("x").skills, []);
+  assert.deepEqual(parseStep("x", "---\nsummary: s\nskills: [deliver, bos:peer-chat]\n---\nDo it.\n").skills, ["deliver", "bos:peer-chat"]);
+  assert.deepEqual(errorsOf(() => parseStep("x", "---\nsummary: s\nskills: deliver\n---\nDo it.\n")), ["skills must be a list of skill names (deliver, plugin:skill)"]);
+  assert.deepEqual(errorsOf(() => parseStep("x", "---\nsummary: s\nskills: [\"/deliver\"]\n---\nDo it.\n")), ["skills must be a list of skill names (deliver, plugin:skill)"]);
+  assert.deepEqual(splitStep("---\nsummary: s\nskills: [aqa]\n---\nbody\n").skills, ["aqa"]);
 });
 
 test("durations", () => {
