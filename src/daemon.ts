@@ -905,8 +905,8 @@ export class Flowd {
   }
 
   /**
-   * A step line as the role's agent gets it: the step's skills named in it, so they reach the agent
-   * as the person's words (Claude: the files attached; Codex: `$name`), not inside `flow show`'s output.
+   * A step line as the role's agent gets it: the step's skills named in it (`/name`, `$name` for
+   * Codex), so they reach the agent as the person's words, not inside `flow show`'s output.
    */
   private lineFor(run: RunState, row: OutboxRow): string {
     const p = this.defs.processes[run.process];
@@ -914,8 +914,7 @@ export class Flowd {
     const skills = entry?.step ? this.defs.steps[entry.step]?.skills ?? [] : [];
     const role = p?.roles[row.role];
     if (!skills.length || !role || !row.text.startsWith("▶ flow: step ")) return row.text;
-    const cwd = expandHome(renderTemplate(role.cwd ?? p!.cwd, renderData(run)));
-    return `${row.text} · skills for this step: ${skillRefs(skills, agentOf(role.spawn), cwd, this.claudeDir()).join(" ")} (follow them)`;
+    return `${row.text} · skills for this step: ${skillRefs(skills, agentOf(role.spawn)).join(" ")} (follow them)`;
   }
 
   /** Read-only. No config, or one that cannot be read, is no reason to stop a run. */

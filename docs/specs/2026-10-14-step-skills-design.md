@@ -30,3 +30,9 @@ describes. Typed by the person, the same words make Claude load the skills.
 `test/skills.test.ts` (agent by spawn, lookup order, plugin, not found, Codex), defs (parse, errors,
 `splitStep`), daemon (typed line for a Claude role, spawn prompt for a Codex role, `flow show`), HTTP
 (the editor's save keeps `skills`).
+
+## Revised the same day
+
+The user's call: a skill is invoked as `/name`, nothing else; the `@path` attachment is dropped,
+and with it the file lookup. Claude (and agents other than Codex) get `/deliver /aqa` in the line;
+Codex keeps `$name`.

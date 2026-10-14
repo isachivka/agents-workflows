@@ -31,7 +31,7 @@ Something to fix: `flow failed --note "<what to fix>"`. Good: `flow done --note 
 ```
 
 - `summary` (required): the headline a person reads for that step in the UI. Write it as a plain sentence saying who does what ("The dev fixes red CI"), not a label.
-- `skills` (optional): the skills the agent needs for the step, `[deliver, aqa]` (`plugin:skill` for a plugin's). A skill named only in the prompt arrives inside `flow show`'s output, where an agent reads it as text and may not load it. These are named in the line flowd types, the person's own message: a Claude agent gets each one's `SKILL.md` (or command file) attached with `@path`, found in the role's `cwd` (`.claude/skills`, `.claude/commands`), then `~/.claude`, then the installed plugin, and `/name` when none is found; a Codex agent gets `$name`. `flow show` lists them too.
+- `skills` (optional): the skills the agent needs for the step, `[deliver, aqa]` (`plugin:skill` for a plugin's). A skill named only in the prompt arrives inside `flow show`'s output, where an agent reads it as text and may not load it. These are named in the line flowd types, the person's own message, as the agent loads them: `/deliver /aqa` for Claude, `$deliver $aqa` for Codex. `flow show` lists them too.
 - The body is the prompt an agent reads with `flow show`. It must not be empty.
 
 Placeholders, substituted when the step starts (`src/template.ts`, `renderData` in `src/engine.ts`):

@@ -58,9 +58,9 @@ session gets one line:
 ```
 
 and `flow show` prints the rendered prompt, the event that woke the step, the vars and how to
-report. A step with `skills:` gets them at the end of that line, `· skills for this step: @<path to
-SKILL.md> … (follow them)` for Claude (Claude Code attaches the files to the message) or `$name` for
-Codex: words the agent takes as the person's, which a skill named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
+report. A step with `skills:` gets them at the end of that line, `· skills for this step: /deliver /aqa
+(follow them)` (`$deliver $aqa` for Codex): words the agent takes as the person's, which a skill
+named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agterm.ts`, `src/engine.ts`):
 
 - Each role has an outbox. A line goes out only when the session's agterm status is neither
   `active` nor `blocked` (at a permission prompt), so nothing lands mid-turn or answers a dialog.

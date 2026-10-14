@@ -13,9 +13,9 @@ when a step is yours. Then:
 
 1. Run `flow show`. It prints the step's instructions, the event that woke it (CI result,
    a merge, a signal) and the run's variables.
-2. Do the step as written. When the line ends with `· skills for this step: …`, those skills are
-   the step's method: follow them (their files are attached, or load `/name` / `$name`) rather than
-   improvising what they cover.
+2. Do the step as written. When the line ends with `· skills for this step: …`, load those skills
+   (`/name`, `$name` in Codex) before you start: they are the step's method; follow them rather
+   than improvising what they cover.
 3. Report once: `flow done [--note "…"] [--evidence URL]`, or `flow failed --note "what went wrong"`.
    Never report what you did not verify.
 4. Values later steps need go into run variables: `flow set pr=<url>`, `flow set worktree=<path>`.

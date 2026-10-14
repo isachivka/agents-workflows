@@ -248,7 +248,7 @@ export function StepEditor({ arg: id }) {
     </div>
     ${errors.length > 0 && html`<pre class="err">${errors.join("\n")}</pre>`}
     <div class="grid2"><label>summary</label><input value=${summary} onInput=${(e) => setSummary(e.target.value)} />
-      <label>skills</label><input value=${skills} placeholder="deliver, aqa" title="Skills the agent should have for this step. They are named in the line typed to it: Claude gets the files attached, Codex $name." onInput=${(e) => setSkills(e.target.value)} /></div>
+      <label>skills</label><input value=${skills} placeholder="deliver, aqa" title="Skills the agent should have for this step. They are named in the line typed to it: /name, $name for Codex." onInput=${(e) => setSkills(e.target.value)} /></div>
     <p class="muted">Placeholders: {{run.id}} {{run.process}} {{run.iteration}} {{vars.NAME}} {{event.type}} {{event.outcome}} {{event.data.KEY}}. A missing value stops the run for you instead of sending a broken prompt.</p>
     <textarea rows="22" value=${body} onInput=${(e) => setBody(e.target.value)} />
     <div class="bar">

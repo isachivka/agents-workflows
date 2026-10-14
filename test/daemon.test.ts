@@ -1071,22 +1071,19 @@ test("a finished run's Claude agent comes back in a new session, resuming its co
   await f.close();
 });
 
-test("a step's skills reach the agent in its own line: Claude gets the files attached, Codex $names", async () => {
+test("a step's skills reach the agent in its own line: /name for Claude, $name for Codex", async () => {
   const home = makeHome({
     "steps/b.md": "---\nsummary: b\nskills: [deliver, aqa]\n---\nDo B\n",
     "steps/c.md": "---\nsummary: c\nskills: [deliver]\n---\nDo C\n",
     "processes/p.yaml": "description: d\ncwd: /tmp\nroles: {pm: {spawn: claude}, cx: {spawn: codex --yolo}}\nsteps:\n  - {step: b, role: pm}\n  - {step: c, role: cx}\n",
   });
-  mkdirSync(join(home, "claude", "skills", "deliver"), { recursive: true });
-  writeFileSync(join(home, "claude", "skills", "deliver", "SKILL.md"), "---\nname: deliver\n---\nx\n");
   const { f, agterm, clock } = await startFlowd(home);
   agterm.addSession("S9");
   await f.submit(start("p", { pm: "S9" }));
   await settle(f);
-  const file = join(home, "claude", "skills", "deliver", "SKILL.md");
   const shown = f.show({ run: "p#1", entry: "b" });
   assert.ok("text" in shown && shown.text.includes("skills: deliver, aqa"), JSON.stringify(shown));
-  assert.ok(agterm.typed().includes(`type S9 ▶ flow: step b · p#1 it.1 — run \`flow show\` for the instructions · skills for this step: @${file} /aqa (follow them)`), agterm.typed().join("\n"));
+  assert.ok(agterm.typed().includes(`type S9 ▶ flow: step b · p#1 it.1 — run \`flow show\` for the instructions · skills for this step: /deliver /aqa (follow them)`), agterm.typed().join("\n"));
   await f.submit(report({ run: "p#1", entry: "b", outcome: "done", by: "human" }));
   clock.t += 20_000;
   await settle(f);
