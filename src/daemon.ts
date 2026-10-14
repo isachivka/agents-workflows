@@ -887,7 +887,8 @@ export class Flowd {
         screen = await this.termOf(session).text(session);
       }
       if (!screen.includes(d.marker)) return; // no dialog: the start watchdog covers any other hang
-      if (!yesSelected(screen) && d.down) {
+      // a dialog just drawn may not take keys yet (seen live: one Down, the selection stayed): try again
+      for (let i = 0; i < 5 && !yesSelected(screen) && d.down; i++) {
         await this.termOf(session).press(session, "\x1b[B");
         await pause();
         screen = await this.termOf(session).text(session);

@@ -616,7 +616,8 @@ test("when Yes cannot be selected, the run stops with the reason and resumes on 
   const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
   await f.submit(start("p"));
   await settle(f);
-  assert.deepEqual(pressed(agterm), ['press S1 "\\u001b[B"']);
+  // Down is tried a few times: a dialog just drawn may not take keys yet
+  assert.deepEqual(pressed(agterm), Array(5).fill('press S1 "\\u001b[B"'));
   let run = f.store.getRun("p#1")!;
   assert.deepEqual([run.status, run.reason, run.startBlocked], ["needs-human", TRUST_REASON, "b"]);
   await f.submit(status("S1", "active"));
@@ -1184,5 +1185,22 @@ test("a split pane that is gone closes its role on the next tick", async () => {
   await f.tickNow();
   await settle(f);
   assert.equal(f.store.getRun("p#1")!.roles.peer, null);
+  await f.close();
+});
+
+test("a Down the dialog was too new to take is pressed again", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const agterm = new FakeAgterm();
+  agterm.screens.set("S1", DIALOG(false));
+  let downs = 0;
+  agterm.onPress = (s, k) => {
+    if (k === "\x1b[B" && ++downs === 2) agterm.screens.set(s, DIALOG(true));
+    if (k === "\r") agterm.screens.set(s, "claude is up");
+  };
+  const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm), ['press S1 "\\u001b[B"', 'press S1 "\\u001b[B"', 'press S1 "\\r"']);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
   await f.close();
 });
