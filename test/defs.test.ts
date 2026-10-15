@@ -223,3 +223,16 @@ test("beside: a role that runs in the split pane of another role's session", () 
   assert.deepEqual(errorsOf(() => parseProcess("p", p("lead: {spawn: claude}, a: {spawn: c, beside: lead}", "terminal: zmx\n"), ctx)),
     ["role a: beside needs terminal: agterm (zmx sessions have no split pane)"]);
 });
+
+test("an inner entry: another process runs there in a role's agent", () => {
+  const p = parseProcess("w", "description: d\ncwd: /tmp\nroles: {dev: {spawn: c}}\nsteps:\n  - {step: pick, role: dev}\n  - {inner: true, role: dev, timeout: 2d, on_fail: end}\n  - {step: merge, role: dev}\n", ctx);
+  const e = p.entries[1];
+  assert.deepEqual([e.id, e.kind, e.role, e.timeoutMs, e.onFail], ["inner", "inner", "dev", 172_800_000, "end"]);
+  const errs = errorsOf(() => parseProcess("w", "description: d\ncwd: /tmp\nroles: {dev: {spawn: c}}\nsteps:\n  - {inner: yes, role: dev}\n  - {id: b, inner: true}\n  - {id: c, inner: true, role: human}\n  - {id: d, inner: true, role: dev, step: pick}\n  - {id: e, inner: true, role: dev, hold: desk-1}\n", ctx));
+  assert.ok(errs.includes("steps[1]: inner must be true"), errs.join(" | "));
+  assert.ok(errs.includes("steps[2]: inner needs a declared agent role"), errs.join(" | "));
+  assert.ok(errs.includes("steps[3]: inner needs a declared agent role"), errs.join(" | "));
+  assert.ok(errs.includes("steps[4]: inner runs another process; it cannot go with step, do, wait_for, wait, sh or hold"), errs.join(" | "));
+  assert.ok(errs.includes("steps[5]: inner runs another process; it cannot go with step, do, wait_for, wait, sh or hold"), errs.join(" | "));
+  assert.equal(errs.filter((x) => /needs step, do/.test(x)).length, 0, errs.join(" | "));
+});

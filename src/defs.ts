@@ -79,7 +79,7 @@ export function splitStep(text: string): { summary: string; body: string; skills
 }
 
 export const PROCESS_KEYS = new Set(["description", "cwd", "workspace", "terminal", "repeat", "max_runs", "triggers", "roles", "steps"]);
-export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold"]);
+export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
 const knownEvent = (type: string, ctx: DefCtx) => ctx.eventTypes.has(type) || /^signal\.[a-z0-9.-]+$/.test(type);
@@ -177,6 +177,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     const role = typeof r.role === "string" ? r.role : undefined;
     let kind: Entry["kind"] = "wait";
     if (r.step !== undefined && r.do !== undefined) err(`${at}: step and do are exclusive`);
+    if (r.inner !== undefined && (r.step !== undefined || r.do !== undefined)) err(`${at}: inner runs another process; it cannot go with step, do, wait_for, wait, sh or hold`);
     if (typeof r.step === "string") {
       if (!ctx.steps[r.step]) err(`${at}: steps/${r.step}.md is missing or invalid`);
       if (!role) err(`${at}: step needs a role`);
@@ -192,6 +193,13 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       } else if (!ctx.actionNames.has(r.do)) {
         err(`${at}: unknown action ${r.do}`);
       }
+    } else if (r.inner !== undefined) {
+      if (r.inner !== true) err(`${at}: inner must be true`);
+      if (!role || !roles[role]) err(`${at}: inner needs a declared agent role`);
+      if (waitFor || r.wait !== undefined || r.sh !== undefined || r.hold !== undefined) {
+        err(`${at}: inner runs another process; it cannot go with step, do, wait_for, wait, sh or hold`);
+      }
+      kind = "inner";
     } else if (!waitFor && r.wait === undefined && r.sh === undefined) {
       err(`${at}: needs step, do, wait_for, wait or sh`);
     }
@@ -244,7 +252,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       }
     }
 
-    const id = typeof r.id === "string" ? r.id : String(r.step ?? r.do ?? waitFor?.on ?? (r.wait !== undefined ? "wait" : r.sh !== undefined ? "sh" : `entry-${i + 1}`));
+    const id = typeof r.id === "string" ? r.id : String(r.step ?? r.do ?? waitFor?.on ?? (r.wait !== undefined ? "wait" : r.sh !== undefined ? "sh" : r.inner !== undefined ? "inner" : `entry-${i + 1}`));
     entries.push({
       id, kind,
       step: typeof r.step === "string" ? r.step : undefined,

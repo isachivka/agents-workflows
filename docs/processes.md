@@ -151,7 +151,7 @@ Keys on any entry:
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `id` | string | the `step`, else the `do`, else the `wait_for` type, else `wait`, else `sh` | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
+| `id` | string | the `step`, else the `do`, else the `wait_for` type, else `wait`, else `sh`, else `inner` | Unique in the process; `goto` targets it. Two entries with the same step or action need explicit ids. |
 | `step` | string | | A step id (a file in `steps/`). |
 | `role` | string | | A declared role, or `human`. |
 | `do` | string | | `clear`, `compact`, `type`, or `<plugin>.<action>`. |
@@ -167,6 +167,7 @@ Keys on any entry:
 | `wait` | duration | | A pause: `30s`, `10m`, `2h`, `1d`. Only on its own (no `step`, `do`, `wait_for`). |
 | `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. Time queued for a `hold` does not count. |
 | `hold` | name | | Something only one run at a time may use, such as a shared test environment: `hold: desk-1`. See "Holds" below. |
+| `inner` | `true` | | Another process runs here, in the agent of this entry's `role` (a nested run). With `role`, and optionally `timeout`, `on_fail`, `retries`, `after`, `detour`; nothing else. See "Nested runs" below. |
 
 ## How a run moves
 

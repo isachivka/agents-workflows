@@ -3,7 +3,8 @@ export type Outcome = "done" | "failed";
 
 export interface WaitFor { on: string; where: Dict; with: Dict }
 export type OnFail = "retry" | "human" | "end" | { goto: string };
-export type EntryKind = "agent" | "human" | "action" | "wait" | "delay";
+/** inner: another process runs here in the role's agent (a nested run) */
+export type EntryKind = "agent" | "human" | "action" | "wait" | "delay" | "inner";
 
 export interface Entry {
   id: string;
