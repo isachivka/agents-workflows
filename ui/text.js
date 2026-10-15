@@ -220,7 +220,7 @@ const roleName = (role) => (role === "human" ? t("You") : role);
 export function entryPhrase(e) {
   if (e.kind === "wait") return t("wait.for", { what: eventPhrase(e.waitFor || "") });
   if (e.kind === "delay") return t("wait.pause", { d: duration(e.waitMs || 0) });
-  if (e.kind === "inner") return e.child ? t("inner.child", { run: e.child }) : t("inner.wait");
+  if (e.kind === "inner") return e.child ? t("inner.child", { run: runLabel(e.child) }) : t("inner.wait");
   if (e.kind === "action" && e.sh) return t("do.sh", { cmd: e.sh.length > 60 ? `${e.sh.slice(0, 57)}…` : e.sh });
   if (e.kind === "action") return ["clear", "compact", "type"].includes(e.do) ? t(`do.${e.do}`, { role: e.role }) : t("do.plugin", { name: e.do });
   return e.summary || e.step || e.id;

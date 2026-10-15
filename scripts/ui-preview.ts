@@ -60,16 +60,49 @@ steps:
   - {step: hello, role: agent}
   - {step: check, role: human}
 `,
+  "steps/tracker-find.md": step("The dev finds or creates the tracker issue", "Find the issue for this work, or create one; `flow set issue=<KEY>`, `flow done`."),
+  "steps/tracker-close.md": step("The dev moves the issue to Done and links the PR", "Move {{vars.issue}} to Done, add {{vars.pr}} to it, `flow done`."),
+  "steps/report-sum.md": step("The dev posts a summary to the team thread", "Post what was done to the thread, `flow done`."),
+  "processes/pr.yaml": `description: Open the PR, wait for CI, you merge
+cwd: ~/code/my-repo
+max_runs: 5
+roles:
+  dev: {spawn: claude}
+steps:
+  - {step: open-pr, role: dev}
+  - {id: ci, wait_for: gh.checks, on_fail: {goto: ci-fix}}
+  - {step: merge, role: human, wait_for: gh.merged}
+  - {step: ci-fix, role: dev, detour: true, after: {goto: ci}}
+`,
+  "processes/tracker.yaml": `description: Find the tracker issue, let another process do the work, move the issue to Done
+cwd: ~/code/my-repo
+max_runs: 5
+roles:
+  dev: {spawn: claude}
+steps:
+  - {step: tracker-find, role: dev}
+  - {inner: true, role: dev}
+  - {step: tracker-close, role: dev}
+`,
+  "processes/report.yaml": `description: Let another process do the work, then tell the team
+cwd: ~/code/my-repo
+max_runs: 5
+roles:
+  dev: {spawn: claude}
+steps:
+  - {inner: true, role: dev}
+  - {step: report-sum, role: dev}
+`,
   "processes/broken.yaml": "cwd: /tmp\nsteps:\n  - {step: nope, role: ghost}\n",
 };
 
 const home = makeHome(files);
-const agterm = new FakeAgterm().addSession("L1", "D1", "L2", "D2", "L3", "D3", "W1", "W2", "A1", "A2");
+const agterm = new FakeAgterm().addSession("L1", "D1", "L2", "D2", "L3", "D3", "W1", "W2", "A1", "A2", "T1", "T2", "T3");
 const f = new Flowd({ home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], spawnGraceMs: 0, gapMs: 0, watchDefs: false, claudeConfig: join(home, "no-claude.json"), log: () => {} });
 await f.init();
 
-const start = async (proc: string, bind: Record<string, string>) => {
-  const r = await f.submit({ type: "run.start", data: { process: proc, bind }, source: "preview" });
+const start = async (proc: string, bind: Record<string, string>, inner?: string[]) => {
+  const r = await f.submit({ type: "run.start", data: { process: proc, bind, inner }, source: "preview" });
   await settle(f);
   if (!r.run) throw new Error(`could not start ${proc}: ${r.error}`);
   return r.run;
@@ -117,6 +150,21 @@ const r6 = await start("hello", { agent: "A2" });
 await report(r6, "hello", "said hello");
 await report(r6, "check", "looked fine");
 
+// nested: a PR process inside a tracker process (two levels), inside a report too (three), and a
+// tracker waiting for the person to choose what runs inside
+const r8 = await start("tracker", { dev: "T1" }, ["pr"]);
+await f.submit({ type: "run.set", run: r8, data: { vars: { issue: "PROJ-12", title: "Speed up the report page" } }, source: "preview" });
+await report(r8, "tracker-find", "PROJ-12");
+const r8c = f.store.getRun(r8)!.entries.inner.child!;
+await report(r8c, "open-pr", "https://github.com/acme/app/pull/150");
+const r9 = await start("report", { dev: "T2" }, ["tracker", "pr"]);
+const r9t = f.store.getRun(r9)!.entries.inner.child!;
+await report(r9t, "tracker-find", "PROJ-15");
+await status("T2", "active");
+const r10 = await start("tracker", { dev: "T3" });
+await f.submit({ type: "run.set", run: r10, data: { vars: { title: "Drop an unused settings flag" } }, source: "preview" });
+await report(r10, "tracker-find", "PROJ-17");
+
 const server = makeServer(f, join(ROOT, "ui"));
 await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${port}`;
@@ -133,6 +181,10 @@ const expected: [string, (s: ReturnType<Flowd["runSummary"]>) => boolean][] = [
   [r5, (s) => s.needsYou && s.agentWait?.human === true],
   [r6, (s) => s.status === "done"],
   [r7, (s) => s.status === "stopped"],
+  [r8, (s) => s.current === "inner" && s.child === r8c && !s.needsYou],
+  [r8c, (s) => s.parent === r8 && s.current === "ci"],
+  [r9, (s) => Boolean(s.child)],
+  [r10, (s) => s.current === "inner" && s.needsYou && !s.child],
 ];
 let bad = 0;
 for (const [id, ok] of expected) {

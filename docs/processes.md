@@ -238,6 +238,12 @@ flow skip --note "nothing to nest"                             # … or it is sk
   not. An `inner` with an open nested run cannot be skipped, retried or left by goto: stop the
   nested run first. Its `timeout` counts only until a nested run starts. A nested run over its
   `max_runs` queues; the parent keeps waiting.
+- **In the UI.** On Now a nested run is one card, and the runs under it peek out above it as
+  tabs ("under it · tracker #4 · then: …"). A run waiting on a bare `inner` is under "Waiting for
+  you" with a process picker (the processes that can take that agent), **Start on agent …** and
+  **Skip**; its run page has the same. A parent's run page shows the nested run's steps inside
+  the `inner` step and **Stop** for it; a nested run's page says what it lies on and what happens
+  when it ends.
 - **Refused in a nested run:** a `do: clear` on the borrowed role (it would wipe the context the
   parent still needs; `compact` is fine), and processes with `repeat: true` (they never end).
 

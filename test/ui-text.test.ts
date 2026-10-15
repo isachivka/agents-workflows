@@ -76,7 +76,7 @@ test("event and entry phrases", () => {
   assert.equal(T.entryPhrase(entry("fix", { summary: "The dev fixes red CI" })), "The dev fixes red CI");
   assert.equal(T.entryPhrase(entry("fix", { summary: null })), "fix");
   assert.equal(T.entryPhrase(entry("inner", { kind: "inner", step: null, summary: null, child: null })), "Waits for a nested process");
-  assert.equal(T.entryPhrase(entry("inner", { kind: "inner", step: null, summary: null, child: "pr#4" })), "Nested: pr#4");
+  assert.equal(T.entryPhrase(entry("inner", { kind: "inner", step: null, summary: null, child: "pr#4" })), "Nested: pr · run 4");
   assert.equal(T.runLabel("pr-loop#4"), "pr-loop · run 4");
   assert.equal(T.runLabel("odd"), "odd");
 });
@@ -107,7 +107,7 @@ test("describeRun covers every situation, and its 'you' tone matches needsYou", 
     ["inner to choose", run({ needsYou: true, current: "in", child: null }, [entry("a", { status: "done" }), entry("in", { kind: "inner", status: "waiting", step: null, summary: null, child: null })]),
       { tone: "you", tag: "Choose what runs inside", title: "It reached the place where another process runs on agent dev. Choose it, or skip this step.", detail: null }],
     ["inner busy", run({ current: "in", child: "q#2" }, [entry("in", { kind: "inner", status: "waiting", step: null, summary: null, child: "q#2" })]),
-      { tone: "wait", tag: "Waiting", title: "Nested: q#2", detail: null }],
+      { tone: "wait", tag: "Waiting", title: "Nested: q · run 2", detail: null }],
   ];
   for (const [name, r, want] of cases) {
     assert.deepEqual(T.describeRun(r), want, name);

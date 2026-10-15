@@ -130,7 +130,8 @@ const shortText = (s) => { const one = s.split(/(?<=[.!?])\s/)[0]; return one.le
 function NestPicker({ r, cur, setErr }) {
   const { data } = useData("/api/processes", false);
   const [pick, setPick] = useState("");
-  const list = (data || []).filter((p) => p.valid && !p.repeat);
+  // only what can take this agent: a role named like the inner's, or a single role (as flowd picks)
+  const list = (data || []).filter((p) => p.valid && !p.repeat && (p.roles.includes(cur.role) || p.roles.length === 1));
   const chosen = pick || (list[0] ? list[0].name : "");
   const start = attempt(() => api("POST", `/api/runs/${enc(r.id)}/nest`, { process: chosen }), setErr);
   const skip = attempt(() => api("POST", `/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/skip`, { note: t("nest.skipNote") }), setErr);
