@@ -164,6 +164,11 @@ export class Flowd {
           await this.process(this.store.addEvent({ type: "entry.report", data: { run: run.id, entry: cur.id, outcome: "failed", note, by: "system" }, source: "flowd" }, this.now()));
         }
       }
+      // a nested run that ended while flowd was down: its parent still waits on inner
+      for (const run of this.store.openRuns()) {
+        const child = run.current ? run.entries[run.current]?.child : undefined;
+        if (child && TERMINAL.includes(this.store.getRun(child)?.status ?? "done")) await this.nestedEnd(child);
+      }
       for (const run of this.store.openRuns()) this.rearm(run);
       this.grantHolds();
       await this.startQueued();
@@ -429,6 +434,8 @@ export class Flowd {
     switch (e.type) {
       case "run.start":
         return this.startRun(String(d.process ?? ""), stringVars(d.bind), str(d.trigger), undefined, stringVars(d.vars), { inner: strings(d.inner) });
+      case "run.nested-end":
+        return this.nestedEnd(run);
       case "run.nest": {
         // an inner entry's start-child: the next process of the chain, on the agent the entry lends
         const parent = this.store.getRun(run);
@@ -655,6 +662,20 @@ export class Flowd {
     return this.apply(run.id, { kind: "start", vars, event });
   }
 
+  /** A nested run ended: its parent's inner closes with it, done with the vars it set, else failed. */
+  private async nestedEnd(childId: string): Promise<Result> {
+    const child = this.store.getRun(childId);
+    const link = child?.parent;
+    const parent = link && this.store.getRun(link.run);
+    if (!child || !link || !parent || parent.current !== link.entry || parent.entries[link.entry]?.child !== childId) return {};
+    if (child.status !== "done") {
+      return this.apply(parent.id, { kind: "report", entry: link.entry, outcome: "failed", note: `${childId} ${child.status}${child.reason ? `: ${child.reason}` : ""}`, by: "system" });
+    }
+    const set = Object.fromEntries(Object.entries(child.vars).filter(([k, v]) => link.vars[k] !== v));
+    if (Object.keys(set).length) await this.apply(parent.id, { kind: "set", vars: set });
+    return this.apply(parent.id, { kind: "report", entry: link.entry, outcome: "done", note: `${childId} done`, by: "system" });
+  }
+
   /** Why `--inner` cannot be placed: each process but the last needs an inner entry for the next. */
   private chainError(name: string, chain: string[]): string | undefined {
     let host = name;
@@ -778,6 +799,10 @@ export class Flowd {
       }
       if (res.run.status === "stopped") this.store.dropOutbox(runId);
     });
+    if (TERMINAL.includes(res.run.status)) {
+      if (res.run.parent) void this.submit({ type: "run.nested-end", run: runId, data: {}, source: "flowd" });
+      for (const c of this.store.childrenOf(runId)) void this.submit({ type: "run.stop", run: c.id, data: {}, source: "flowd" });
+    }
     for (const a of res.actions) {
       if (a.kind === "watch") this.plugins.watch({ run: runId, entry: a.entry, type: a.waitFor.on, with: a.waitFor.with, cwd: this.cwdOf(res.run.process), vars: res.run.vars, ...(a.previous ? { previous: a.previous } : {}) });
       else if (a.kind === "unwatch") this.plugins.unwatch(runId, a.entry);

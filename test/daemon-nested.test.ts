@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
+import { Store } from "../src/store.ts";
 import { STEP_FILES, makeHome, proc, settle, startFlowd } from "./daemon-helpers.ts";
 
 const OUTER = proc("  - {step: b, role: pm}\n  - {inner: true, role: pm}\n  - {step: c, role: pm}\n", "", "outer");
@@ -14,14 +16,15 @@ const done = (session: string) => ({ type: "entry.report", data: { session, outc
 
 /** outer#1 on S1, its first step b closed: it stands on inner */
 async function outerOnInner(files: Record<string, string> = {}, extra: Record<string, unknown> = {}) {
-  const t = await startFlowd(makeHome({ ...HOME, ...files }));
+  const home = makeHome({ ...HOME, ...files });
+  const t = await startFlowd(home);
   t.agterm.addSession("S1", "S2");
   assert.deepEqual(await t.f.submit(start("outer", { pm: "S1" }, extra)), { run: "outer#1" });
   await settle(t.f);
   await t.f.submit(status("S1", "active"));
   await t.f.submit(done("S1"));
   await settle(t.f);
-  return t;
+  return { ...t, home };
 }
 
 test("--inner starts each process of the chain in the inner of the one before, on the same agent", async () => {
@@ -95,4 +98,72 @@ test("a nested run over its max_runs queues, attached to its parent", async () =
   assert.equal(t.f.store.getRun("outer#1")!.entries.inner.child, "leaf#2");
   assert.equal(t.f.store.getRun("leaf#2")!.parent?.run, "outer#1");
   await t.f.close();
+});
+
+const finish = (run: string, entry: string) => ({ type: "entry.report", data: { run, entry, outcome: "done", by: "human" }, source: "ui" });
+
+test("a nested run that ends done hands back the vars it set, and its parent goes on in the same agent", async () => {
+  const { f, agterm, clock } = await outerOnInner({}, { vars: { issue: "K-1", title: "T" } });
+  await f.submit(start("leaf", { pm: "S1" }));
+  await settle(f);
+  // the agent's turns are the nested run's: they reach the parent too, and change nothing there
+  await f.submit(status("S1", "active"));
+  await f.submit(status("S1", "completed"));
+  clock.t += 120_000;
+  await f.tickNow();
+  await settle(f);
+  assert.deepEqual([f.store.getRun("outer#1")!.entries.inner.status, f.store.getRun("outer#1")!.status], ["waiting", "running"]);
+  assert.deepEqual(agterm.typed().filter((c) => c.includes("outer#1") || c.includes("is not closed")), ["type S1 ▶ flow: step b · outer#1 it.1 — run `flow show` for the instructions"]);
+  await f.submit({ type: "run.set", run: "leaf#1", data: { vars: { pr: "u", title: "T" } }, source: "cli" });
+  await f.submit(finish("leaf#1", "b"));
+  await settle(f);
+  const outer = f.store.getRun("outer#1")!;
+  assert.deepEqual([outer.entries.inner.status, outer.entries.inner.note, outer.current], ["done", "leaf#1 done", "c"]);
+  assert.deepEqual([outer.vars.pr, outer.vars.issue], ["u", "K-1"]);
+  assert.equal(f.store.runBySession("S1")?.run.id, "outer#1");
+  await f.submit(status("S1", "completed"));
+  clock.t += 20_000;
+  await settle(f);
+  assert.ok(agterm.typed().some((c) => c.startsWith("type S1 ▶ flow: step c · outer#1")), agterm.typed().join("\n"));
+  await f.close();
+});
+
+test("a stopped nested run fails its parent's inner; a stopped parent stops its nested run", async () => {
+  const a = await outerOnInner();
+  await a.f.submit(start("leaf", { pm: "S1" }));
+  await a.f.submit({ type: "run.stop", run: "leaf#1", data: {}, source: "ui" });
+  await settle(a.f);
+  const outer = a.f.store.getRun("outer#1")!;
+  assert.deepEqual([outer.status, outer.reason], ["needs-human", "inner failed: leaf#1 stopped"]);
+  await a.f.close();
+  const b = await outerOnInner({}, { inner: ["mid", "leaf"] });
+  await b.f.submit({ type: "run.stop", run: "outer#1", data: {}, source: "ui" });
+  await settle(b.f);
+  assert.deepEqual(["outer#1", "mid#1", "leaf#1"].map((id) => b.f.store.getRun(id)!.status), ["stopped", "stopped", "stopped"]);
+  await b.f.close();
+});
+
+test("three levels unwind in order on one agent", async () => {
+  const { f } = await outerOnInner({}, { inner: ["mid", "leaf"] });
+  await f.submit(finish("leaf#1", "b"));
+  await settle(f);
+  assert.deepEqual([f.store.getRun("mid#1")!.current, f.store.runBySession("S1")?.run.id], ["c", "mid#1"]);
+  await f.submit(finish("mid#1", "c"));
+  await settle(f);
+  assert.deepEqual([f.store.getRun("outer#1")!.current, f.store.runBySession("S1")?.run.id], ["c", "outer#1"]);
+  await f.close();
+});
+
+test("after a restart a parent learns its nested run ended", async () => {
+  const t = await outerOnInner({}, { inner: ["leaf"] });
+  await t.f.close();
+  // the nested run ended while flowd was down, before the parent heard of it
+  const store = new Store(join(t.home, "state.db"));
+  const leaf = store.getRun("leaf#1")!;
+  store.saveRun({ ...leaf, status: "done", current: null });
+  store.close();
+  const third = await startFlowd(t.home, { agterm: t.agterm });
+  await settle(third.f);
+  assert.deepEqual([third.f.store.getRun("outer#1")!.entries.inner.status, third.f.store.getRun("outer#1")!.current], ["done", "c"]);
+  await third.f.close();
 });
