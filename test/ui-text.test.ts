@@ -104,6 +104,10 @@ test("describeRun covers every situation, and its 'you' tone matches needsYou", 
     ["paused", run({ status: "paused" }), { tone: "calm", tag: "Paused", title: "Do b", detail: null }],
     ["done", run({ status: "done", current: null }), { tone: "calm", tag: "Finished", title: "Finished", detail: null }],
     ["stopped by you", run({ status: "stopped", current: null }), { tone: "calm", tag: "Stopped", title: "Stopped by you", detail: null }],
+    ["inner to choose", run({ needsYou: true, current: "in", child: null }, [entry("a", { status: "done" }), entry("in", { kind: "inner", status: "waiting", step: null, summary: null, child: null })]),
+      { tone: "you", tag: "Choose what runs inside", title: "It reached the place where another process runs on agent dev. Choose it, or skip this step.", detail: null }],
+    ["inner busy", run({ current: "in", child: "q#2" }, [entry("in", { kind: "inner", status: "waiting", step: null, summary: null, child: "q#2" })]),
+      { tone: "wait", tag: "Waiting", title: "Nested: q#2", detail: null }],
   ];
   for (const [name, r, want] of cases) {
     assert.deepEqual(T.describeRun(r), want, name);
@@ -183,4 +187,19 @@ test("runTitle: what a run works on is its title var, trimmed; nothing when it i
   assert.equal(T.runTitle(run({ vars: { title: "refactor(store)!: [ABC-9] wave 61 — type the actions" } })), "Wave 61 — type the actions");
   assert.equal(T.runTitle(run({ vars: { title: "Fix the login timeout" } })), "Fix the login timeout");
   assert.equal(T.runTitle(run({ vars: { title: "fix: [ABC-1]" } })), "fix: [ABC-1]");
+});
+
+test("stacks: a run with an open nested run sits under it; tabs say what the run under does next", () => {
+  T.setLang("en");
+  const a = run({ id: "a#1", current: "in", child: "b#1" }, [entry("x", { status: "done" }), entry("in", { kind: "inner", status: "waiting", child: "b#1" }), entry("close", { summary: "dev closes the issue" })]);
+  const b = run({ id: "b#1", parent: "a#1", current: "in", child: "c#1" }, [entry("in", { kind: "inner", status: "waiting", child: "c#1" }), entry("y", { summary: "dev reports" })]);
+  const c = run({ id: "c#1", parent: "b#1", vars: { issue: "K", pr: "u" } });
+  const d = run({ id: "d#1" });
+  const st = T.stacks([a, b, c, d]);
+  assert.deepEqual(st.map((x: any) => [x.top.id, x.under.map((u: any) => u.id)]), [["c#1", ["b#1", "a#1"]], ["d#1", []]]);
+  assert.equal(T.thenPhrase(a), "then: dev closes the issue");
+  assert.equal(T.thenPhrase(run({ id: "z#1", current: "c" })), null); // nothing after it
+  assert.deepEqual(T.handedBack(c, run({ vars: { issue: "K" } })), ["pr"]);
+  // a parent whose nested run is not in the list (finished, filtered) is a card of its own
+  assert.deepEqual(T.stacks([a]).map((x: any) => x.top.id), ["a#1"]);
 });

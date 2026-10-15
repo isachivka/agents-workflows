@@ -10,6 +10,13 @@ const EN = {
   "st.queued": "Queued", "tag.queued": "In line", "run.queued": "{n} in line: {open} of {max} runs are working", "st.running": "Running", "st.paused": "Paused", "st.needs-human": "Waiting for you", "st.done": "Finished", "st.stopped": "Stopped",
   "tag.yourStep": "Your step", "tag.stopped": "Stopped", "tag.agentAsks": "Agent asks", "tag.working": "Agent working",
   "tag.agentWaits": "Agent waits", "tag.roundDone": "Round done", "tag.waiting": "Waiting",
+  "tag.nest": "Choose what runs inside", "nest.title": "It reached the place where another process runs on agent {role}. Choose it, or skip this step.",
+  "nest.pick": "Process inside", "nest.start": "Start on agent {role}", "nest.skip": "Skip", "nest.skipNote": "no nested process",
+  "stack.under": "under it", "stack.bottom": "at the bottom", "stack.then": "then: {step}", "stack.onTop": "on top of", "stack.waits": "it waits for this one to end",
+  "inner.runs": "Inside runs", "inner.agentOn": "Agent {role} works on it now. {run} does nothing and goes on by itself once it ends.",
+  "inner.stop": "Stop {run}", "why.stopChild": "this step fails, then you decide", "inner.noSkip": "Skipping is possible once nothing runs inside.",
+  "agent.busyWith": "busy with {run}", "after.title": "When it ends", "after.goesOn": "{run} goes on", "after.back": "Goes back up",
+  "after.nothingBack": "nothing yet", "after.stop": "If you stop it", "after.stopText": "the step of {run} fails; you decide there",
   "run.label": "{process} · run {n}", "run.round": "round {n}", "run.started": "started {when}",
   "run.finished": "Finished", "run.stopped": "Stopped by you", "run.stepFailed": "Step “{step}” did not work out",
   "run.stoppedForYou": "The run stopped and waits for you", "run.closesBy": "Closes by itself once {what} arrives",
@@ -82,6 +89,13 @@ const RU = {
   "st.queued": "В очереди", "tag.queued": "В очереди", "run.queued": "В очереди №{n}: работают {open} из {max}", "st.running": "Работает", "st.paused": "На паузе", "st.needs-human": "Ждёт тебя", "st.done": "Готово", "st.stopped": "Остановлен",
   "tag.yourStep": "Твой шаг", "tag.stopped": "Остановился", "tag.agentAsks": "Агент просит", "tag.working": "Агент работает",
   "tag.agentWaits": "Агент ждёт", "tag.roundDone": "Круг готов", "tag.waiting": "Ждёт",
+  "tag.nest": "Выбери, что делать внутри", "nest.title": "Дошёл до места, где на агенте {role} работает другой процесс. Выбери его или пропусти шаг.",
+  "nest.pick": "Процесс внутри", "nest.start": "Запустить на агенте {role}", "nest.skip": "Пропустить", "nest.skipNote": "без вложенного процесса",
+  "stack.under": "под ним", "stack.bottom": "в самом низу", "stack.then": "потом: {step}", "stack.onTop": "лежит поверх", "stack.waits": "он ждёт, пока этот закончится",
+  "inner.runs": "Внутри работает", "inner.agentOn": "Агент {role} сейчас на нём. {run} ничего не делает и пойдёт дальше сам, когда тот закончится.",
+  "inner.stop": "Остановить {run}", "why.stopChild": "этот шаг не получится — дальше решаешь ты", "inner.noSkip": "Пропустить шаг можно, только когда внутри ничего не идёт.",
+  "agent.busyWith": "занят {run}", "after.title": "Когда закончится", "after.goesOn": "{run} продолжит", "after.back": "Наверх вернётся",
+  "after.nothingBack": "пока ничего", "after.stop": "Если остановить", "after.stopText": "шаг {run} не получится, решать будешь там",
   "run.label": "{process} · запуск {n}", "run.round": "круг {n}", "run.started": "начат {when}",
   "run.finished": "Готово", "run.stopped": "Остановлен тобой", "run.stepFailed": "Шаг «{step}» не получился",
   "run.stoppedForYou": "Процесс остановился и ждёт тебя", "run.closesBy": "Закроется сам, когда дождёмся: {what}",
@@ -235,6 +249,7 @@ export function situation(r) {
   if (r.status === "done" || r.status === "stopped") return null;
   if (cur && cur.kind === "human" && (cur.status === "active" || cur.status === "waiting")) return "human";
   if (r.agentWait && r.agentWait.human) return "agentAsks";
+  if (cur && cur.kind === "inner" && r.needsYou && !cur.child) return "nest";
   return null;
 }
 
@@ -249,6 +264,7 @@ export function describeRun(r) {
     case "stopped": return { tone: "you", tag: t("tag.stopped"), title: t("run.stoppedForYou"), detail: r.reason };
     case "human": return { tone: "you", tag: t("tag.yourStep"), title: what, detail: r.waitingOn ? t("run.closesBy", { what: eventPhrase(r.waitingOn) }) : null };
     case "agentAsks": return { tone: "you", tag: t("tag.agentAsks"), title: t("run.agentWaitsForYou", { role: cur ? cur.role : "" }), detail: r.agentWait.note };
+    case "nest": return { tone: "you", tag: t("tag.nest"), title: t("nest.title", { role: cur.role }), detail: null };
   }
   if (r.status === "done") return { tone: "calm", tag: t("st.done"), title: t("run.finished"), detail: null };
   if (r.status === "stopped") return { tone: "calm", tag: t("st.stopped"), title: t("run.stopped"), detail: null };
@@ -257,11 +273,37 @@ export function describeRun(r) {
     const n = lang === "ru" ? r.queue.position : ordinalEn(r.queue.position);
     return { tone: "wait", tag: t("tag.queued"), title: t("run.queued", { n, open: r.queue.open, max: r.queue.max }), detail: null };
   }
+  if (cur && cur.kind === "inner" && cur.child) return { tone: "wait", tag: t("tag.waiting"), title: what, detail: null };
   if (r.agentWait) return { tone: "wait", tag: t("tag.agentWaits"), title: what, detail: t("run.agentWaitNote", { note: r.agentWait.note }) };
   if (r.waitUntil) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.until", { when: moment(r.waitUntil, Date.now()) }), detail: null };
   if (r.heldBy) return { tone: "wait", tag: t("tag.waiting"), title: holdPhrase(r.heldBy), detail: null };
   if (r.waitingOn) return { tone: "wait", tag: t("tag.waiting"), title: t("wait.for", { what: eventPhrase(r.waitingOn) }), detail: null };
   return { tone: "work", tag: t("tag.working"), title: what, detail: null };
+}
+
+/**
+ * Open runs as the stacks they form on agents: a run whose nested run is in the list sits under
+ * it. Each stack: its top run and the runs under it, nearest first.
+ */
+export function stacks(runs) {
+  const byId = Object.fromEntries(runs.map((r) => [r.id, r]));
+  return runs.filter((r) => !(r.child && byId[r.child])).map((top) => {
+    const under = [];
+    for (let p = byId[top.parent]; p && !under.includes(p); p = byId[p.parent]) under.push(p);
+    return { top, under };
+  });
+}
+
+/** "then: <the step after the current one>", for the tab of a run under a nested one. */
+export function thenPhrase(r) {
+  const i = r.plan.findIndex((e) => e.id === r.current);
+  const next = i < 0 ? undefined : r.plan.slice(i + 1).find((e) => !e.detour);
+  return next ? t("stack.then", { step: entryPhrase(next) }) : null;
+}
+
+/** The vars a nested run has that its parent has not: what goes back up when it ends done. */
+export function handedBack(child, parent) {
+  return Object.keys(child.vars).filter((k) => child.vars[k] !== parent.vars[k]);
 }
 
 export function holdPhrase(h) {
