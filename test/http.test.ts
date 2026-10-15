@@ -282,3 +282,19 @@ test("/claude: a repeated active is not stored (PostToolUse fires on every tool 
   assert.equal(s.f.store.sessionStatus("zmx:Z1"), "active");
   await s.close();
 });
+
+test("nested runs: --inner in the start body, /api/skip by session or run, parent and child in summaries", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {inner: true, role: pm}\n  - {step: c, role: pm}\n", "", "outer"), ...proc("  - {step: b, role: pm}\n", "", "leaf") });
+  assert.equal((await s.call("POST", "/api/runs", { process: "outer", inner: "leaf" })).status, 400);
+  assert.deepEqual((await s.call("POST", "/api/runs", { process: "outer", bind: { pm: "S1" }, inner: ["leaf"] })).body, { run: "outer#1" });
+  await settle(s.f);
+  const runs = (await s.call("GET", "/api/runs")).body;
+  assert.deepEqual(runs.map((r: any) => [r.id, r.parent, r.child]), [["outer#1", null, "leaf#1"], ["leaf#1", "outer#1", null]]);
+  assert.deepEqual((await s.call("POST", "/api/skip", { session: "S1" })).body.error, "a skip needs a reason");
+  assert.equal((await s.call("POST", "/api/skip", { session: "S1", note: "x" })).status, 200); // the top run: leaf#1
+  assert.equal(s.f.store.getRun("leaf#1")!.entries.b.status, "skipped");
+  await settle(s.f);
+  assert.equal(s.f.store.getRun("outer#1")!.current, "c");
+  assert.deepEqual((await s.call("POST", "/api/skip", { note: "x" })).body.error, "no session: run this inside a flow session, or pass a run");
+  await s.close();
+});

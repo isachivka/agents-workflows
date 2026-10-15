@@ -214,3 +214,21 @@ test("in a split pane flow is that pane's session, and agterm's hook carries the
   assert.equal(s.f.store.sessionStatus("S1:right"), "active");
   await s.close();
 });
+
+test("flow start --inner nests the chain; flow skip skips the current step of this session's run or a named one", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {inner: true, role: pm}\n  - {step: c, role: pm}\n", "max_runs: 3\n", "outer"), ...proc("  - {step: b, role: pm}\n", "", "leaf") });
+  const env = { FLOWD_URL: s.base };
+  assert.equal((await flow(["start", "outer", "--bind", "pm=S1", "--inner", "none"], env)).stdout, "outer#1\n");
+  await settle(s.f);
+  assert.equal(s.f.store.getRun("outer#1")!.entries.inner.status, "skipped");
+  assert.equal((await flow(["start", "outer", "--bind", "pm=S2", "--inner", "leaf"], env)).stdout, "outer#2\n");
+  await settle(s.f);
+  assert.match((await flow(["ls"], env)).stdout, /^leaf#1 .* ↳ outer#2$/m);
+  const noNote = await flow(["skip"], { ...env, AGTERM_SESSION_ID: "S2" });
+  assert.deepEqual([noNote.code, noNote.stderr], [1, "flow: flow skip needs --note saying why\n"]);
+  assert.equal((await flow(["skip", "--note", "not needed"], { ...env, AGTERM_SESSION_ID: "S2" })).stdout, "skipped\n");
+  assert.equal(s.f.store.getRun("leaf#1")!.entries.b.status, "skipped");
+  assert.equal((await flow(["skip", "outer#1", "--note", "not needed"], env)).stdout, "skipped\n");
+  assert.equal(s.f.store.getRun("outer#1")!.entries.c.status, "skipped");
+  await s.close();
+});

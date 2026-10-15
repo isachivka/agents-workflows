@@ -99,7 +99,7 @@ shell: `--run 'pr-loop#3'`.
 ### `flow start`
 
 ```
-flow start <process> [--bind role=SESSION …] [--var key=value …]
+flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
 ```
 
 Starts a run and prints its id (`pr-loop#3`). `--bind` attaches a role to an existing agterm
@@ -107,7 +107,14 @@ session id; unbound roles are spawned when their first line is due. `--var` (rep
 variables before the first entry starts, so its prompt and a role's `name:` can read them; a value
 may hold spaces and `=`: `flow start triage --var title="Fix the login timeout" --var item=42`. In
 a repeating process they last for the first iteration, like any vars. Refused when the process is
-invalid or a session is bound to another open run.
+invalid or a session is bound to another open run — unless that run stands on an `inner` entry
+lending that session's agent: then the new run is nested there (see "Nested runs" in
+[processes.md](processes.md)) and starts with a copy of that run's vars.
+
+`--inner` (repeatable, in order) names what runs in the process's `inner` entry, then in that
+process's `inner`, and so on: `flow start tracker --inner pr --bind dev=$AGTERM_SESSION_ID`.
+`none` skips that `inner`. A chain that cannot be placed is refused before anything starts
+(`pr has no inner step, so other has nowhere to go`).
 
 When the process already has `max_runs` runs working, the run is created `queued` and the command
 still succeeds: `jsf#6 queued: 2nd in line, 5 of 5 runs open` (the id stays the first word). It
@@ -121,7 +128,8 @@ flow ls [--all] [--process NAME] [--where key=value …]
 ```
 
 One line per open run: id, iteration, status, current entry and its status, what it waits on, and
-the reason it stopped. `--all` adds finished runs. Prints `no runs` when there are none.
+the reason it stopped, and `↳ <run>` for a nested run working in that run's agent. `--all` adds
+finished runs. Prints `no runs` when there are none.
 
 `--process` keeps one process's runs; `--where` keeps runs whose variable equals the value
 exactly (repeat it to require several). A filtered `ls` exits 1 when nothing matches, so a
@@ -136,6 +144,16 @@ pr-loop#3  it.2  running  ci (waiting)  waits gh.checks
 demo#1  it.1  needs-human  demo-hello (active)  role agent session closed
 pr-loop#4  it.1  running  deploy (waiting)  waits hold desk-1 (pr-loop#3)
 ```
+
+### `flow skip`
+
+```
+flow skip [RUN] --note T
+```
+
+Skips the current step of `RUN`, or, without one, of the top run of this session, and goes on to
+the next. The usual use: a run waits on its `inner` entry and nothing is to run there. Refused on
+an `inner` whose nested run is still open (stop that run first).
 
 ### `flow signal`
 

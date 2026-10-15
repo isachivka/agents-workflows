@@ -19,8 +19,10 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
-  flow start <process> [--bind role=SESSION …] [--var key=value …]
-                                         start a run; --var seeds its vars before the first step
+  flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
+                                         start a run; --var seeds its vars before the first step;
+                                         --inner: the process for its inner step, then for that one's
+  flow skip [RUN] --note T               skip the current step of RUN, or of this session's run
   flow ls [--all] [--process P] [--where k=v …]
                                          open runs (--all: finished ones too); filtered, exit 1 when none match
   flow check [name]                      validate FLOWS_HOME offline (all, or one process or step)
@@ -45,10 +47,11 @@ interface Args {
   process?: string;
   where: string[];
   vars: string[];
+  inner: string[];
 }
 
 export function parseArgs(argv: string[]): Args {
-  const a: Args = { _: [], bind: [], human: false, all: false, where: [], vars: [] };
+  const a: Args = { _: [], bind: [], human: false, all: false, where: [], vars: [], inner: [] };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     const value = () => {
@@ -63,6 +66,7 @@ export function parseArgs(argv: string[]): Args {
     else if (x === "--outcome") a.outcome = value();
     else if (x === "--bind") a.bind.push(value());
     else if (x === "--var") a.vars.push(value());
+    else if (x === "--inner") a.inner.push(value());
     else if (x === "--human") a.human = true;
     else if (x === "--all") a.all = true;
     else if (x === "--process") a.process = value();
@@ -174,6 +178,12 @@ export async function main(argv: string[]): Promise<number> {
         out(`waiting: ${a.note}`);
         return 0;
       }
+      case "skip": {
+        if (!a.note) throw new CliError("flow skip needs --note saying why");
+        await call("POST", "/api/skip", { session: a._[0] ? undefined : session, run: a._[0] ?? a.run, note: a.note });
+        out("skipped");
+        return 0;
+      }
       case "set": {
         if (!a._.length) throw new CliError("usage: flow set key=value …");
         const vars = pairs(a._);
@@ -195,8 +205,8 @@ export async function main(argv: string[]): Promise<number> {
       }
       case "start": {
         const [name] = a._;
-        if (!name) throw new CliError("usage: flow start <process> [--bind role=SESSION …] [--var key=value …]");
-        const r = await call("POST", "/api/runs", { process: name, bind: pairs(a.bind), vars: pairs(a.vars) });
+        if (!name) throw new CliError("usage: flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]");
+        const r = await call("POST", "/api/runs", { process: name, bind: pairs(a.bind), vars: pairs(a.vars), ...(a.inner.length ? { inner: a.inner } : {}) });
         // the id stays the first word: scripts read it
         out(r.queued ? `${r.run} queued: ${ordinal(r.queued.position)} in line, ${r.queued.open} of ${r.queued.max} runs open` : r.run);
         return 0;
@@ -208,7 +218,7 @@ export async function main(argv: string[]): Promise<number> {
         if (!runs.length) out("no runs");
         for (const r of runs) {
           out([r.id, `it.${r.iteration}`, r.status, r.queue ? `${ordinal(r.queue.position)} in line` : "", r.current ? `${r.current} (${r.currentStatus}${r.agentWait ? `, waiting: ${r.agentWait.note}` : ""})` : r.queue ? "" : "-",
-            r.waitingOn ? `waits ${r.waitingOn}` : "", r.heldBy ? `waits hold ${r.heldBy.hold}${r.heldBy.run ? ` (${r.heldBy.run})` : ""}` : "", r.reason ?? ""].filter(Boolean).join("  "));
+            r.waitingOn ? `waits ${r.waitingOn}` : "", r.heldBy ? `waits hold ${r.heldBy.hold}${r.heldBy.run ? ` (${r.heldBy.run})` : ""}` : "", r.reason ?? "", r.parent ? `↳ ${r.parent}` : ""].filter(Boolean).join("  "));
         }
         // a filtered ls is a question a script asks: exit 1 is "no such run"
         return !runs.length && (a.process || where.length) ? 1 : 0;

@@ -64,6 +64,9 @@ export interface RunSummary {
   agentWait: { note: string; human: boolean; since: number } | null;
   /** the current entry is a pause: when it ends (ms) */
   waitUntil: number | null;
+  /** a nested run: the run whose agent it works in; and the nested run working in this one's */
+  parent: string | null;
+  child: string | null;
   /** queued for a hold: its name and the run that has it */
   heldBy: { hold: string; run: string | null } | null;
   /** a queued run: its place in line and how full its process is */
@@ -517,8 +520,13 @@ export class Flowd {
       }
       case "entry.delivered":
         return this.apply(run, { kind: "delivered", entry });
-      case "entry.skip":
-        return this.apply(run, { kind: "skip", entry, note: String(d.note ?? "") });
+      case "entry.skip": {
+        // flow skip names a run or comes from its session: the step is that run's current one
+        const target = run ? this.store.getRun(run) : str(d.session) ? this.store.runBySession(String(d.session))?.run : undefined;
+        if (!entry && !run && !str(d.session)) return { error: "no session: run this inside a flow session, or pass a run" };
+        if (!target) return { error: run ? `no run ${run}` : "no open run is bound to this session" };
+        return this.apply(target.id, { kind: "skip", entry: entry || (target.current ?? ""), note: String(d.note ?? "") });
+      }
       case "entry.goto":
         return this.apply(run, { kind: "goto", entry });
       case "entry.retry":
@@ -1151,6 +1159,7 @@ export class Flowd {
       needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human),
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
       waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
+      parent: run.parent?.run ?? null, child: s?.child ?? null,
       heldBy: s?.queued ? { hold: s.queued.hold, run: this.holders()[s.queued.hold] ?? null } : null,
       queue: run.status === "queued" ? this.queueOf(run) : null,
       resumable: p && p.terminal !== "zmx" ? Object.keys(p.roles).filter((r) => agentOf(p.roles[r].spawn) !== "other") : [],
