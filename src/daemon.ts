@@ -85,6 +85,7 @@ function killGroup(c: ChildProcess): void {
 
 const AGTERM_STATUSES = new Set(["active", "completed", "idle", "blocked"]);
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+const strings = (v: unknown): string[] | undefined => (Array.isArray(v) ? v.map(String) : undefined);
 const stringVars = (v: unknown): Record<string, string> =>
   Object.fromEntries(Object.entries(v && typeof v === "object" ? (v as Dict) : {}).map(([k, x]) => [k, String(x)]));
 
@@ -427,7 +428,21 @@ export class Flowd {
     const entry = e.entry ?? "";
     switch (e.type) {
       case "run.start":
-        return this.startRun(String(d.process ?? ""), stringVars(d.bind), str(d.trigger), undefined, stringVars(d.vars));
+        return this.startRun(String(d.process ?? ""), stringVars(d.bind), str(d.trigger), undefined, stringVars(d.vars), { inner: strings(d.inner) });
+      case "run.nest": {
+        // an inner entry's start-child: the next process of the chain, on the agent the entry lends
+        const parent = this.store.getRun(run);
+        const cur = parent && this.currentEntry(parent);
+        if (!parent || cur?.id !== entry || cur.kind !== "inner" || parent.entries[entry].child) return {};
+        const p = this.defs.processes[String(d.process)];
+        const role = p && (p.roles[cur.role!] ? cur.role! : Object.keys(p.roles).length === 1 ? Object.keys(p.roles)[0] : undefined);
+        const res = !p ? { error: `no valid process ${String(d.process)}` }
+          : !role ? { error: `${p.name} has roles ${Object.keys(p.roles).join(", ")}; none is ${cur.role}` }
+          : !parent.roles[cur.role!] ? { error: `${cur.role} has no session to lend ${p.name}` }
+          : await this.startRun(p.name, { [role]: parent.roles[cur.role!]! }, undefined, undefined, {}, { inner: strings(d.chain), parent: { run, entry } });
+        if (res.error) return this.apply(run, { kind: "report", entry, outcome: "failed", note: res.error, by: "system" });
+        return res;
+      }
       case "agterm.status":
       case "agterm.closed": {
         const session = String(d.session ?? "");
@@ -580,16 +595,35 @@ export class Flowd {
     return { run: hit.run.id, entry: cur.id };
   }
 
-  private async startRun(name: string, bind: Record<string, string>, trigger?: string, ev?: FlowEvent, vars: Record<string, string> = {}): Promise<Result> {
+  private async startRun(name: string, bind: Record<string, string>, trigger?: string, ev?: FlowEvent, vars: Record<string, string> = {},
+    opts: { inner?: string[]; parent?: { run: string; entry: string } } = {}): Promise<Result> {
     const p = this.defs.processes[name];
     if (!p) {
       const why = this.defs.invalid[`process:${name}`];
       return { error: `no valid process ${name}${why ? `: ${why.join("; ")}` : ""}` };
     }
+    const chainError = this.chainError(name, opts.inner ?? []);
+    if (chainError) return { error: chainError };
+    let parent = opts.parent;
     for (const [role, session] of Object.entries(bind)) {
       if (!p.roles[role]) return { error: `${name} has no role ${role}` };
       const taken = this.store.runBySession(session);
-      if (taken) return { error: `session ${session} is already bound to ${taken.run.id}` };
+      if (!taken || taken.run.id === parent?.run) continue;
+      const at = this.lendingEntry(taken.run, session);
+      if (!at || parent) {
+        const nests = this.defs.processes[taken.run.process]?.entries.some((e) => e.kind === "inner");
+        return { error: nests && !parent
+          ? `${taken.role} is busy with ${taken.run.id} at step ${taken.run.current ?? "none"}; a nested process can start when it reaches inner`
+          : `session ${session} is already bound to ${taken.run.id}` };
+      }
+      parent = { run: taken.run.id, entry: at };
+    }
+    const parentRun = parent ? this.store.getRun(parent.run) : null;
+    if (parent && parentRun) {
+      const lent = Object.keys(bind).filter((r) => Object.values(parentRun.roles).includes(bind[r]));
+      const clears = p.entries.find((e) => e.do === "clear" && lent.includes(e.role ?? ""));
+      if (clears) return { error: `${name} clears ${clears.role}'s context, which ${parent.run} still needs; use compact` };
+      vars = { ...parentRun.vars, ...vars };
     }
     const runs = this.store.openRuns().filter((r) => r.process === name);
     const open = runs.filter((r) => r.status !== "queued").length;
@@ -602,6 +636,13 @@ export class Flowd {
     }
     const n = this.store.nextRunNumber(name);
     const run = newRun(`${name}#${n}`, p, bind);
+    if (opts.inner?.length) run.inner = opts.inner;
+    if (parent) {
+      run.parent = { ...parent, vars: { ...vars } };
+      // attached before it starts, so a run that ends at once still finds its parent waiting
+      const attached = await this.apply(parent.run, { kind: "child", entry: parent.entry, child: run.id });
+      if (attached.error) return attached;
+    }
     const event = ev ? { type: ev.type, outcome: ev.outcome, data: ev.data, source: ev.source } : undefined;
     if (full) {
       const position = runs.length - open + 1;
@@ -612,6 +653,31 @@ export class Flowd {
     }
     this.store.createRun(run, n, this.now());
     return this.apply(run.id, { kind: "start", vars, event });
+  }
+
+  /** Why `--inner` cannot be placed: each process but the last needs an inner entry for the next. */
+  private chainError(name: string, chain: string[]): string | undefined {
+    let host = name;
+    for (const [i, next] of chain.entries()) {
+      if (!this.defs.processes[host]?.entries.some((e) => e.kind === "inner")) return `${host} has no inner step, so ${next} has nowhere to go`;
+      if (next === "none") return i === chain.length - 1 ? undefined : "none must be the last of --inner";
+      const p = this.defs.processes[next];
+      if (!p) {
+        const why = this.defs.invalid[`process:${next}`];
+        return `no valid process ${next}${why ? `: ${why.join("; ")}` : ""}`;
+      }
+      if (p.repeat) return `${next} repeats (repeat: true), so it never ends and cannot run nested`;
+      host = next;
+    }
+    return undefined;
+  }
+
+  /** The inner entry a run lends this session's agent on: current, waiting, nobody nested yet. */
+  private lendingEntry(run: RunState, session: string): string | undefined {
+    const cur = this.currentEntry(run);
+    const s = cur && run.entries[cur.id];
+    if (run.status !== "running" || cur?.kind !== "inner" || s?.status !== "waiting" || s.child || run.roles[cur.role!] !== session) return undefined;
+    return cur.id;
   }
 
   private async apply(runId: string, input: Input): Promise<Result> {
@@ -717,6 +783,7 @@ export class Flowd {
       else if (a.kind === "unwatch") this.plugins.unwatch(runId, a.entry);
       else if (a.kind === "plugin-action") void this.runAction(runId, a.entry, a.name, a.with);
       else if (a.kind === "shell") this.background(this.runShell(runId, a.entry, a.command, a.cwd, a.env, a.timeoutMs));
+      else if (a.kind === "start-child") void this.submit({ type: "run.nest", run: runId, entry: a.entry, data: { process: a.process, chain: a.chain }, source: "flowd" });
     }
     for (const id of emitted) void this.enqueue(() => this.process(id));
     if (res.actions.some((a) => a.kind === "deliver")) void this.flush();
