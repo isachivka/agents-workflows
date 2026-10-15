@@ -75,6 +75,8 @@ test("event and entry phrases", () => {
   assert.equal(T.entryPhrase(entry("ci", { kind: "wait", role: null, waitFor: "gh.checks", step: null, summary: null })), "Waiting for GitHub checks");
   assert.equal(T.entryPhrase(entry("fix", { summary: "The dev fixes red CI" })), "The dev fixes red CI");
   assert.equal(T.entryPhrase(entry("fix", { summary: null })), "fix");
+  assert.equal(T.entryPhrase(entry("inner", { kind: "inner", step: null, summary: null, child: null })), "Waits for a nested process");
+  assert.equal(T.entryPhrase(entry("inner", { kind: "inner", step: null, summary: null, child: "pr#4" })), "Nested: pr#4");
   assert.equal(T.runLabel("pr-loop#4"), "pr-loop · run 4");
   assert.equal(T.runLabel("odd"), "odd");
 });

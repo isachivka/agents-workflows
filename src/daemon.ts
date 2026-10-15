@@ -1171,7 +1171,7 @@ export class Flowd {
           status: st?.status ?? "pending", step: e.step ?? null,
           summary: e.step ? this.defs.steps[e.step]?.summary ?? null : null, do: e.do ?? null,
           startedAt: st?.startedAt ?? null, note: st?.note ?? null, onFail: e.onFail, after: e.after ?? null,
-          waitMs: e.delayMs ?? null, sh: e.sh ?? null,
+          waitMs: e.delayMs ?? null, sh: e.sh ?? null, child: st?.child ?? null,
         };
       }),
     };
