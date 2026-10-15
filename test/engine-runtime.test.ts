@@ -513,3 +513,56 @@ test("a ping is refused when nothing is awaited from someone, or no agent can se
     .send({ kind: "start" }).send({ kind: "pause" }).send({ kind: "ping" });
   assert.equal(paused.error, "p#1 is paused");
 });
+
+const NESTED = ONE_ROLE("  - {step: b, role: pm}\n  - {inner: true, role: pm, timeout: 1h}\n  - {step: c, role: pm}\n");
+
+test("inner without a chain waits for a nested run; nothing reaches the agent", () => {
+  const s = new Sim(NESTED, STEPS, { pm: "S1" }).send({ kind: "start" }).send(rep("b"));
+  assert.equal(s.status("inner"), "waiting");
+  assert.deepEqual(s.kinds().filter((k) => k !== "emit"), []);
+  s.now += 3_600_000;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("inner"), "failed"); // no nested run came within its timeout
+});
+
+test("inner with a chain starts the first process there and hands on the rest", () => {
+  const s = new Sim(NESTED, STEPS, { pm: "S1" });
+  s.run.inner = ["two", "three"];
+  s.send({ kind: "start" }).send(rep("b"));
+  assert.deepEqual(s.actions.filter((a) => a.kind === "start-child"), [{ kind: "start-child", entry: "inner", role: "pm", process: "two", chain: ["three"] }]);
+  assert.equal(s.status("inner"), "waiting");
+});
+
+test("inner with the chain none is skipped", () => {
+  const s = new Sim(NESTED, STEPS, { pm: "S1" });
+  s.run.inner = ["none"];
+  s.send({ kind: "start" }).send(rep("b"));
+  assert.deepEqual([s.status("inner"), s.run.entries.inner.note], ["skipped", "no inner process"]);
+  assert.deepEqual(s.delivered(), [nudge("pm", "c")]);
+});
+
+test("a nested run attaches to a waiting inner once; while it is open the inner holds", () => {
+  const s = new Sim(NESTED, STEPS, { pm: "S1" }).send({ kind: "start" });
+  assert.match(s.send({ kind: "child", entry: "inner", child: "two#1" }).error!, /not waiting for a nested run/);
+  s.send(rep("b")).send({ kind: "child", entry: "inner", child: "two#1" });
+  assert.equal(s.run.entries.inner.child, "two#1");
+  assert.match(s.send({ kind: "child", entry: "inner", child: "two#2" }).error!, /already has two#1/);
+  s.now += 7_200_000;
+  s.send({ kind: "tick" });
+  assert.equal(s.status("inner"), "waiting"); // the nested run's own steps keep time
+  for (const input of [{ kind: "skip", entry: "inner", note: "x" }, { kind: "retry", entry: "inner" }, { kind: "goto", entry: "b" }] as Input[]) {
+    assert.equal(s.send(input).error, "inner has a nested run two#1 open; stop it first");
+  }
+  s.send({ kind: "set", vars: { pr: "u" } }).send(rep("inner", "done", "system", "two#1 done"));
+  assert.deepEqual([s.status("inner"), s.run.vars.pr], ["done", "u"]);
+  assert.deepEqual(s.delivered(), [nudge("pm", "c")]);
+});
+
+test("a failed nested run takes the inner's on_fail; without a nested run inner can be skipped", () => {
+  const s = new Sim(NESTED, STEPS, { pm: "S1" }).send({ kind: "start" }).send(rep("b"));
+  s.send({ kind: "skip", entry: "inner", note: "no nested process" });
+  assert.equal(s.status("inner"), "skipped");
+  const f = new Sim(NESTED, STEPS, { pm: "S1" }).send({ kind: "start" }).send(rep("b")).send({ kind: "child", entry: "inner", child: "two#1" });
+  f.send(rep("inner", "failed", "system", "two#1 stopped"));
+  assert.deepEqual([f.run.status, f.run.reason], ["needs-human", "inner failed: two#1 stopped"]);
+});

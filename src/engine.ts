@@ -173,7 +173,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const e = byId(id)!;
     const s = st(id);
     run.current = id;
-    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined, queued: undefined });
+    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined, queued: undefined, child: undefined });
     proceed(id);
   }
 
@@ -189,6 +189,18 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     }
     if (e.kind === "delay") {
       s.status = "waiting"; // the tick closes it once startedAt + delayMs has passed
+      return;
+    }
+    if (e.kind === "inner") {
+      s.status = "waiting"; // the daemon attaches the nested run; its end reports this entry
+      const [next, ...chain] = run.inner ?? [];
+      if (next === "none") {
+        s.status = "skipped";
+        s.note = "no inner process";
+        s.by = "system";
+        return advance(id);
+      }
+      if (next) actions.push({ kind: "start-child", entry: id, role: e.role!, process: next, chain });
       return;
     }
     if (e.waitFor) {
@@ -331,6 +343,10 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
 
   const curId = run.current;
   const cur = curId ? byId(curId) : undefined;
+  const openChild = curId ? run.entries[curId]?.child : undefined;
+  if (openChild && (input.kind === "skip" || input.kind === "retry" || input.kind === "goto")) {
+    return fail(`${curId} has a nested run ${openChild} open; stop it first`);
+  }
   if (curId && !cur && input.kind !== "goto" && input.kind !== "bind" && input.kind !== "respawn") {
     const reason = `entry ${curId} no longer exists`;
     if (run.reason !== reason) halt(reason);
@@ -498,6 +514,13 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       deliver(role, pingText(run, cur.id, cur.waitFor.on, now - (s.startedAt ?? now)));
       return done();
     }
+    case "child": {
+      const s = st(input.entry);
+      if (input.entry !== curId || cur!.kind !== "inner" || s.status !== "waiting") return fail(`${input.entry} is not waiting for a nested run`);
+      if (s.child) return fail(`${input.entry} already has ${s.child}`);
+      s.child = input.child;
+      return done();
+    }
     case "hold-free": {
       if (run.status !== "running" || !cur || !st(cur.id).queued) return fail(`${run.id} is not queued for a hold`);
       const s = st(cur.id);
@@ -510,7 +533,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       if (run.status !== "running" || !cur) return done();
       const s = st(cur.id);
       if (s.status !== "active" && s.status !== "waiting") return done();
-      if (s.queued) return done(); // its timeout starts once it has the hold
+      if (s.queued || s.child) return done(); // its timeout starts once it has the hold; a nested run keeps its own time
       if (cur.kind === "delay" && s.status === "waiting" && s.startedAt !== undefined && now - s.startedAt >= cur.delayMs!) {
         finish(cur.id, "done", { note: `waited ${formatDuration(cur.delayMs!)}`, by: "system" });
         return done();

@@ -103,6 +103,8 @@ export interface EntryState {
   woke?: { type: string; data: Dict };
   /** The agent ended (or will end) its turn on purpose: `flow wait`. */
   wait?: AgentWait;
+  /** an inner entry: the nested run working in its role's agent */
+  child?: string;
 }
 
 /** Declared mid-turn it parks on that turn's end; the agent's next turn uses it up. */
@@ -130,6 +132,10 @@ export interface RunState {
   queuePos?: number;
   /** the entry whose agent has not started; its first active resumes the run */
   startBlocked?: string;
+  /** what `flow start --inner` asked for: the process for this run's inner entry, then theirs */
+  inner?: string[];
+  /** a nested run: the run and inner entry it works for, and the vars it was started with */
+  parent?: { run: string; entry: string; vars: Record<string, string> };
 }
 
 export type SessionStatus = "active" | "completed" | "idle" | "blocked" | "closed";
@@ -147,6 +153,7 @@ export type Input =
   | { kind: "hold-free" }
   | { kind: "queued"; position: number; open: number; max: number }
   | { kind: "ping" }
+  | { kind: "child"; entry: string; child: string }
   | { kind: "set"; vars: Record<string, string> }
   | { kind: "pause" }
   | { kind: "resume" }
@@ -163,6 +170,7 @@ export type Action =
   | { kind: "watch"; entry: string; waitFor: WaitFor; previous?: { type: string; data: Dict } }
   | { kind: "unwatch"; entry: string }
   | { kind: "plugin-action"; entry: string; name: string; with: Dict }
+  | { kind: "start-child"; entry: string; role: string; process: string; chain: string[] }
   | { kind: "shell"; entry: string; command: string; cwd: string; env: Record<string, string>; timeoutMs: number }
   | { kind: "emit"; event: FlowEvent };
 
