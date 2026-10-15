@@ -108,3 +108,18 @@ test("a database from before the subscription column gets it on open", () => {
   assert.equal(s.event(id)!.subscription, "k");
   s.close();
 });
+
+test("a session's run is the top of its stack: the open run bound to it with no open child there", () => {
+  const s = new Store(":memory:");
+  s.createRun(run("a#1", "a", { roles: { dev: "S1" } }), 1, 100);
+  s.createRun(run("b#1", "b", { roles: { dev: "S1", ops: "S2" }, parent: { run: "a#1", entry: "inner", vars: {} } }), 1, 200);
+  s.createRun(run("c#1", "c", { roles: { dev: "S1" }, parent: { run: "b#1", entry: "inner", vars: {} } }), 1, 300);
+  assert.deepEqual([s.runBySession("S1")?.run.id, s.runBySession("S1")?.role], ["c#1", "dev"]);
+  assert.equal(s.runBySession("S2")?.run.id, "b#1");
+  assert.deepEqual(s.childrenOf("b#1").map((r) => r.id), ["c#1"]);
+  const c = s.getRun("c#1")!;
+  c.status = "done";
+  s.saveRun(c, 400);
+  assert.equal(s.runBySession("S1")?.run.id, "b#1");
+  assert.deepEqual(s.childrenOf("b#1"), []);
+});

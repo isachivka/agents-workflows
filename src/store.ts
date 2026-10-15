@@ -140,11 +140,20 @@ export class Store {
     return rows.map((r) => JSON.parse(r.state));
   }
 
+  /**
+   * The run a session's events and commands are for: of the open runs bound to it, the top one — a
+   * nested run sits on the run whose agent it borrowed, so that run is under it until it ends.
+   */
   runBySession(session: string): { run: RunState; role: string } | null {
-    for (const run of this.openRuns()) {
-      for (const [role, s] of Object.entries(run.roles)) if (s === session) return { run, role };
-    }
-    return null;
+    const bound = this.openRuns().filter((r) => Object.values(r.roles).includes(session));
+    const run = bound.find((r) => !bound.some((x) => x.parent?.run === r.id));
+    if (!run) return null;
+    return { run, role: Object.keys(run.roles).find((k) => run.roles[k] === session)! };
+  }
+
+  /** Open nested runs working for this run. */
+  childrenOf(runId: string): RunState[] {
+    return this.openRuns().filter((r) => r.parent?.run === runId);
   }
 
   enqueue(runId: string, role: string, text: string, entry: string | null = null, now = Date.now()): number {
