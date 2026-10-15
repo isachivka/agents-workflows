@@ -298,3 +298,13 @@ test("nested runs: --inner in the start body, /api/skip by session or run, paren
   assert.deepEqual((await s.call("POST", "/api/skip", { note: "x" })).body.error, "no session: run this inside a flow session, or pass a run");
   await s.close();
 });
+
+test("POST /api/runs/:id/nest starts a process in the run's inner; a refusal is 409", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {inner: true, role: pm}\n", "", "outer"), ...proc("  - {step: b, role: pm}\n", "", "leaf") });
+  await s.call("POST", "/api/runs", { process: "outer", bind: { pm: "S1" } });
+  await settle(s.f);
+  const bad = await s.call("POST", "/api/runs/outer%231/nest", { process: "nope" });
+  assert.deepEqual([bad.status, bad.body.error], [409, "no valid process nope"]);
+  assert.deepEqual((await s.call("POST", "/api/runs/outer%231/nest", { process: "leaf" })).body, { run: "leaf#1" });
+  await s.close();
+});

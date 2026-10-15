@@ -441,16 +441,22 @@ export class Flowd {
         return this.nestedEnd(run);
       case "run.nest": {
         // an inner entry's start-child: the next process of the chain, on the agent the entry lends
+        // from --inner (entry named; a refusal fails the inner) or from the UI (the current entry;
+        // a refusal is the answer, the person picks again)
+        const ui = d.ui === true;
         const parent = this.store.getRun(run);
         const cur = parent && this.currentEntry(parent);
-        if (!parent || cur?.id !== entry || cur.kind !== "inner" || parent.entries[entry].child) return {};
+        const at = ui ? cur?.id : entry;
+        if (!parent || !cur || cur.id !== at || cur.kind !== "inner" || parent.entries[cur.id].child || parent.entries[cur.id].status !== "waiting") {
+          return ui ? { error: `${run} is not waiting for a nested process` } : {};
+        }
         const p = this.defs.processes[String(d.process)];
         const role = p && (p.roles[cur.role!] ? cur.role! : Object.keys(p.roles).length === 1 ? Object.keys(p.roles)[0] : undefined);
         const res = !p ? { error: `no valid process ${String(d.process)}` }
           : !role ? { error: `${p.name} has roles ${Object.keys(p.roles).join(", ")}; none is ${cur.role}` }
           : !parent.roles[cur.role!] ? { error: `${cur.role} has no session to lend ${p.name}` }
-          : await this.startRun(p.name, { [role]: parent.roles[cur.role!]! }, undefined, undefined, {}, { inner: strings(d.chain), parent: { run, entry } });
-        if (res.error) return this.apply(run, { kind: "report", entry, outcome: "failed", note: res.error, by: "system" });
+          : await this.startRun(p.name, { [role]: parent.roles[cur.role!]! }, undefined, undefined, {}, { inner: strings(d.chain), parent: { run, entry: cur.id } });
+        if (res.error && !ui) return this.apply(run, { kind: "report", entry: cur.id, outcome: "failed", note: res.error, by: "system" });
         return res;
       }
       case "agterm.status":
@@ -1177,7 +1183,9 @@ export class Flowd {
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
       waitingOn: s?.status === "waiting" && !s.queued ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,
-      needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human),
+      needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human)
+        // a bare inner: nothing nested, nothing chosen at start, so the person picks or skips
+        || (run.status === "running" && cur?.kind === "inner" && s?.status === "waiting" && !s.child && !run.inner?.length),
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
       waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
       parent: run.parent?.run ?? null, child: s?.child ?? null,

@@ -167,3 +167,20 @@ test("after a restart a parent learns its nested run ended", async () => {
   assert.deepEqual([third.f.store.getRun("outer#1")!.entries.inner.status, third.f.store.getRun("outer#1")!.current], ["done", "c"]);
   await third.f.close();
 });
+
+test("a bare inner waits for the person; the UI's nest starts a process there or says why not, leaving the inner alone", async () => {
+  const pair = { "processes/pair.yaml": "description: d\ncwd: /tmp\nroles: {a: {spawn: claude}, b: {spawn: claude}}\nsteps:\n  - {step: b, role: a}\n" };
+  const { f } = await outerOnInner(pair);
+  assert.equal(f.runSummary(f.store.getRun("outer#1")!).needsYou, true);
+  const nest = (process: string) => f.submit({ type: "run.nest", run: "outer#1", data: { process, ui: true }, source: "ui" });
+  assert.equal((await nest("pair")).error, "pair has roles a, b; none is pm");
+  assert.equal((await nest("nope")).error, "no valid process nope");
+  assert.deepEqual([f.store.getRun("outer#1")!.status, f.store.getRun("outer#1")!.entries.inner.status], ["running", "waiting"]);
+  assert.equal((await nest("leaf")).run, "leaf#1");
+  assert.equal(f.runSummary(f.store.getRun("outer#1")!).needsYou, false);
+  assert.equal((await nest("leaf")).error, "outer#1 is not waiting for a nested process");
+  await f.close();
+  const chained = await outerOnInner({}, { inner: ["leaf"] });
+  assert.equal(chained.f.runSummary(chained.f.store.getRun("outer#1")!).needsYou, false);
+  await chained.f.close();
+});

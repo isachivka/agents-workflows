@@ -45,6 +45,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | GET | `/api/runs/:id` | | `RunSummary` plus `entries` (per-entry state), `events` (newest first) and `sessions` (`{sessionId: agterm status}`) |
 | POST | `/api/runs/:id/pause` · `/resume` · `/stop` | | `{run}` |
 | POST | `/api/runs/:id/ping` | | `{run}`; types a request to nudge whoever the current step waits on (a review, a merge) into the step's agent, or any agent of the run with a session for a human step; the run does not change. Refused (409) unless the run is running and its current step waits for an event |
+| POST | `/api/runs/:id/nest` | `{process}` | `{run}` of the nested run; starts `process` in the run's current `inner` entry, on that entry's agent. Refused (409) when the run is not waiting on a bare `inner`, or the process cannot run there (no matching role, invalid, repeating); the `inner` keeps waiting |
 | POST | `/api/runs/:id/vars` | `{vars: {k: v}}` | `{run}` |
 | POST | `/api/runs/:id/entries/:entry/done` · `/failed` | `{note?, evidence?}` | `{run}`; closes the entry as the human (`failed` needs a note) |
 | POST | `/api/runs/:id/entries/:entry/skip` | `{note}` | `{run}`; a skip needs a reason |
@@ -66,7 +67,8 @@ current entry's agent declared a wait (else `null`), `waitUntil` is when a pause
 is `{position, open, max}` for a run with status `queued` (waiting for a free slot), `resumable`
 lists the roles a `restore` can bring back, `parent` is the run a nested run works in (else
 `null`), `child` the nested run open on the current `inner` entry (also per entry in `plan`), (Claude and Codex agents in agterm), and `needsYou` is true for a `needs-human`
-run, one standing on an open human step, or one whose agent waits with `human: true`.
+run, one standing on an open human step, one whose agent waits with `human: true`, or one waiting
+on an `inner` entry with nothing nested and nothing chosen by `--inner`.
 
 ## Agents and events
 
