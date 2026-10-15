@@ -2,7 +2,8 @@ import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
 import { prUrl, repoName, slackUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
-  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, runTitle, duration, ago, clock, moment, runLabel, holdPhrase } from "./text.js";
+  eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, runTitle, duration, ago, clock, moment, runLabel, holdPhrase,
+  stacks, thenPhrase, handedBack } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
 
 const LANG_KEY = "flows.lang";
@@ -50,9 +51,10 @@ function Now() {
   const dayStart = new Date(now).setHours(0, 0, 0, 0);
   const rounds = useRounds(data, dayStart);
   if (!data) return html`<${Loading} error=${error} />`;
-  const live = data.filter(isOpen);
-  const waiting = live.filter((r) => r.needsYou).sort((a, b) => waitingSince(a) - waitingSince(b));
-  const working = live.filter((r) => !r.needsYou);
+  // a run working inside another on the same agent stands for both: one card, the other a tab
+  const piles = stacks(data.filter(isOpen));
+  const waiting = piles.filter((x) => x.top.needsYou).sort((a, b) => waitingSince(a.top) - waitingSince(b.top));
+  const working = piles.filter((x) => !x.top.needsYou);
   const finished = data.filter((r) => !isOpen(r));
   const today = finished.filter((r) => r.updated >= dayStart);
   // a repeating run's finished rounds sit among the finished runs, newest first
@@ -68,11 +70,11 @@ function Now() {
     </section>
     ${waiting.length > 0 && html`<section>
       <h2><${Icon} name="you" />${t("now.waiting")} · ${waiting.length}</h2>
-      <div class="stack">${waiting.map((r) => html`<${WaitingCard} r=${r} now=${now} key=${r.id} />`)}</div>
+      <div class="stack">${waiting.map((x) => html`<div class="pile" key=${x.top.id}><${StackTabs} under=${x.under} /><${WaitingCard} r=${x.top} now=${now} /></div>`)}</div>
     </section>`}
     ${working.length > 0 && html`<section>
       <h2><${Icon} name="agent" />${t("now.working")} · ${working.length}</h2>
-      <div class="grid">${working.map((r) => html`<${WorkingCard} r=${r} now=${now} key=${r.id} />`)}</div>
+      <div class="grid">${working.map((x) => html`<div class="pile" key=${x.top.id}><${StackTabs} under=${x.under} /><${WorkingCard} r=${x.top} now=${now} /></div>`)}</div>
     </section>`}
     ${(finished.length > 0 || rounds.length > 0) && html`<section>
       <h2><${Icon} name="check" />${older ? t("now.recent") : t("now.finished")}</h2>
@@ -107,10 +109,35 @@ function WaitingCard({ r, now }) {
       ${(s === "failed" || s === "stopped") && html`<a class="btn primary" href="#/run/${enc(r.id)}">${t("act.sortOut")}</a>`}
       ${s === "failed" && html`<button class="btn" onClick=${post(`/entries/${enc(cur.id)}/retry`)}>${t("act.retry")}</button>`}
       ${s === "agentAsks" && sid && html`<button class="btn primary" onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: cur.role })}</button>`}
+      ${s === "nest" && html`<${NestPicker} r=${r} cur=${cur} setErr=${setErr} />`}
       <${PingButton} r=${r} setErr=${setErr} />
       <a class="btn quiet" href="#/run/${enc(r.id)}">${t("act.details")}</a>
     </div>
   </article>`;
+}
+
+/** The runs under a nested one, as tabs above its card: the deepest furthest back, each a link. */
+function StackTabs({ under }) {
+  return [...under].reverse().map((u, i, all) => html`<a class="under${u.needsYou ? " you" : ""}" key=${u.id} href="#/run/${enc(u.id)}"
+      style=${`margin: 0 ${Math.min(all.length - i, 3) * 16}px`}>
+    <span>${t(all.length > 1 && i === 0 ? "stack.bottom" : "stack.under")}</span><b>${runLabel(u.id)}</b>${thenPhrase(u) && html`<span>${thenPhrase(u)}</span>`}
+  </a>`);
+}
+
+const shortText = (s) => { const one = s.split(/(?<=[.!?])\s/)[0]; return one.length > 70 ? `${one.slice(0, 67)}…` : one; };
+
+/** A run waits on a bare inner: pick the process to run there on that agent, or skip the step. */
+function NestPicker({ r, cur, setErr }) {
+  const { data } = useData("/api/processes", false);
+  const [pick, setPick] = useState("");
+  const list = (data || []).filter((p) => p.valid && !p.repeat);
+  const chosen = pick || (list[0] ? list[0].name : "");
+  const start = attempt(() => api("POST", `/api/runs/${enc(r.id)}/nest`, { process: chosen }), setErr);
+  const skip = attempt(() => api("POST", `/api/runs/${enc(r.id)}/entries/${enc(cur.id)}/skip`, { note: t("nest.skipNote") }), setErr);
+  return html`<label class="field small">${t("nest.pick")}
+      <select onChange=${(e) => setPick(e.target.value)}>${list.map((p) => html`<option value=${p.name} selected=${p.name === chosen}>${p.name}${p.description ? ` — ${shortText(p.description)}` : ""}</option>`)}</select></label>
+    <button class="btn primary" disabled=${!chosen} onClick=${start}>${t("nest.start", { role: cur.role })}</button>
+    <button class="btn quiet" onClick=${skip}>${t("nest.skip")}</button>`;
 }
 
 function WorkingCard({ r, now }) {
