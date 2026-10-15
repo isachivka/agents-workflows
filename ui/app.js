@@ -239,7 +239,8 @@ function Run({ arg: id }) {
       </div>`}
     </section>
     <${Err} msg=${err} />
-    ${s && html`<${Decide} key=${r.current} r=${r} s=${s} d=${d} post=${post} setErr=${setErr} stop=${stop} />`}
+    ${live && r.parent && html`<${AfterThis} r=${r} />`}
+    ${s && s !== "nest" && html`<${Decide} key=${r.current} r=${r} s=${s} d=${d} post=${post} setErr=${setErr} stop=${stop} />`}
     <div class="cols">
       <section class="main-col"><h2>${t("run.howItGoes")}</h2>
         <${Timeline} r=${r} now=${now} post=${post} setErr=${setErr} live=${live} quiet=${Boolean(s)} /></section>
@@ -349,8 +350,59 @@ function Timeline({ r, now, post, setErr, live, quiet }) {
   })}</ol>`;
 }
 
+/** On a nested run's page: the run it lies on, and what happens when it ends. */
+function AfterThis({ r }) {
+  const { data: p } = useData(`/api/runs/${enc(r.parent)}`, false);
+  if (!p) return null;
+  const back = handedBack(r, p);
+  return html`<div class="pile">
+    <a class="under" href="#/run/${enc(p.id)}" style="margin: 0 16px"><span>${t("stack.onTop")}</span><b>${runLabel(p.id)}</b><span>${t("stack.waits")}</span></a>
+    <section class="box"><h2>${t("after.title")}</h2><div class="after">
+      <div><b>${t("after.goesOn", { run: runLabel(p.id) })}</b><span class="muted small">${thenPhrase(p) || ""}</span></div>
+      <div><b>${t("after.back")}</b><span class="muted small">${back.length ? back.join(", ") : t("after.nothingBack")}</span></div>
+      <div><b>${t("after.stop")}</b><span class="muted small">${t("after.stopText", { run: runLabel(p.id) })}</span></div>
+    </div></section>
+  </div>`;
+}
+
+/** The steps of a nested run, small, inside its parent's inner step. */
+function ChildSteps({ id }) {
+  const { data: c } = useData(`/api/runs/${enc(id)}`, false);
+  if (!c) return null;
+  const shown = c.plan.filter((e) => !e.detour || e.status !== "pending");
+  return html`<ol class="mini">${shown.map((e) => {
+    const dot = e.id === c.current ? "cur" : e.status === "done" || e.status === "skipped" ? "done" : e.kind === "human" ? "you" : "";
+    return html`<li key=${e.id}><span class="md ${dot}"></span><span class=${e.id === c.current ? "" : "muted"}>${roleChip(e)}${entryPhrase(e)}</span></li>`;
+  })}</ol>`;
+}
+
+/** The current inner step: the nested run working inside, or the choice of one. */
+function CurrentInner({ r, e, setErr, live }) {
+  const stopChild = attempt(async () => {
+    if (confirm(t("confirm.stop", { run: runLabel(e.child) }))) await api("POST", `/api/runs/${enc(e.child)}/stop`, {});
+  }, setErr);
+  if (!e.child) {
+    return html`<div class="box you">
+      <div class="meta"><${Pill} tone="you">${t("tag.nest")}<//></div>
+      <h3>${t("nest.title", { role: e.role })}</h3>
+      ${live && html`<div class="acts"><${NestPicker} r=${r} cur=${e} setErr=${setErr} /></div>`}
+    </div>`;
+  }
+  return html`<div class="box cur">
+    <div class="meta"><${Pill} tone="work">${t("run.now")}<//></div>
+    <h3>${t("inner.runs")} <a href="#/run/${enc(e.child)}">${runLabel(e.child)}</a></h3>
+    <p class="muted">${t("inner.agentOn", { role: e.role, run: runLabel(r.id) })}</p>
+    <${ChildSteps} id=${e.child} />
+    ${live && html`<details class="more"><summary>${t("run.stepIn")}</summary><div class="ov">
+      <div><button class="btn danger" onClick=${stopChild}>${t("inner.stop", { run: runLabel(e.child) })}</button><span class="muted small">${t("why.stopChild")}</span></div>
+      <div><span class="muted small">${t("inner.noSkip")}</span></div>
+    </div></details>`}
+  </div>`;
+}
+
 function Current({ r, e, now, post, setErr, live, quiet }) {
   const [why, setWhy] = useState("");
+  if (e.kind === "inner") return html`<${CurrentInner} r=${r} e=${e} setErr=${setErr} live=${live} />`;
   const st = r.entries[e.id] || {};
   const sid = e.role && e.role !== "human" ? r.roles[e.role] : null;
   const since = r.agentWait ? r.agentWait.since : e.startedAt;
@@ -393,14 +445,16 @@ function Details({ vars }) {
 function Agents({ r, post, setErr, live }) {
   const { data: sessions } = useData("/api/sessions", false);
   const [pick, setPick] = useState({});
+  const cur = currentEntry(r);
   const roles = Object.entries(r.roles);
   if (roles.length === 0) return null;
   return html`<section class="box"><h2>${t("run.agents")}</h2>
     ${roles.map(([role, sid]) => {
       const status = sid ? r.sessions[sid] || "unknown" : null;
+      const lent = cur && cur.kind === "inner" && cur.child && cur.role === role;
       return html`<div class="agent" key=${role}>
         <div class="agent-row"><b class="who grow">${role}</b>
-          ${sid ? html`<${Pill} tone=${status === "active" ? "work" : status === "blocked" ? "you" : "calm"}>${t(`sess.${status}`)}<//>`
+          ${lent ? html`<${Pill} tone="work">${t("agent.busyWith", { run: runLabel(cur.child) })}<//>` : sid ? html`<${Pill} tone=${status === "active" ? "work" : status === "blocked" ? "you" : "calm"}>${t(`sess.${status}`)}<//>`
             : live && html`<span class="muted small">${t("run.noSession")}</span>`}
           ${sessions && goneAgents(r, sessions).includes(role)
             ? html`<${RestoreButton} r=${r} role=${role} setErr=${setErr} />`
