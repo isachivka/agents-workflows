@@ -40,6 +40,11 @@ thing will not come, say the PR was merged by hand, the agent's `flow done` ends
 that waits and never reached the agent is refused: `step X waits for gh.review and has not
 reached you yet`.
 
+An agent in another session that names the step with `--run`/`--step` is refused: `step X of
+RUN is its dev agent's (session …), and flowd gives that agent the steps that follow …`. Two
+agents on one run each do the next steps (a review request posted twice); `--human` closes it as
+the person instead.
+
 ### `flow failed`
 
 ```

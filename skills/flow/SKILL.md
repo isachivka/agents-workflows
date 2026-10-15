@@ -29,6 +29,12 @@ when a step is yours. Then:
    one for the task: `flow set title="Fix the login timeout"`.
 5. After reporting, end your turn. The next step arrives as a new `▶ flow:` line.
 
+Only the steps typed into this session are yours. A run you can see in `flow ls` whose step was
+not typed here (you helped with the same PR, you watched its CI) belongs to the agent flowd gives
+it to: do not report its steps with `--run`/`--step` and do not do its next steps — that agent
+does them too, and the work happens twice. Tell the user what you found instead. flowd refuses
+such a report (`… is its dev agent's (session …)`).
+
 Never end a turn without one of `flow done`, `flow failed` or `flow wait`. When the step has you
 wait for something before you can finish it (a job you sent to the background, the user reading
 or picking something in a viewer), run `flow wait --note "<what you are waiting for>"` first, and

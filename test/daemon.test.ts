@@ -1204,3 +1204,16 @@ test("a Down the dialog was too new to take is pressed again", async () => {
   assert.equal(f.store.getRun("p#1")!.status, "running");
   await f.close();
 });
+
+test("an agent in another session cannot close a run's step by --run/--step; the person can, with --human", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  agterm.addSession("S1", "S9");
+  await f.submit(start("p", { pm: "S1" }));
+  await settle(f);
+  const foreign = await f.submit(report({ session: "S9", run: "p#1", entry: "b", outcome: "done" }));
+  assert.equal(foreign.error, "step b of p#1 is its pm agent's (session S1), and flowd gives that agent the steps that follow: do not do them from this session. To close it as the person, add --human");
+  assert.equal((await f.submit({ type: "entry.wait", data: { session: "S9", run: "p#1", entry: "b", note: "x" }, source: "cli" })).error, foreign.error);
+  assert.equal(f.store.getRun("p#1")!.entries.b.status, "active");
+  assert.deepEqual(await f.submit(report({ session: "S9", run: "p#1", entry: "b", outcome: "done", by: "human" })), { run: "p#1" });
+  await f.close();
+});

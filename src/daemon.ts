@@ -503,11 +503,17 @@ export class Flowd {
         const outcome = d.outcome === "done" || d.outcome === "failed" ? (d.outcome as "done" | "failed") : null;
         if (!outcome) return { error: "outcome must be done or failed" };
         const by = (d.by === "human" || d.by === "system" ? d.by : "agent") as "agent" | "human" | "system";
+        if (by === "agent") {
+          const foreign = this.foreignAgent(d, t);
+          if (foreign) return { error: foreign };
+        }
         return this.apply(t.run, { kind: "report", entry: t.entry, outcome, note: str(d.note), evidence: str(d.evidence), by });
       }
       case "entry.wait": {
         const t = this.resolveTarget(d);
         if ("error" in t) return t;
+        const foreign = d.human === true ? undefined : this.foreignAgent(d, t);
+        if (foreign) return { error: foreign };
         const run = this.store.getRun(t.run);
         const role = run ? this.currentEntry(run)?.role : undefined;
         const bound = run && role ? run.roles[role] : null;
@@ -592,6 +598,21 @@ export class Flowd {
       }
     }
     return {};
+  }
+
+  /**
+   * An agent naming a step with --run/--step from a session that is not the step's: another agent
+   * working on the same thing. Its report would race the agent flowd gives the next steps to, and
+   * both would do them (a review request posted twice).
+   */
+  private foreignAgent(d: Dict, t: { run: string; entry: string }): string | undefined {
+    const session = str(d.session);
+    if (!session || !str(d.run)) return undefined;
+    const run = this.store.getRun(t.run);
+    const role = run ? this.defs.processes[run.process]?.entries.find((x) => x.id === t.entry)?.role : undefined;
+    const own = run && role && role !== "human" ? run.roles[role] : null;
+    if (!own || own === session) return undefined;
+    return `step ${t.entry} of ${t.run} is its ${role} agent's (session ${own}), and flowd gives that agent the steps that follow: do not do them from this session. To close it as the person, add --human`;
   }
 
   resolveTarget(d: Dict): { run: string; entry: string } | { error: string } {
