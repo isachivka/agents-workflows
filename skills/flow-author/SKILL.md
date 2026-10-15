@@ -49,6 +49,7 @@ From the installed copy of this skill, the repo is
 | start on a plugin event (GitHub) | `triggers: [{on: gh.opened, with: {label: ready-for-agent}}]`; also `{on: gh.merged, with: {base: main}}`, `{on: gh.ci, with: {branch: main}, where: {conclusion: failure}}`. The run starts with the event's data as vars: `{{vars.pr}}`, `{{vars.number}}`, … |
 | a mechanical step without an agent (git, a script) | `{sh: 'git worktree add "$FLOW_VAR_DIR"'}` — run data comes as env `FLOW_VAR_<NAME>`, never `{{…}}` in the command; quote it; hand values back with `flow set --run "$FLOW_RUN" k=v` |
 | let time pass (keep a session a day, then clean up) | `{id: tail, wait: 24h}`; survives flowd restarts |
+| another process in the middle, chosen per run (an issue-tracker wrapper around any PR process) | `{inner: true, role: dev}` where it goes; start with `flow start tracker --inner pr --bind dev=…` (`--inner` repeats, outer to inner; `none` skips), or start `pr` on that agent once the run waits on `inner`. The nested run gets a copy of the vars and hands back what it set. See "Nested runs" in docs/processes.md |
 | one shared thing (a test environment) for several runs | `hold: <name>` on each entry that uses it: `{step: deploy, role: dev, hold: desk-1}`, `{step: autotests, role: dev, hold: desk-1}`. One run at a time stands on those entries; others queue in front, the rest runs in parallel. Not `max_runs: 1`, which blocks the whole process |
 | one item per pass, forever | `repeat: true` — vars are cleared between iterations |
 | put a process's sessions in one named workspace, name them by date | `workspace: Log sync` on the process (free text, may be shared); `name: "sync {{run.date}}"` on a role (default `{{run.id}} {{role}}`) |
@@ -58,6 +59,10 @@ From the installed copy of this skill, the repo is
 | close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1 or a shared `workspace:`: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
 
 ## Traps
+
+- A start on an agent another run uses is accepted only while that run stands on `inner`;
+  anywhere else it is refused. A nested process may not `do: clear` the borrowed role (use
+  `compact`), and a `repeat: true` process cannot run nested.
 
 - Two entries with the same `step` or `do` need explicit ids: `{id: clear-lead, do: clear, role: lead}`.
 - `{{event.*}}` exists only in an entry an event woke: an agent step with its own `wait_for` (a

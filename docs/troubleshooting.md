@@ -131,6 +131,14 @@ background review, the user reading a PR) but did not say so.
 - An invalid process cannot start, and its open runs stop within seconds (`needs-human`,
   `process X is invalid or missing`). Fix the file; then use the run page's overrides to go on.
 
+## `flow start` says a session is busy or already bound
+
+`dev is busy with tracker#4 at step tracker-find; a nested process can start when it reaches
+inner`: that agent works for another run, whose process has an `inner` entry. Start again once
+`flow ls` shows it on `inner`, or give `--inner` to its start next time. `session X is already
+bound to Y`: Y has no `inner` entry, so nothing can run nested in it; use another session or no
+`--bind`. See "Nested runs" in [processes.md](processes.md).
+
 ## A run is stuck at a step whose entry was removed
 
 The run is `needs-human` with `entry X no longer exists`. Use **goto** on the run page (or

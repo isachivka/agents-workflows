@@ -129,8 +129,10 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
   recipe in [processes](processes.md#recipes)).
 - `flow` finds its session from `FLOW_SESSION` (set in zmx sessions), else `AGTERM_SESSION_ID`.
 - A role can be bound to an existing session at start (`flow start <process> --bind role=SESSION`,
-  or the Start form). A session can be bound to one open run only; that is how `flow` finds the
-  caller.
+  or the Start form). A session belongs to one open run at a time; that is how `flow` finds the
+  caller. The exception is a nested run: a run standing on an `inner` entry lends its session to
+  one more run, which sits on top of it until it ends. The session's events and commands go to the
+  top run (`store.runBySession`). See "Nested runs" in [processes](processes.md).
 - A closed session unbinds its role. The run stops (`role <role> session closed`) only if that
   role was in the middle of a step; otherwise its next line spawns a new session.
 - **Respawn** forgets the session (the next line spawns a new one); **rebind** points the role at

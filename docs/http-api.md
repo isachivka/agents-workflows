@@ -41,7 +41,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/api/runs` | `?all=1` adds finished runs | `RunSummary[]`, open runs first |
-| POST | `/api/runs` | `{process, bind?: {role: session}, vars?: {key: value}}` (vars are set before the first entry) | `{run}`, plus `queued: {position, open, max}` when the process was at `max_runs` and the run waits in line |
+| POST | `/api/runs` | `{process, bind?: {role: session}, vars?: {key: value}, inner?: [process \| "none", …]}` (vars are set before the first entry; `inner`: what runs in its `inner` entry, then in that one's — see "Nested runs" in processes.md) | `{run}`, plus `queued: {position, open, max}` when the process was at `max_runs` and the run waits in line |
 | GET | `/api/runs/:id` | | `RunSummary` plus `entries` (per-entry state), `events` (newest first) and `sessions` (`{sessionId: agterm status}`) |
 | POST | `/api/runs/:id/pause` · `/resume` · `/stop` | | `{run}` |
 | POST | `/api/runs/:id/ping` | | `{run}`; types a request to nudge whoever the current step waits on (a review, a merge) into the step's agent, or any agent of the run with a session for a human step; the run does not change. Refused (409) unless the run is running and its current step waits for an event |
@@ -49,21 +49,23 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/entries/:entry/done` · `/failed` | `{note?, evidence?}` | `{run}`; closes the entry as the human (`failed` needs a note) |
 | POST | `/api/runs/:id/entries/:entry/skip` | `{note}` | `{run}`; a skip needs a reason |
 | POST | `/api/runs/:id/entries/:entry/retry` · `/goto` | | `{run}` |
+| POST | `/api/skip` | `{session? \| run?, note}` | `{run}`; skips the current step of `run`, or of the session's top run (`flow skip`) |
 | GET | `/api/runs/:id/entries/:entry/prompt` | | `{text}`, what `flow show` prints for that entry |
 | POST | `/api/runs/:id/roles/:role/rebind` | `{session}` | `{run}` |
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
 | POST | `/api/runs/:id/roles/:role/restore` | | `{session}`; reopens the role's conversation in a new agterm session and focuses it: Claude with `<spawn> --resume <id>` (found in `~/.claude/projects`), Codex with `<spawn> resume <id>` (found in `~/.codex/sessions`), by the step lines flowd typed into it; an open session is just focused. The run does not change. 409 when the role is not Claude or Codex in agterm, or no conversation is found |
 
 `RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
-waitingOn, roles, vars, needsYou, agentWait, waitUntil, heldBy, queue, resumable, created, updated, plan}`, where `created` and
+waitingOn, roles, vars, needsYou, agentWait, waitUntil, parent, child, heldBy, queue, resumable, created, updated, plan}`, where `created` and
 `updated` are ms, when the run was created and last saved, `plan` lists every entry as
-`{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after}`
+`{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after, waitMs, sh, child}`
 (`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"`,
 `"end"` or `{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the
 current entry's agent declared a wait (else `null`), `waitUntil` is when a pause entry ends (ms),
 `heldBy` is `{hold, run}` while the current entry queues for a `hold` (`run`: who has it), `queue`
 is `{position, open, max}` for a run with status `queued` (waiting for a free slot), `resumable`
-lists the roles a `restore` can bring back (Claude and Codex agents in agterm), and `needsYou` is true for a `needs-human`
+lists the roles a `restore` can bring back, `parent` is the run a nested run works in (else
+`null`), `child` the nested run open on the current `inner` entry (also per entry in `plan`), (Claude and Codex agents in agterm), and `needsYou` is true for a `needs-human`
 run, one standing on an open human step, or one whose agent waits with `human: true`.
 
 ## Agents and events

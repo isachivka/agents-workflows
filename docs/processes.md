@@ -145,6 +145,7 @@ Each item of `steps:` is one of these kinds:
 | plugin action | `{do: <plugin>.<action>, with: {...}}` | flowd calls the plugin; a throw fails the entry. No action ships with flows yet. |
 | pure wait | `{wait_for: <type>}` | Waits for an event; its `outcome` closes the entry (`failed` fails it). |
 | shell command | `{sh: 'git worktree add "$FLOW_VAR_DIR"'}` | flowd runs the command itself (a login `zsh`) in the entry's `cwd`, else the process `cwd`. Exit 0 is done (note: the last line of output), anything else fails (note: the exit code and stderr). The command is never templated: the run reaches it as environment variables `FLOW_RUN`, `FLOW_PROCESS`, `FLOW_ITERATION`, `FLOW_VAR_<NAME>`, `FLOW_EVENT_<KEY>` (upper-cased, other characters `_`), so an outside value cannot run as code. It hands values on with `flow set --run "$FLOW_RUN" key=value`. Killed after the entry's `timeout`, else 30 minutes, together with every process it started (it runs in its own process group). A flowd restart mid-command kills it the same way and fails the entry. It runs as you, without a sandbox. |
+| nested process | `{inner: true, role: <role>}` | Another process runs here, in this role's agent, and the entry ends with it. See "Nested runs" below. |
 | pause | `{wait: 24h}` | Waits that long, then is done and the run moves on. The clock is kept in the database, so a flowd restart does not reset it. A human can end it early (`done`, `skip`) or restart it (`retry`). |
 
 Keys on any entry:
@@ -193,9 +194,52 @@ From `src/engine.ts`:
   `clear` on a role with no session) stops the run instead of looping.
 - **Human overrides**: mark the current entry done or failed (UI, or `flow done|failed --human`),
   skip it (a skip needs a reason), retry it, or go to any entry (UI or HTTP API).
+- **Nested runs.** See the next section.
 - **Back on track by talking to the agent.** An agent step that failed and stopped the run stays
   the agent's: tell the agent in its session how to go on, and once it is done its own
   `flow done` resumes the run at the next entry.
+
+## Nested runs
+
+Several processes can drive one agent, one inside the other, without a process per combination.
+A process marks the place with an `inner` entry; which process runs there is chosen at start or
+later:
+
+```yaml
+# tracker.yaml: find the issue, let any process do the work, move the issue on
+steps:
+  - {step: tracker-find, role: dev}          # flow set issue=KEY
+  - {inner: true, role: dev}
+  - {step: tracker-transition, role: dev}    # reads {{vars.issue}} and {{vars.pr}}
+```
+
+```sh
+flow start tracker --inner pr --bind dev=$AGTERM_SESSION_ID   # pr runs at inner
+flow start tracker --bind dev=$AGTERM_SESSION_ID               # waits at inner …
+flow start pr --bind dev=$AGTERM_SESSION_ID                    # … until a run starts on that agent
+flow skip --note "nothing to nest"                             # … or it is skipped
+```
+
+- **The stack.** A run on an `inner` entry lends that role's session to one nested run, which is
+  bound to the same session. The session's events and commands (turn ends, `flow done/set/wait`,
+  `flow show`, ping) belong to the top run: the nested one while it is open. Nesting goes as deep
+  as the processes have `inner` entries.
+- **Choosing.** `--inner` names the processes in order, outer to inner: `flow start a --inner b
+  --inner c` runs `b` in `a`'s `inner` and `c` in `b`'s. `none` skips that `inner`. A chain that
+  cannot be placed is refused at start. Without `--inner` the run waits at `inner`; a start with
+  `--bind <role>=<that session>` then becomes the nested run. A start on a busy session anywhere
+  else is refused.
+- **Roles.** The nested run takes the agent in its role named like the `inner` entry's role, else
+  in its only role; otherwise the `inner` fails. Its other roles spawn sessions as usual.
+- **Variables.** The nested run starts with a copy of its parent's vars (and its own `--var`).
+  When it ends done, the vars it set or changed are copied back.
+- **Ends.** Nested run done → `inner` done (note: `<run> done`). Stopped → `inner` fails with
+  that reason and its `on_fail` decides. Stopping the parent stops the nested run; pausing does
+  not. An `inner` with an open nested run cannot be skipped, retried or left by goto: stop the
+  nested run first. Its `timeout` counts only until a nested run starts. A nested run over its
+  `max_runs` queues; the parent keeps waiting.
+- **Refused in a nested run:** a `do: clear` on the borrowed role (it would wipe the context the
+  parent still needs; `compact` is fine), and processes with `repeat: true` (they never end).
 
 ## Validation
 
@@ -214,6 +258,7 @@ name the entry as `steps[N]` (counting from 1) or by id:
 | codex | `steps[N]: do: compact needs a Claude agent; role X runs codex`, `role X runs codex, which needs terminal: agterm (its turns reach flowd through agterm)` |
 | triggers | `triggers must be a list`, `trigger N: needs cron or on`, `trigger N: cron …: <parse error>`, `trigger N: unknown event type X`, `trigger N: where must be a mapping`, `trigger N: with must be a mapping`, `trigger N: with only applies to on: triggers` |
 | entry shape | `steps must be a non-empty list`, `steps[N]: must be a mapping`, `steps[N]: unknown key X`, `steps[N]: needs step, do, wait_for, wait or sh`, `steps[N]: wait is a pause on its own; it cannot go with step, do or wait_for`, `steps[N]: sh must be a command`, `steps[N]: sh runs on its own; it cannot go with step, do, wait or role`, `steps[N]: cwd on a step is only for sh, and must be a path`, `steps[N]: step and do are exclusive` |
+| inner | `steps[N]: inner must be true`, `steps[N]: inner needs a declared agent role`, `steps[N]: inner runs another process; it cannot go with step, do, wait_for, wait, sh or hold` |
 | steps and roles | `steps[N]: steps/X.md is missing or invalid`, `steps[N]: step needs a role`, `steps[N]: undeclared role X` |
 | actions | `steps[N]: do: clear needs a declared agent role`, `steps[N]: do: type needs text`, `steps[N]: unknown action X` |
 | events | `steps[N]: unknown event type X`, `steps[N]: wait_for must be an event type or {on, where, with}`, `steps[N]: wait_for.where must be a mapping`, `steps[N]: wait_for.with must be a mapping`, `X: step Y uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event` |

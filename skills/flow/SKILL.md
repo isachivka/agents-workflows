@@ -64,6 +64,11 @@ retry, no limit to raise. Tell the user and end your turn. Lines like
 `▶ flow: <run> is queued — now 1st in line …` only tell you the place; do nothing. The run's first
 `▶ flow: step …` line comes by itself when its turn comes.
 
+While a run waits in your session on a nested process (`flow ls` shows its step as `inner`), the
+same start nests that process in it: you then work for the nested run, and when it ends the
+waiting run goes on with what it `flow set`. Refused anywhere else with `… is busy with …`: tell
+the user, do not retry.
+
 A line `▶ flow: the user asks you to ping whoever <run> is waiting on …` asks for a nudge, not a
 report: find who holds the step up (requested reviewers, owners), write to them where the team
 talks (the Slack thread it names, else a PR comment), tell the user whom you pinged and end your
