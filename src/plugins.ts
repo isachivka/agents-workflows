@@ -30,8 +30,8 @@ export interface ChatAdapter {
 export interface ActiveChat { name: string; chat: ChatAdapter; ctx: PluginCtx }
 /** A way to log in to the UI from outside: a page with the provider's button, and its callback's check. */
 export interface LoginProvider {
-  /** the login page's body: the provider's button, which comes back to /auth/<plugin name> */
-  page(ctx: PluginCtx): string;
+  /** the login page's body: the provider's button, which comes back to `callback` (/auth/<plugin name>) */
+  page(o: { callback: string }, ctx: PluginCtx): string;
   /** the callback's query → who logged in, or why not */
   verify(query: Record<string, string>, ctx: PluginCtx): { user: string; name: string } | { error: string };
 }

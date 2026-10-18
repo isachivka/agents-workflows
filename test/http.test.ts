@@ -216,7 +216,7 @@ test("through the public name, a session from the login provider is needed; loca
   assert.deepEqual([root.status, root.headers.location], [302, "/login"]);
   const page = await hit(s.base, "GET", "/login", pub);
   assert.equal(page.status, 200);
-  assert.match(page.body, /<a href="\/auth\/fakelogin\?ok=1&id=5">log in<\/a>/);
+  assert.match(page.body, /<a href="\/auth\/fakelogin\?ok=1&id=5">log in<\/a> back to https:\/\/flows\.example\.net\/auth\/fakelogin/);
 
   const bad = await hit(s.base, "GET", "/auth/fakelogin?ok=0", pub);
   assert.equal(bad.status, 403);

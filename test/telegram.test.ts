@@ -5,7 +5,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
-import telegram, { parts } from "../plugins/telegram.ts";
+import { createHash, createHmac } from "node:crypto";
+import telegram, { checkLogin, parts } from "../plugins/telegram.ts";
 import type { ChatMessage, PluginCtx } from "../src/plugins.ts";
 
 /** A fake Bot API: records each call, serves getUpdates from a queue, answers the rest from `answers`. */
@@ -110,4 +111,33 @@ test("without a token the plugin does nothing; chat calls say what to set up", a
   const bare = { ...ctx, config: {} };
   telegram.start(bare);
   await assert.rejects(chat.open({ id: "p#1", process: "p" }, bare), /telegram needs token, chat \(the group's id\) and users/);
+});
+
+/** Signs a login answer the way Telegram does. */
+function signed(q: Record<string, string>, token: string): Record<string, string> {
+  const lines = Object.keys(q).sort().map((k) => `${k}=${q[k]}`).join("\n");
+  return { ...q, hash: createHmac("sha256", createHash("sha256").update(token).digest()).update(lines).digest("hex") };
+}
+
+test("a login answer passes only when this bot signed it, today, for a user in users", () => {
+  const now = 1_800_000_000;
+  const q = signed({ id: "5", first_name: "Ann", username: "ann", auth_date: String(now - 60) }, "123:abc");
+  assert.deepEqual(checkLogin(q, "123:abc", [5], now), { user: "5", name: "Ann" });
+  assert.deepEqual(checkLogin({ ...q, id: "6" }, "123:abc", [5, 6], now), { error: "the answer is not signed by this bot" });
+  assert.deepEqual(checkLogin(q, "999:other", [5], now), { error: "the answer is not signed by this bot" });
+  assert.deepEqual(checkLogin({ ...q, hash: "zz" }, "123:abc", [5], now), { error: "the answer is not signed by this bot" });
+  assert.deepEqual(checkLogin(q, "123:abc", [5], now + 86_400), { error: "the login is over a day old; log in again" });
+  assert.deepEqual(checkLogin(q, "123:abc", [7], now), { error: "Telegram user 5 is not in users in plugins.yaml" });
+});
+
+test("the login page holds the widget for this bot, coming back to the callback", async () => {
+  telegram.start(ctx);
+  let page = "";
+  for (let i = 0; i < 100 && !page.includes("data-telegram-login"); i++) {
+    page = telegram.login.page({ callback: "https://flows.example.net/auth/telegram" }, ctx);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  await telegram.stop();
+  assert.match(page, /data-telegram-login="flows_bot"/);
+  assert.match(page, /data-auth-url="https:\/\/flows\.example\.net\/auth\/telegram"/);
 });

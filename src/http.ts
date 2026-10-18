@@ -166,11 +166,11 @@ function page(res: ServerResponse, status: number, body: string, headers: Record
  * plugin for one and keeps a session. Answers the request itself (the login page, the callback, a
  * refusal) and returns true, or returns false for a request with a valid session.
  */
-async function publicGate(f: Flowd, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+async function publicGate(f: Flowd, req: IncomingMessage, res: ServerResponse, url: URL, pub: URL): Promise<boolean> {
   const l = f.plugins.login();
   const active = l && "login" in l ? l : undefined;
   if (req.method === "GET" && url.pathname === "/login") {
-    page(res, 200, active ? active.login.page(active.ctx)
+    page(res, 200, active ? active.login.page({ callback: `${pub.origin}/auth/${active.name}` }, active.ctx)
       : `<p>no login is set up${l && "error" in l ? `: ${esc(l.error)}` : ""}. Add a login plugin's section to plugins.yaml (docs/plugins.md#logins) and restart flowd.</p>`);
     return true;
   }
@@ -362,7 +362,7 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
     if (!own) {
       return send(res, 403, { error: "flowd only answers its own pages and local clients" });
     }
-    if (pub && host === pub.host && await publicGate(f, req, res, url)) return;
+    if (pub && host === pub.host && await publicGate(f, req, res, url, pub)) return;
     try {
       if (req.method === "GET" && url.pathname === "/api/stream") return stream(f, req, res);
       for (const [method, re, handler] of routes) {

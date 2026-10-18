@@ -109,7 +109,7 @@ export const resetChat = (fail = false) => { (globalThis as any).__flowsChat = [
 export const LOGIN_PLUGIN = `export default {
   name: "fakelogin",
   login: {
-    page() { return '<a href="/auth/fakelogin?ok=1&id=5">log in</a>'; },
+    page(o: any) { return '<a href="/auth/fakelogin?ok=1&id=5">log in</a> back to ' + o.callback; },
     verify(q: any) { return q.ok === "1" ? { user: q.id, name: "Ann" } : { error: "bad signature" }; },
   },
 };

@@ -1,3 +1,4 @@
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { Bot, GrammyError, InputFile } from "grammy";
 import type { Plugin, PluginCtx } from "../src/plugins.ts";
 
@@ -5,6 +6,20 @@ import type { Plugin, PluginCtx } from "../src/plugins.ts";
 const TEXT = 4096, CAPTION = 1024, NAME = 128;
 
 let bot: Bot | undefined;
+let username: string | undefined; // the bot's, for the login widget
+
+const attr = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+/** Telegram's check of a login widget's answer: the fields but hash, sorted, signed with SHA-256(bot token). */
+export function checkLogin(q: Record<string, string>, token: string, users: number[], nowSec = Date.now() / 1000): { user: string; name: string } | { error: string } {
+  const lines = Object.keys(q).filter((k) => k !== "hash").sort().map((k) => `${k}=${q[k]}`).join("\n");
+  const want = createHmac("sha256", createHash("sha256").update(token).digest()).update(lines).digest();
+  const got = Buffer.from(q.hash ?? "", "hex");
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return { error: "the answer is not signed by this bot" };
+  if (!(nowSec - Number(q.auth_date) < 86_400)) return { error: "the login is over a day old; log in again" };
+  if (!users.includes(Number(q.id))) return { error: `Telegram user ${q.id} is not in users in plugins.yaml` };
+  return { user: q.id, name: q.first_name ?? q.username ?? q.id };
+}
 
 interface Config { token: string; chat: number; users: number[] }
 
@@ -75,10 +90,22 @@ export default {
       await call(api(ctx).closeForumTopic(chat, topic));
     },
   },
+  login: {
+    page(o, ctx) {
+      if (!username) return "<p>The Telegram bot has not answered yet; reload in a moment.</p>";
+      // the widget sends the person to Telegram to confirm, then back to the callback with a signed answer
+      return `<script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="${attr(username)}" data-size="large" data-auth-url="${attr(o.callback)}"></script>`
+        + `<p style="opacity:.7;font-size:14px">Only the people in users of plugins.yaml get in.${ctx.config.token ? "" : " (telegram is not set up)"}</p>`;
+    },
+    verify(q, ctx) {
+      const c = config(ctx);
+      return checkLogin(q, c.token, c.users);
+    },
+  },
   start(ctx) {
     if (!ctx.config.token) return; // not set up: the plugin does nothing
     const c = config(ctx);
-    api(ctx);
+    api(ctx).getMe().then((me) => { username = me.username; }, (e) => ctx.error(e));
     bot!.on("message", (t) => {
       const m = t.message;
       if (m.chat.id !== c.chat || !m.is_topic_message || !m.message_thread_id) return;
@@ -100,6 +127,7 @@ export default {
   async stop() {
     const b = bot;
     bot = undefined;
+    username = undefined;
     await b?.stop();
   },
 } satisfies Plugin;
