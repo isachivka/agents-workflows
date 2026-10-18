@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "croner": "^10.0.1",
+    "grammy": "^1.46.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

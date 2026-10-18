@@ -44,6 +44,8 @@ export interface Plugin {
   actions?: Record<string, (args: Dict, ctx: PluginCtx) => unknown>;
   /** What a run is about, in words (a PR's title), from its vars; flowd keeps it in vars.title. */
   title?(run: { vars: Record<string, string>; cwd: string }, ctx: PluginCtx): Promise<string | undefined> | string | undefined;
+  /** when flowd stops: end what `start` began (a poll, a socket) */
+  stop?(ctx: PluginCtx): Promise<unknown> | unknown;
   /** a messenger for runs' conversations; it is the active one when plugins.yaml has its section */
   chat?: ChatAdapter;
 }
@@ -277,8 +279,15 @@ export class PluginHost {
     return [...loaded, ...failed];
   }
 
-  stopAll(): void {
+  async stopAll(): Promise<void> {
     for (const a of [...this.active.values()]) this.drop(a.key);
+    await Promise.all([...this.loaded.values()].map(async (l) => {
+      try {
+        await l.plugin.stop?.(l.ctx);
+      } catch (e) {
+        this.log(`[${l.plugin.name}] stop: ${msg(e)}`);
+      }
+    }));
   }
 }
 

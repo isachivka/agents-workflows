@@ -213,7 +213,7 @@ export class Flowd {
     for (const c of this.crons) c.stop();
     clearTimeout(this.reloadTimer);
     this.watcher?.close();
-    this.plugins.stopAll();
+    await this.plugins.stopAll();
     await this.flushRun;
     await this.idle();
     this.store.close();
