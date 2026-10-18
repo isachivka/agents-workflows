@@ -1,4 +1,5 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { parse } from "yaml";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CORE_EVENTS } from "./defs.ts";
@@ -17,8 +18,19 @@ export interface Watch {
   /** A wait re-armed in the same iteration: the event that last woke its entry. */
   previous?: { type: string; data: Dict };
 }
+/** What a chat adapter hands flowd: a message the person wrote in a run's conversation. */
+export interface ChatMessage { address: string; text: string; from: string }
+/** A messenger: one conversation per run (a topic, a channel, a thread). */
+export interface ChatAdapter {
+  /** opens the run's conversation; returns its address, kept by flowd */
+  open(run: { id: string; process: string; title?: string }, ctx: PluginCtx): Promise<string> | string;
+  post(address: string, msg: { text: string; file?: string }, ctx: PluginCtx): Promise<unknown> | unknown;
+  close(address: string, end: { outcome: "done" | "failed" | "stopped" }, ctx: PluginCtx): Promise<unknown> | unknown;
+}
 export interface PluginCtx {
   emit(e: PluginEvent): void;
+  /** a chat adapter: a message in a run's conversation, from someone the adapter lets write */
+  message(m: ChatMessage): void;
   log(msg: string): void;
   error(err: unknown, w?: Watch): void;
   config: Dict;
@@ -31,6 +43,8 @@ export interface Plugin {
   actions?: Record<string, (args: Dict, ctx: PluginCtx) => unknown>;
   /** What a run is about, in words (a PR's title), from its vars; flowd keeps it in vars.title. */
   title?(run: { vars: Record<string, string>; cwd: string }, ctx: PluginCtx): Promise<string | undefined> | string | undefined;
+  /** a messenger for runs' conversations; it is the active one when plugins.yaml has its section */
+  chat?: ChatAdapter;
 }
 export interface PluginStatus {
   name: string;
@@ -59,13 +73,16 @@ export class PluginHost {
   dirs: string[];
   config: Record<string, Dict>;
   sink: (e: FlowEvent) => void;
+  onMessage: (adapter: string, m: ChatMessage) => void;
   log: (m: string) => void;
   retryBaseMs: number;
 
-  constructor(o: { dirs: string[]; config: Record<string, Dict>; sink: (e: FlowEvent) => void; log?: (m: string) => void; retryBaseMs?: number }) {
+  constructor(o: { dirs: string[]; config: Record<string, Dict>; sink: (e: FlowEvent) => void; log?: (m: string) => void; retryBaseMs?: number;
+    onMessage?: (adapter: string, m: ChatMessage) => void }) {
     this.dirs = o.dirs;
     this.config = o.config;
     this.sink = o.sink;
+    this.onMessage = o.onMessage ?? (() => {});
     this.log = o.log ?? ((m) => console.error(m));
     this.retryBaseMs = o.retryBaseMs ?? 5_000;
   }
@@ -90,6 +107,23 @@ export class PluginHost {
         }
       }
     }
+    const chat = this.chat();
+    if (chat && "error" in chat) this.loadErrors.chat = chat.error;
+    else delete this.loadErrors.chat;
+  }
+
+  /** The active chat adapter: a plugin with `chat` whose name has a section in plugins.yaml. */
+  chat(): { name: string; chat: ChatAdapter; ctx: PluginCtx } | { error: string } | null {
+    const on = [...this.loaded.values()].filter((l) => l.plugin.chat && this.config[l.plugin.name]);
+    if (on.length > 1) return { error: `two chat adapters are set up (${on.map((l) => l.plugin.name).join(", ")}): keep one section in plugins.yaml` };
+    return on[0] ? { name: on[0].plugin.name, chat: on[0].plugin.chat!, ctx: on[0].ctx } : null;
+  }
+
+  /** Shown in Settings → Plugins; a chat adapter's failure does not fail the run that caused it. */
+  fault(name: string, e: unknown): void {
+    const l = this.loaded.get(name);
+    if (l) l.lastError = msg(e);
+    this.log(`[${name}] ${msg(e)}`);
   }
 
   add(plugin: Plugin, source = "inline"): void {
@@ -109,6 +143,7 @@ export class PluginHost {
         this.log(`[${name}] ${msg(err)}`);
       },
       emit: (e) => this.emitFrom(name, e),
+      message: (m) => this.onMessage(name, m),
     };
     this.loaded.set(name, { plugin, ctx, source });
   }
@@ -243,5 +278,18 @@ export class PluginHost {
 
   stopAll(): void {
     for (const a of [...this.active.values()]) this.drop(a.key);
+  }
+}
+
+/** `$FLOWS_HOME/plugins.yaml`: one section per plugin name. */
+export function readPluginConfig(home: string, log: (m: string) => void): Record<string, Dict> {
+  const path = join(home, "plugins.yaml");
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = parse(readFileSync(path, "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, Dict>) : {};
+  } catch (e) {
+    log(`plugins.yaml: ${msg(e)}`);
+    return {};
   }
 }

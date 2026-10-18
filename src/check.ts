@@ -1,13 +1,13 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadDefs } from "./defs.ts";
-import { PluginHost } from "./plugins.ts";
+import { PluginHost, readPluginConfig } from "./plugins.ts";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Validates a FLOWS_HOME the way flowd loads it, without flowd. */
 export async function checkDefs(home: string, name?: string, pluginDirs = [join(REPO, "plugins"), join(home, "plugins")]): Promise<{ ok: boolean; lines: string[] }> {
-  const host = new PluginHost({ dirs: pluginDirs, config: {}, sink: () => {}, log: () => {} });
+  const host = new PluginHost({ dirs: pluginDirs, config: readPluginConfig(home, () => {}), sink: () => {}, log: () => {} });
   await host.load();
   const defs = loadDefs(home, host.eventTypes(), host.actionNames());
   const lines: string[] = [];

@@ -60,7 +60,7 @@ test("the plugin polls the watched PR and emits once, targeted at the waiting en
   const exec = fake({ "pr view": { stdout: JSON.stringify({ state: "MERGED" }) } });
   const emitted: PluginEvent[] = [];
   const errors: string[] = [];
-  const ctx: PluginCtx = { emit: (e) => emitted.push(e), log: () => {}, error: (e) => errors.push(String(e)), config: { interval_ms: 5 } };
+  const ctx: PluginCtx = { emit: (e) => emitted.push(e), message: () => {}, log: () => {}, error: (e) => errors.push(String(e)), config: { interval_ms: 5 } };
   const stop = makeGhPlugin(exec).watch!({ run: "p#1", entry: "merge", type: "gh.merged", with: {}, cwd: "/w", vars: { pr: "7" } }, ctx) as () => void;
   await new Promise((r) => setTimeout(r, 30));
   stop();
@@ -69,7 +69,7 @@ test("the plugin polls the watched PR and emits once, targeted at the waiting en
 });
 
 test("the plugin refuses a gh.checks wait without a PR", () => {
-  const ctx: PluginCtx = { emit: () => {}, log: () => {}, error: () => {}, config: {} };
+  const ctx: PluginCtx = { emit: () => {}, message: () => {}, log: () => {}, error: () => {}, config: {} };
   assert.throws(() => makeGhPlugin(fake({})).watch!({ run: "p#1", entry: "ci", type: "gh.checks", with: {}, cwd: "/w", vars: {} }, ctx), /gh\.checks needs a PR/);
 });
 
@@ -103,7 +103,7 @@ test("a subscription baselines, then emits each new item oldest first, as a broa
   let list = [PR(1)];
   const exec = (async () => ({ code: 0, stdout: JSON.stringify(list), stderr: "" })) as Exec;
   const emitted: PluginEvent[] = [];
-  const ctx: PluginCtx = { emit: (e) => emitted.push(e), log: () => {}, error: () => {}, config: { interval_ms: 5 } };
+  const ctx: PluginCtx = { emit: (e) => emitted.push(e), message: () => {}, log: () => {}, error: () => {}, config: { interval_ms: 5 } };
   const stop = makeGhPlugin(exec).watch!({ type: "gh.merged", with: {}, cwd: "/w", vars: {} }, ctx) as () => void;
   await sleep(15);
   list = [PR(3), PR(2), PR(1)];
@@ -118,7 +118,7 @@ test("a wait in repo mode emits once to its step and stops", async () => {
   let list = [PR(1)];
   const exec = (async () => ({ code: 0, stdout: JSON.stringify(list), stderr: "" })) as Exec;
   const emitted: PluginEvent[] = [];
-  const ctx: PluginCtx = { emit: (e) => emitted.push(e), log: () => {}, error: () => {}, config: { interval_ms: 5 } };
+  const ctx: PluginCtx = { emit: (e) => emitted.push(e), message: () => {}, log: () => {}, error: () => {}, config: { interval_ms: 5 } };
   const stop = makeGhPlugin(exec).watch!({ type: "gh.opened", run: "p#1", entry: "w", with: {}, cwd: "/w", vars: {} }, ctx) as () => void;
   await sleep(15);
   list = [PR(3), PR(2), PR(1)];
@@ -128,7 +128,7 @@ test("a wait in repo mode emits once to its step and stops", async () => {
 });
 
 test("PR-only events refuse a subscription with a pointer to the right event", () => {
-  const ctx: PluginCtx = { emit: () => {}, log: () => {}, error: () => {}, config: {} };
+  const ctx: PluginCtx = { emit: () => {}, message: () => {}, log: () => {}, error: () => {}, config: {} };
   assert.throws(() => makeGhPlugin(fake({})).watch!({ type: "gh.checks", with: {}, cwd: "/w", vars: {} }, ctx), /to start on CI results use gh\.ci/);
   assert.throws(() => makeGhPlugin(fake({})).watch!({ type: "gh.review", with: {}, cwd: "/w", vars: {} }, ctx), /gh\.review needs a PR/);
   assert.throws(() => makeGhPlugin(fake({})).watch!({ type: "gh.ci", with: {}, cwd: "/w", vars: {} }, ctx), /gh\.ci needs with\.branch/);
@@ -142,7 +142,7 @@ test("gh runs in the watch's cwd, in repo and PR mode", async () => {
 });
 
 const repoCtx = (emitted: PluginEvent[], errors: unknown[] = []): PluginCtx =>
-  ({ emit: (e) => emitted.push(e), log: () => {}, error: (e) => errors.push(e), config: { interval_ms: 5 } });
+  ({ emit: (e) => emitted.push(e), message: () => {}, log: () => {}, error: (e) => errors.push(e), config: { interval_ms: 5 } });
 
 test("an old open PR that slides into the window does not fire gh.opened", async () => {
   let list = [40, 39, 38].map((n) => PR(n));
@@ -407,7 +407,7 @@ test("already: false keeps the plain count-based gh.review", () => {
 test("title reads the run's PR title; no pr, no call", async () => {
   const exec = fake({ "pr view": { stdout: JSON.stringify({ title: "Fix the login timeout" }) } });
   const gh = makeGhPlugin(exec);
-  const ctx: PluginCtx = { emit: () => {}, log: () => {}, error: () => {}, config: {} };
+  const ctx: PluginCtx = { emit: () => {}, message: () => {}, log: () => {}, error: () => {}, config: {} };
   assert.equal(await gh.title!({ vars: { pr: "https://github.com/o/r/pull/7" }, cwd: "/w" }, ctx), "Fix the login timeout");
   assert.deepEqual([exec.calls[0], exec.cwds[0]], [["pr", "view", "https://github.com/o/r/pull/7", "--json", "title"], "/w"]);
   assert.equal(await gh.title!({ vars: {}, cwd: "/w" }, ctx), undefined);

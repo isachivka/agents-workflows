@@ -2,7 +2,6 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
@@ -10,7 +9,7 @@ import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
 import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
-import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
+import { PluginHost, msg, readPluginConfig, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
@@ -101,17 +100,6 @@ const strings = (v: unknown): string[] | undefined => (Array.isArray(v) ? v.map(
 const stringVars = (v: unknown): Record<string, string> =>
   Object.fromEntries(Object.entries(v && typeof v === "object" ? (v as Dict) : {}).map(([k, x]) => [k, String(x)]));
 
-function readPluginConfig(home: string, log: (m: string) => void): Record<string, Dict> {
-  const path = join(home, "plugins.yaml");
-  if (!existsSync(path)) return {};
-  try {
-    const parsed = parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, Dict>) : {};
-  } catch (e) {
-    log(`plugins.yaml: ${msg(e)}`);
-    return {};
-  }
-}
 
 // the login shell finds codex; "$@" passes the argv through without quoting anything into a string
 const TRANSLATE = ["/bin/zsh", "-lc", 'exec "$@"', "zsh", "codex", "exec", "-m", "gpt-6-luna", "--sandbox", "read-only",

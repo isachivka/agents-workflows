@@ -87,3 +87,11 @@ test("{{event.*}} in a step no event reaches is reported", async () => {
   const repeating = await checkDefs(home({ ...files, "processes/p.yaml": proc("  - {step: fix, role: dev}\n", "repeat: true\ntriggers: [{on: gh.checks}]\n") }));
   assert.equal(repeating.ok, false);
 });
+
+test("flow check reports two chat adapters set up at once", async () => {
+  const adapter = (n: string) => `export default { name: "${n}", chat: { open() { return ""; }, post() {}, close() {} } };`;
+  const h = home({ "steps/a.md": STEP, "plugins/tg.ts": adapter("tg"), "plugins/mm.ts": adapter("mm"), "plugins.yaml": "tg: {token: t}\nmm: {url: u}\n" });
+  const r = await checkDefs(h, undefined, [join(h, "plugins")]);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.lines, ["plugin chat: two chat adapters are set up (mm, tg): keep one section in plugins.yaml"]);
+});

@@ -158,3 +158,26 @@ test("ctx.error(null, w) clears a watch's error once it works again", async () =
   await sleep(10);
   assert.equal(h.status()[0].watches[0].error, null);
 });
+
+test("the chat adapter is the plugin with chat whose section is in plugins.yaml; two are an error", async () => {
+  const chat = { open: () => "a", post: () => {}, close: () => {} };
+  const got: unknown[] = [];
+  const none = host({ config: {} });
+  none.h.add({ name: "tg", chat });
+  assert.equal(none.h.chat(), null);
+
+  const one = host({ config: { tg: { token: "t" } }, onMessage: (adapter, m) => got.push([adapter, m]) });
+  one.h.add({ name: "tg", chat, start(ctx) { ctx.message({ address: "a", text: "hi", from: "me" }); } });
+  one.h.add({ name: "mm", chat });
+  const c = one.h.chat();
+  assert.ok(c && "chat" in c && c.name === "tg");
+  one.h.startAll();
+  assert.deepEqual(got, [["tg", { address: "a", text: "hi", from: "me" }]]);
+
+  const dir = mkdtempSync(join(tmpdir(), "flows-plugins-"));
+  for (const n of ["tg", "mm"]) writeFileSync(join(dir, `${n}.ts`), `export default { name: "${n}", chat: { open() { return ""; }, post() {}, close() {} } };`);
+  const two = host({ dirs: [dir], config: { tg: {}, mm: {} } });
+  await two.h.load();
+  assert.deepEqual(two.h.chat(), { error: "two chat adapters are set up (mm, tg): keep one section in plugins.yaml" });
+  assert.equal(two.h.loadErrors.chat, "two chat adapters are set up (mm, tg): keep one section in plugins.yaml");
+});
