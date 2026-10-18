@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -138,6 +139,65 @@ function defRoutes(f: Flowd, kind: DefKind): [string, RegExp, Handler][] {
       return {};
     }],
   ];
+}
+
+const SESSION = "flows_session";
+const SESSION_DAYS = 30;
+const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+function cookie(req: IncomingMessage, name: string): string | undefined {
+  for (const part of (req.headers.cookie ?? "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return undefined;
+}
+
+function page(res: ServerResponse, status: number, body: string, headers: Record<string, string> = {}): void {
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers });
+  res.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>flows — log in</title><style>:root{color-scheme:light dark}body{font:17px system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;text-align:center}main{padding:24px;max-width:420px}h1{font-size:24px}</style>
+<main><h1>flows</h1>${body}</main></html>`);
+}
+
+/**
+ * The UI through FLOWD_PUBLIC_URL: flowd has no login of its own, so there it asks the active login
+ * plugin for one and keeps a session. Answers the request itself (the login page, the callback, a
+ * refusal) and returns true, or returns false for a request with a valid session.
+ */
+async function publicGate(f: Flowd, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  const l = f.plugins.login();
+  const active = l && "login" in l ? l : undefined;
+  if (req.method === "GET" && url.pathname === "/login") {
+    page(res, 200, active ? active.login.page(active.ctx)
+      : `<p>no login is set up${l && "error" in l ? `: ${esc(l.error)}` : ""}. Add a login plugin's section to plugins.yaml (docs/plugins.md#logins) and restart flowd.</p>`);
+    return true;
+  }
+  if (req.method === "GET" && url.pathname.startsWith("/auth/")) {
+    if (!active || url.pathname !== `/auth/${active.name}`) { send(res, 404, { error: "not found" }); return true; }
+    const who = active.login.verify(Object.fromEntries(url.searchParams), active.ctx);
+    if ("error" in who) { page(res, 403, `<p>Not logged in: ${esc(who.error)}</p><p><a href="/login">Try again</a></p>`); return true; }
+    const token = randomBytes(32).toString("base64url");
+    f.store.addLogin(sha(token), who.user, who.name, Date.now() + SESSION_DAYS * 86_400_000);
+    res.writeHead(302, { location: "/", "cache-control": "no-store",
+      // Lax, not Strict: this answer ends a navigation that came from the provider's site
+      "set-cookie": `${SESSION}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86_400}` });
+    res.end();
+    return true;
+  }
+  const token = cookie(req, SESSION);
+  const session = token ? f.store.login(sha(token)) : null;
+  if (req.method === "POST" && url.pathname === "/logout") {
+    if (token) f.store.dropLogin(sha(token));
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": `${SESSION}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` });
+    res.end("{}");
+    return true;
+  }
+  if (session) return false;
+  if (url.pathname.startsWith("/api/")) send(res, 401, { error: "log in at /login" });
+  else { res.writeHead(302, { location: "/login", "cache-control": "no-store" }); res.end(); }
+  return true;
 }
 
 function serveStatic(uiDir: string, pathname: string, res: ServerResponse): void {
@@ -302,6 +362,7 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
     if (!own) {
       return send(res, 403, { error: "flowd only answers its own pages and local clients" });
     }
+    if (pub && host === pub.host && await publicGate(f, req, res, url)) return;
     try {
       if (req.method === "GET" && url.pathname === "/api/stream") return stream(f, req, res);
       for (const [method, re, handler] of routes) {

@@ -105,6 +105,16 @@ export const CHAT_ON = { "plugins/fakechat.ts": CHAT_PLUGIN, "plugins.yaml": "fa
 export const chatLog = (): string[] => ((globalThis as any).__flowsChat ??= []);
 export const chatCtx = (): any => (globalThis as any).__flowsChatCtx;
 export const resetChat = (fail = false) => { (globalThis as any).__flowsChat = []; (globalThis as any).__flowsChatFail = fail; };
+/** A login provider: `?ok=1&id=<user>` passes, anything else is refused. */
+export const LOGIN_PLUGIN = `export default {
+  name: "fakelogin",
+  login: {
+    page() { return '<a href="/auth/fakelogin?ok=1&id=5">log in</a>'; },
+    verify(q: any) { return q.ok === "1" ? { user: q.id, name: "Ann" } : { error: "bad signature" }; },
+  },
+};
+`;
+export const LOGIN_ON = { "plugins/fakelogin.ts": LOGIN_PLUGIN, "plugins.yaml": "fakelogin: {}\n" };
 export const subs = (): any[] => ((globalThis as any).__flowsSubs ??= []);
 export const pluginCtx = (): any => (globalThis as any).__flowsCtx;
 /** The ctx the host gave one subscription: emitting through it is emitting as that subscription. */

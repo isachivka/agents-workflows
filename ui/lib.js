@@ -8,6 +8,8 @@ export async function api(method, path, body) {
     headers: { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  // through the public name a session can end: reloading lands on the login page
+  if (res.status === 401) location.reload();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || (data.errors || []).join("\n") || `HTTP ${res.status}`);

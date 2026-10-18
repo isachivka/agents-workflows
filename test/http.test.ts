@@ -4,7 +4,8 @@ import { request } from "node:http";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STEP_FILES, proc, settle, resetSubs } from "./daemon-helpers.ts";
+import { LOGIN_ON, STEP_FILES, proc, settle, resetSubs } from "./daemon-helpers.ts";
+import { createHash } from "node:crypto";
 import { serve } from "./http-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
@@ -180,8 +181,9 @@ test("on the LAN an IP-literal Host is flowd's own; a name still is not", async 
 });
 
 test("with a public URL, its Host and Origin are flowd's own too; a neighbour's are not", async () => {
-  const s = await serve({ ...STEP_FILES, ...TWO }, {}, { publicUrl: "https://flows.example.net" });
-  const pub = { "content-type": "application/json", host: "flows.example.net" };
+  const s = await serve({ ...STEP_FILES, ...TWO, ...LOGIN_ON }, {}, { publicUrl: "https://flows.example.net" });
+  const token = String((await hit(s.base, "GET", "/auth/fakelogin?ok=1&id=5", { host: "flows.example.net" })).headers["set-cookie"]).split(";")[0];
+  const pub = { "content-type": "application/json", host: "flows.example.net", cookie: token };
   const start = JSON.stringify({ process: "p" });
   assert.equal(await rawRequest(s.base, "/api/runs", pub, start), 200);
   assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, origin: "https://flows.example.net" }, start), 200);
@@ -189,6 +191,67 @@ test("with a public URL, its Host and Origin are flowd's own too; a neighbour's 
   assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, origin: "https://reports.example.net" }, start), 403);
   assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, host: "reports.example.net" }, start), 403);
   assert.equal((await s.call("GET", "/api/runs")).status, 200); // local clients as before
+  await s.close();
+});
+
+/** A request with any headers, redirects not followed. */
+function hit(base: string, method: string, path: string, headers: Record<string, string> = {}): Promise<{ status: number; headers: Record<string, any>; body: string }> {
+  const u = new URL(base);
+  return new Promise((resolve, reject) => {
+    const req = request({ host: u.hostname, port: u.port, path, method, headers }, (res) => {
+      let body = "";
+      res.on("data", (d) => (body += d)).on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("through the public name, a session from the login provider is needed; locally nothing changes", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO, ...LOGIN_ON }, {}, { publicUrl: "https://flows.example.net" });
+  const pub = { host: "flows.example.net" };
+  assert.equal((await hit(s.base, "GET", "/api/runs", pub)).status, 401);
+  assert.equal((await hit(s.base, "GET", "/api/stream", pub)).status, 401);
+  const root = await hit(s.base, "GET", "/", pub);
+  assert.deepEqual([root.status, root.headers.location], [302, "/login"]);
+  const page = await hit(s.base, "GET", "/login", pub);
+  assert.equal(page.status, 200);
+  assert.match(page.body, /<a href="\/auth\/fakelogin\?ok=1&id=5">log in<\/a>/);
+
+  const bad = await hit(s.base, "GET", "/auth/fakelogin?ok=0", pub);
+  assert.equal(bad.status, 403);
+  assert.match(bad.body, /bad signature/);
+  assert.equal(bad.headers["set-cookie"], undefined);
+  assert.equal((await hit(s.base, "GET", "/auth/other?ok=1&id=5", pub)).status, 404);
+
+  const ok = await hit(s.base, "GET", "/auth/fakelogin?ok=1&id=5", pub);
+  assert.deepEqual([ok.status, ok.headers.location], [302, "/"]);
+  const cookie = String(ok.headers["set-cookie"]);
+  assert.match(cookie, /^flows_session=[A-Za-z0-9_-]{43}; HttpOnly; Secure; SameSite=Lax; Path=\/; Max-Age=2592000$/);
+  const token = cookie.split(";")[0].split("=")[1];
+  const withCookie = { ...pub, cookie: `other=1; flows_session=${token}` };
+  assert.equal((await hit(s.base, "GET", "/api/runs", withCookie)).status, 200);
+  assert.equal((await hit(s.base, "GET", "/", withCookie)).status, 200);
+  assert.equal(s.f.store.login(createHash("sha256").update(token).digest("hex"))?.name, "Ann");
+  assert.equal((await hit(s.base, "GET", "/api/runs", { ...pub, cookie: "flows_session=nope" })).status, 401);
+
+  const out = await hit(s.base, "POST", "/logout", withCookie);
+  assert.equal(out.status, 200);
+  assert.match(String(out.headers["set-cookie"]), /^flows_session=; .*Max-Age=0/);
+  assert.equal((await hit(s.base, "GET", "/api/runs", withCookie)).status, 401);
+
+  assert.equal((await s.call("GET", "/api/runs")).status, 200); // local: no login
+  await s.close();
+});
+
+test("a public name without a login provider serves only the page that says how to set one up", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO }, {}, { publicUrl: "https://flows.example.net" });
+  const pub = { host: "flows.example.net" };
+  const page = await hit(s.base, "GET", "/login", pub);
+  assert.equal(page.status, 200);
+  assert.match(page.body, /no login is set up/);
+  assert.equal((await hit(s.base, "GET", "/api/runs", pub)).status, 401);
+  assert.equal((await hit(s.base, "GET", "/auth/telegram?id=5", pub)).status, 404);
   await s.close();
 });
 
