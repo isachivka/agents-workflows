@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STEP_FILES, proc, settle, resetSubs } from "./daemon-helpers.ts";
 import { serve } from "./http-helpers.ts";
@@ -358,4 +358,18 @@ test("translate a step's prompt: the translator's text, refusals, a failure says
   assert.equal(r.status, 502);
   assert.match(r.body.error, /exit 1[\s\S]*not logged in[\s\S]*original text is still there/);
   await bad.close();
+});
+
+test("paths under the home directory read with ~", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const saved = process.env.HOME;
+  process.env.HOME = dirname(s.home); // os.homedir() follows $HOME on POSIX
+  try {
+    const [p] = (await s.call("GET", "/api/processes")).body;
+    assert.equal(p.path, `~/${basename(s.home)}/processes/${p.name}.yaml`);
+    assert.equal((await s.call("GET", "/api/steps/b")).body.path, `~/${basename(s.home)}/steps/b.md`);
+  } finally {
+    if (saved === undefined) delete process.env.HOME; else process.env.HOME = saved;
+    await s.close();
+  }
 });
