@@ -112,6 +112,10 @@ export function makeHome(files: Record<string, string>): string {
   return home;
 }
 
+/** A translator that never reaches codex: "[translated] " and the text it got. */
+export const FAKE_TRANSLATE = [process.execPath, "-e",
+  'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write("[translated] " + s));'];
+
 export async function startFlowd(home: string, opts: Partial<FlowdOptions> = {}) {
   const clock = { t: 1_000_000 };
   const agterm = (opts.agterm as FakeAgterm | undefined) ?? new FakeAgterm();
@@ -121,6 +125,7 @@ export async function startFlowd(home: string, opts: Partial<FlowdOptions> = {})
     claudeConfig: join(home, "no-claude.json"), // never the real ~/.claude.json
     claudeDir: join(home, "claude"), // nor ~/.claude
     codexDir: join(home, "codex"), // nor ~/.codex
+    translate: FAKE_TRANSLATE, // never the real codex
     ...opts,
   });
   // an event loop that feeds itself never lets idle() return and writes to the database until the

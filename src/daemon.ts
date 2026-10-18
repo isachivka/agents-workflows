@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { parse } from "yaml";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
@@ -13,7 +13,7 @@ import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
-import { killGroup } from "./translate.ts";
+import { killGroup, Translator } from "./translate.ts";
 import { TERMINAL } from "./types.ts";
 import type { Defs, Dict, FlowEvent, Input, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
 
@@ -38,6 +38,10 @@ export interface FlowdOptions {
   claudeDir?: string;
   /** Codex's own directory: `config.toml` (trusted folders), `sessions/`. Default `$CODEX_HOME`, else `~/.codex` */
   codexDir?: string;
+  /** the translator for step prompts: an argv; the instruction is appended, the text goes to stdin (default: Codex gpt-6-luna) */
+  translate?: string[];
+  /** how long a translation may take before its process group is killed (default 2 minutes) */
+  translateTimeoutMs?: number;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
@@ -96,6 +100,10 @@ function readPluginConfig(home: string, log: (m: string) => void): Record<string
   }
 }
 
+// the login shell finds codex; "$@" passes the argv through without quoting anything into a string
+const TRANSLATE = ["/bin/zsh", "-lc", 'exec "$@"', "zsh", "codex", "exec", "-m", "gpt-6-luna", "--sandbox", "read-only",
+  "--ephemeral", "--skip-git-repo-check", "-c", "model_reasoning_effort=low"];
+
 export class Flowd {
   home: string;
   store: Store;
@@ -122,10 +130,15 @@ export class Flowd {
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
   private loaded = false;
   private queueing = false;
+  private translator: Translator;
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
 
   constructor(o: FlowdOptions) {
     this.o = o;
+    this.translator = new Translator({
+      argv: o.translate ?? TRANSLATE, dir: join(dirname(o.statePath), "translations"),
+      timeoutMs: o.translateTimeoutMs ?? 120_000, max: 2,
+    });
     this.home = o.home;
     this.agterm = o.agterm;
     this.zmx = o.zmx;
@@ -184,6 +197,7 @@ export class Flowd {
 
   async close(): Promise<void> {
     this.closing = true;
+    this.translator.close();
     for (const c of this.children) killGroup(c); // a restart fails what was cut off: see init
     for (const t of this.timers) clearInterval(t);
     for (const c of this.crons) c.stop();
@@ -1174,6 +1188,18 @@ export class Flowd {
       ? `Close it in the UI or with \`flow done --human --run ${shq(run.id)} --step ${entry.id}\``
       : "Report: `flow done [--note …] [--evidence URL]` · `flow failed --note …` · `flow set key=value` · ending your turn to wait on purpose: `flow wait --note …`");
     return { text: lines.join("\n") };
+  }
+
+  /** A step's prompt in another language, for the person reading the process (the agent still gets the original). */
+  async translateStep(id: string, lang: unknown): Promise<{ text: string } | { error: string; status: number }> {
+    if (lang !== "ru" && lang !== "en") return { error: "lang must be ru or en", status: 400 };
+    const s = this.defs.steps[id];
+    if (!s) return { error: `no step ${id}`, status: 404 };
+    try {
+      return { text: await this.translator.translate(s.body, lang) };
+    } catch (e) {
+      return { error: `${(e as Error).message}\nThe original text is still there.`, status: 502 };
+    }
   }
 
   preview(body: string, runId?: string): { text: string } | { error: string } {

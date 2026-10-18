@@ -308,3 +308,54 @@ test("POST /api/runs/:id/nest starts a process in the run's inner; a refusal is 
   assert.deepEqual((await s.call("POST", "/api/runs/outer%231/nest", { process: "leaf" })).body, { run: "leaf#1" });
   await s.close();
 });
+
+test("processes and steps carry what the reading view shows", async () => {
+  const s = await serve({
+    ...STEP_FILES,
+    "steps/c.md": "---\nsummary: c\nskills: [gh-cli]\n---\nDo C\n",
+    "processes/p.yaml": `description: d
+cwd: /tmp
+workspace: W
+roles:
+  pm: {spawn: claude}
+  peer: {spawn: codex, beside: pm, cwd: /var}
+steps:
+  - {step: b, role: pm, timeout: 1h, hold: desk}
+  - {id: ci, wait_for: {on: signal.ci, where: {repo: x}, with: {from: requested}}, on_fail: retry, retries: 5}
+  - {step: c, role: pm}
+  - {id: hi, do: type, role: peer, text: hello}
+  - {id: sh1, sh: 'echo hi', cwd: /tmp, timeout: 5m}
+`,
+  });
+  const [p] = (await s.call("GET", "/api/processes")).body;
+  assert.equal(p.path, join(s.home, "processes", "p.yaml"));
+  assert.deepEqual([p.workspace, p.terminal], ["W", "agterm"]);
+  assert.deepEqual(p.roleDefs, [
+    { name: "pm", agent: "claude", beside: null, cwd: null },
+    { name: "peer", agent: "codex", beside: "pm", cwd: "/var" },
+  ]);
+  const [b, ci, c, hi, sh1] = p.entries;
+  assert.deepEqual([b.timeoutMs, b.hold, b.skills], [3_600_000, "desk", []]);
+  assert.deepEqual([ci.waitFor, ci.waitWith, ci.waitWhere, ci.onFail, ci.retries], ["signal.ci", { from: "requested" }, { repo: "x" }, "retry", 5]);
+  assert.deepEqual(c.skills, ["gh-cli"]);
+  assert.deepEqual([hi.do, hi.text, hi.role], ["type", "hello", "peer"]);
+  assert.deepEqual([sh1.sh, sh1.cwd, sh1.timeoutMs], ["echo hi", "/tmp", 300_000]);
+  assert.equal((await s.call("GET", "/api/steps/c")).body.path, join(s.home, "steps", "c.md"));
+  assert.equal((await s.call("GET", "/api/processes/p")).body.path, join(s.home, "processes", "p.yaml"));
+  await s.close();
+});
+
+test("translate a step's prompt: the translator's text, refusals, a failure says why", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const ok = await s.call("POST", "/api/steps/b/translate", { lang: "ru" });
+  assert.deepEqual([ok.status, ok.body], [200, { text: "[translated] Do B for {{run.id}}" }]);
+  assert.equal((await s.call("POST", "/api/steps/nope/translate", { lang: "ru" })).status, 404);
+  const de = await s.call("POST", "/api/steps/b/translate", { lang: "de" });
+  assert.deepEqual([de.status, de.body.error], [400, "lang must be ru or en"]);
+  await s.close();
+  const bad = await serve({ ...STEP_FILES, ...TWO }, { translate: [process.execPath, "-e", 'process.stderr.write("not logged in"); process.exit(1)'] });
+  const r = await bad.call("POST", "/api/steps/b/translate", { lang: "ru" });
+  assert.equal(r.status, 502);
+  assert.match(r.body.error, /exit 1[\s\S]*not logged in[\s\S]*original text is still there/);
+  await bad.close();
+});

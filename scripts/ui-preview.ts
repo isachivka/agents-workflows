@@ -11,6 +11,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PREVIEW_PORT || 7421);
 const step = (summary: string, body: string) => `---\nsummary: ${JSON.stringify(summary)}\n---\n${body}\n`;
 
+// a translator that takes a moment, like the real one, and never reaches codex
+const SLOW_TRANSLATE = [process.execPath, "-e",
+  'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => setTimeout(() => process.stdout.write("[RU] " + s), 1500));'];
+
 const files: Record<string, string> = {
   "plugins/gh.ts": `export default { name: "gh", events: ["checks", "merged", "review", "opened", "ci"], watch() { return () => {}; }, actions: {} };\n`,
   "steps/pick.md": step("The lead picks the next task and prepares a worktree for it", "Pick the next task from docs/backlog/, create a worktree for it, then `flow done`."),
@@ -98,7 +102,7 @@ steps:
 
 const home = makeHome(files);
 const agterm = new FakeAgterm().addSession("L1", "D1", "L2", "D2", "L3", "D3", "W1", "W2", "A1", "A2", "T1", "T2", "T3");
-const f = new Flowd({ home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], spawnGraceMs: 0, gapMs: 0, watchDefs: false, claudeConfig: join(home, "no-claude.json"), log: () => {} });
+const f = new Flowd({ home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], spawnGraceMs: 0, gapMs: 0, watchDefs: false, translate: SLOW_TRANSLATE, claudeConfig: join(home, "no-claude.json"), log: () => {} });
 await f.init();
 
 const start = async (proc: string, bind: Record<string, string>, inner?: string[]) => {

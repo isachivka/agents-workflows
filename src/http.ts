@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import { CORE_EVENTS, deleteDef, readDef, splitStep, writeDef, type DefKind } from "./defs.ts";
+import { agentOf } from "./skills.ts";
 import type { Flowd, Result } from "./daemon.ts";
 
 class HttpError extends Error {
@@ -58,6 +60,10 @@ async function readBody(req: IncomingMessage): Promise<Body> {
 const fileNames = (dir: string, ext: string) =>
   existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith(ext)).map((n) => basename(n, ext)).sort() : [];
 
+const tilde = (p: string) => (p.startsWith(homedir() + "/") ? `~${p.slice(homedir().length)}` : p);
+const defPath = (f: Flowd, kind: DefKind, name: string) =>
+  tilde(join(f.home, kind === "process" ? "processes" : "steps", `${name}${kind === "process" ? ".yaml" : ".md"}`));
+
 function listProcesses(f: Flowd) {
   const open = f.store.openRuns();
   return fileNames(join(f.home, "processes"), ".yaml").map((name) => {
@@ -66,10 +72,15 @@ function listProcesses(f: Flowd) {
       name, valid: Boolean(p), errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
       repeat: p?.repeat ?? false, maxRuns: p?.maxRuns ?? 1, cwd: p?.cwd ?? "",
       triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
+      path: defPath(f, "process", name), workspace: p?.workspace ?? name, terminal: p?.terminal ?? "agterm",
+      roleDefs: p ? Object.entries(p.roles).map(([n, r]) => ({ name: n, agent: agentOf(r.spawn), beside: r.beside ?? null, cwd: r.cwd ?? null })) : [],
       entries: (p?.entries ?? []).map((e) => ({
         id: e.id, kind: e.kind, role: e.role ?? null, waitFor: e.waitFor?.on ?? null, detour: e.detour,
         step: e.step ?? null, summary: e.step ? f.defs.steps[e.step]?.summary ?? null : null,
         do: e.do ?? null, onFail: e.onFail, after: e.after ?? null, waitMs: e.delayMs ?? null, sh: e.sh ?? null,
+        timeoutMs: e.timeoutMs ?? null, retries: e.retries, hold: e.hold ?? null, with: e.with,
+        waitWith: e.waitFor?.with ?? null, waitWhere: e.waitFor?.where ?? null, text: e.text ?? null, cwd: e.cwd ?? null,
+        skills: e.step ? f.defs.steps[e.step]?.skills ?? [] : [],
       })),
       openRuns: open.filter((r) => r.process === name).map((r) => r.id),
       triggerErrors: f.triggerErrors(name),
@@ -89,14 +100,14 @@ function getDef(f: Flowd, kind: DefKind, name: string) {
   const d = readDef(f.home, kind, name);
   if (!d) throw new HttpError(404, { error: `no ${kind} ${name}` });
   const errors = f.defs.invalid[`${kind}:${name}`] ?? [];
-  if (kind === "step") return { name, text: d.text, mtime: d.mtime, errors, ...splitStep(d.text) };
+  if (kind === "step") return { name, path: defPath(f, kind, name), text: d.text, mtime: d.mtime, errors, ...splitStep(d.text) };
   let object: unknown = null;
   try {
     object = parse(d.text);
   } catch {
     // the YAML tab still shows the text
   }
-  return { name, text: d.text, mtime: d.mtime, errors, object };
+  return { name, path: defPath(f, kind, name), text: d.text, mtime: d.mtime, errors, object };
 }
 
 function putDef(f: Flowd, kind: DefKind, name: string, b: Body) {
@@ -156,6 +167,11 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
   const routes: [string, RegExp, Handler][] = [
     ...defRoutes(f, "process"),
     ...defRoutes(f, "step"),
+    ["POST", /^\/api\/steps\/([^/]+)\/translate$/, async ([id], b) => {
+      const r = await f.translateStep(id, b.lang);
+      if ("error" in r) throw new HttpError(r.status, { error: r.error });
+      return r;
+    }],
     ["POST", /^\/api\/steps\/([^/]+)\/preview$/, (_p, b) => {
       const r = f.preview(String(b.body ?? ""), typeof b.run === "string" ? b.run : undefined);
       if ("error" in r) throw new HttpError(409, r);

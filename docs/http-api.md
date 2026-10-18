@@ -24,15 +24,16 @@ pages out. The web UI and the
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after}`; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
-| GET | `/api/processes/:name` | | `{name, text, mtime, errors, object}` (`object`: the parsed YAML, or `null`) |
+| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, path, workspace, terminal, roleDefs, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after, timeoutMs, retries, hold, with, waitWith, waitWhere, text, cwd, skills}`; `roleDefs`: `[{name, agent: claude|codex|other, beside, cwd}]`; paths under the home directory start with `~`; `with` is a plugin action's arguments, `waitWith`/`waitWhere` the wait's conditions; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
+| GET | `/api/processes/:name` | | `{name, path, text, mtime, errors, object}` (`object`: the parsed YAML, or `null`) |
 | PUT | `/api/processes/:name` | `{text, mtime}` or `{object, mtime}` | `{mtime}`. `mtime` is the one the edit was based on, `null` for a new file. `object` is re-serialised (comments lost). |
 | DELETE | `/api/processes/:name` | `?mtime=` | `{}` |
 | GET | `/api/steps` | | `[{id, valid, errors, summary, usedBy}]` |
-| GET | `/api/steps/:id` | | `{name, text, mtime, errors, summary, body}` |
+| GET | `/api/steps/:id` | | `{name, path, text, mtime, errors, summary, body}` |
 | PUT | `/api/steps/:id` | `{text, mtime}` or `{summary, body, mtime}` | `{mtime}` |
 | DELETE | `/api/steps/:id` | `?mtime=` | `{}` |
 | POST | `/api/steps/:id/preview` | `{body, run?}` | `{text}`: `body` rendered against that run (current entry's event included), or with no data; 409 `{error}` on a render error |
+| POST | `/api/steps/:id/translate` | `{lang: "ru" \| "en"}` | `{text}`: the step's prompt translated for the person reading it (Codex gpt-6-luna by default, cached under the state directory's translations/, at most two at once, 2-minute limit). 400 bad lang, 404 unknown step, 502 `{error}` when the translator fails, with the last lines of its stderr |
 
 A saved file is validated with the same loader as `flow check`; an invalid one is not written.
 
