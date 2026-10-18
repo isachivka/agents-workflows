@@ -88,6 +88,29 @@ $ flow wait --note "review running in the background; the user picks findings ne
 waiting: review running in the background; the user picks findings next
 ```
 
+### `flow say`
+
+```
+flow say TEXT [--file PATH] [--run ID]
+```
+
+Writes to the run's conversation in the messenger set up in `plugins.yaml` (a Telegram topic, see
+[Chat adapters](plugins.md#chat-adapters)): one conversation per run, opened by its first message.
+A nested run writes into the conversation of the run it works for. `--file` attaches a file (an
+HTML report); the path is made absolute here and read by flowd. Prints `sent`.
+
+What the person writes back in that conversation is typed into your session once your turn has
+ended, as `<name> (<messenger>): <text>`. To wait for it, end your turn with
+`flow wait --human --note "…"`.
+
+Refused when no messenger is set up (`no chat is set up: …`), when the file does not exist, or with
+the messenger's own error (`telegram: …`).
+
+```
+$ flow say "The plan for the dossier is ready: your OK or your objections" --file /tmp/plan.html
+sent
+```
+
 ## For you
 
 ### `flow done --human`

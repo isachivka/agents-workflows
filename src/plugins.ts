@@ -27,6 +27,7 @@ export interface ChatAdapter {
   post(address: string, msg: { text: string; file?: string }, ctx: PluginCtx): Promise<unknown> | unknown;
   close(address: string, end: { outcome: "done" | "failed" | "stopped" }, ctx: PluginCtx): Promise<unknown> | unknown;
 }
+export interface ActiveChat { name: string; chat: ChatAdapter; ctx: PluginCtx }
 export interface PluginCtx {
   emit(e: PluginEvent): void;
   /** a chat adapter: a message in a run's conversation, from someone the adapter lets write */
@@ -113,8 +114,8 @@ export class PluginHost {
   }
 
   /** The active chat adapter: a plugin with `chat` whose name has a section in plugins.yaml. */
-  chat(): { name: string; chat: ChatAdapter; ctx: PluginCtx } | { error: string } | null {
-    const on = [...this.loaded.values()].filter((l) => l.plugin.chat && this.config[l.plugin.name]);
+  chat(): ActiveChat | { error: string } | null {
+    const on = [...this.loaded.values()].filter((l) => l.plugin.chat && l.plugin.name in this.config);
     if (on.length > 1) return { error: `two chat adapters are set up (${on.map((l) => l.plugin.name).join(", ")}): keep one section in plugins.yaml` };
     return on[0] ? { name: on[0].plugin.name, chat: on[0].plugin.chat!, ctx: on[0].ctx } : null;
   }

@@ -9,7 +9,7 @@ import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
 import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
-import { PluginHost, msg, readPluginConfig, subscriptionKey, type Watch } from "./plugins.ts";
+import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
@@ -135,6 +135,7 @@ export class Flowd {
   private loaded = false;
   private queueing = false;
   private translator: Translator;
+  private opening = new Map<string, Promise<string>>(); // a root run's conversation being opened
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
 
   constructor(o: FlowdOptions) {
@@ -761,6 +762,46 @@ export class Flowd {
     await this.startQueued();
     if (res.run.vars.pr && res.run.vars.pr !== run.vars.pr) this.background(this.refreshTitle(runId));
     return { run: runId };
+  }
+
+  /** The run a nested run works for, all the way up: the stack talks in its conversation. */
+  private rootOf(run: RunState): RunState {
+    let r = run;
+    for (let up = r.parent && this.store.getRun(r.parent.run); up; up = r.parent && this.store.getRun(r.parent.run)) r = up;
+    return r;
+  }
+
+  /** The root run's conversation in the active messenger, opened once: callers at the same time share it. */
+  private chatFor(root: RunState, a: ActiveChat): Promise<string> {
+    const had = this.store.chatOf(root.id);
+    if (had?.adapter === a.name) return Promise.resolve(had.address);
+    let p = this.opening.get(root.id);
+    if (!p) {
+      p = (async () => {
+        const address = await a.chat.open({ id: root.id, process: root.process, title: root.vars.title }, a.ctx);
+        this.store.setChat(root.id, a.name, address);
+        return address;
+      })().finally(() => this.opening.delete(root.id));
+      this.opening.set(root.id, p);
+    }
+    return p;
+  }
+
+  /** `flow say`: the agent writes to its run's conversation. */
+  async say(q: { session?: string; run?: string; text: string; file?: string }): Promise<{ error?: string }> {
+    const a = this.plugins.chat();
+    if (!a) return { error: "no chat is set up: add a telegram section to $FLOWS_HOME/plugins.yaml (docs/plugins.md)" };
+    if ("error" in a) return a;
+    const run = q.run ? this.store.getRun(q.run) : q.session ? this.store.runBySession(q.session)?.run : undefined;
+    if (!run) return { error: q.run ? `no run ${q.run}` : q.session ? "no open run is bound to this session" : "no session: run this inside a flow session, or pass --run" };
+    if (q.file && !existsSync(q.file)) return { error: `no file ${q.file}` };
+    try {
+      await a.chat.post(await this.chatFor(this.rootOf(run), a), { text: q.text, ...(q.file ? { file: q.file } : {}) }, a.ctx);
+      return {};
+    } catch (e) {
+      this.plugins.fault(a.name, e);
+      return { error: `${a.name}: ${msg(e)}` };
+    }
   }
 
   /** Re-reads every open run's title from its PR: a renamed PR renames the run. */

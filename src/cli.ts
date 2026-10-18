@@ -1,4 +1,5 @@
 import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ordinal } from "./engine.ts";
 
@@ -17,6 +18,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow failed --note T                   close it as failed
   flow set key=value …                   run variables (URLs show as links in the UI)
   flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
+  flow say TEXT [--file PATH]            write to the run's conversation in the messenger (with a file)
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
@@ -48,6 +50,7 @@ interface Args {
   where: string[];
   vars: string[];
   inner: string[];
+  file?: string;
 }
 
 export function parseArgs(argv: string[]): Args {
@@ -61,6 +64,7 @@ export function parseArgs(argv: string[]): Args {
     };
     if (x === "--note") a.note = value();
     else if (x === "--evidence") a.evidence = value();
+    else if (x === "--file") a.file = value();
     else if (x === "--run") a.run = value();
     else if (x === "--step") a.step = value();
     else if (x === "--outcome") a.outcome = value();
@@ -176,6 +180,12 @@ export async function main(argv: string[]): Promise<number> {
         if (!a.note) throw new CliError("flow wait needs --note saying what you are waiting for");
         await call("POST", "/api/wait", { session, run: a.run, entry: a.step, note: a.note, human: a.human });
         out(`waiting: ${a.note}`);
+        return 0;
+      }
+      case "say": {
+        if (a._.length !== 1 || !a._[0].trim()) throw new CliError('usage: flow say "text" [--file PATH] [--run ID]');
+        await call("POST", "/api/say", { session: a.run ? undefined : session, run: a.run, text: a._[0], file: a.file ? resolve(a.file) : undefined });
+        out("sent");
         return 0;
       }
       case "skip": {

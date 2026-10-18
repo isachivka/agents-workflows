@@ -235,6 +235,13 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean } = {}
       }
       return submit({ type: "run.set", run, data: { vars: b.vars ?? {} }, source: "cli" });
     }],
+    ["POST", /^\/api\/say$/, async (_p, b) => {
+      if (typeof b.text !== "string" || !b.text.trim()) throw new HttpError(400, { error: "text is required" });
+      if (b.file !== undefined && typeof b.file !== "string") throw new HttpError(400, { error: "file must be a path" });
+      const r = await f.say({ session: typeof b.session === "string" ? b.session : undefined, run: typeof b.run === "string" && b.run ? b.run : undefined, text: b.text, file: b.file || undefined });
+      if (r.error) throw new HttpError(409, r);
+      return {};
+    }],
     ["POST", /^\/api\/events$/, (_p, b) => {
       if (typeof b.type !== "string" || !b.type) throw new HttpError(400, { error: "type is required" });
       return submit({ type: b.type, run: b.run || undefined, entry: b.entry || undefined, outcome: b.outcome || undefined, data: b.data ?? {}, source: b.source ?? "cli" });

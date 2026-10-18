@@ -88,6 +88,23 @@ export default {
   actions: { post(args: any) { if (args.fail) throw new Error("post failed"); } },
 };
 `;
+/** A messenger that records what flowd asks of it; `chatFail()` makes post throw. */
+export const CHAT_PLUGIN = `const g = globalThis as any;
+let n = 0;
+export default {
+  name: "fakechat",
+  chat: {
+    async open(run: any) { await new Promise((r) => setTimeout(r, 5)); (g.__flowsChat ??= []).push("open " + run.id + " " + (run.title ?? "")); return "T" + ++n; },
+    async post(address: string, m: any) { if (g.__flowsChatFail) throw new Error("no rights"); (g.__flowsChat ??= []).push("post " + address + " " + m.text + (m.file ? " +" + m.file : "")); },
+    async close(address: string, end: any) { (g.__flowsChat ??= []).push("close " + address + " " + end.outcome); },
+  },
+  start(ctx: any) { g.__flowsChatCtx = ctx; },
+};
+`;
+export const CHAT_ON = { "plugins/fakechat.ts": CHAT_PLUGIN, "plugins.yaml": "fakechat: {}\n" };
+export const chatLog = (): string[] => ((globalThis as any).__flowsChat ??= []);
+export const chatCtx = (): any => (globalThis as any).__flowsChatCtx;
+export const resetChat = (fail = false) => { (globalThis as any).__flowsChat = []; (globalThis as any).__flowsChatFail = fail; };
 export const subs = (): any[] => ((globalThis as any).__flowsSubs ??= []);
 export const pluginCtx = (): any => (globalThis as any).__flowsCtx;
 /** The ctx the host gave one subscription: emitting through it is emitting as that subscription. */

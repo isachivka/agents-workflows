@@ -5,7 +5,7 @@ import { createServer as httpServer } from "node:http";
 import { createServer, type AddressInfo, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STEP_FILES, proc, settle } from "./daemon-helpers.ts";
+import { CHAT_ON, STEP_FILES, chatLog, proc, resetChat, settle } from "./daemon-helpers.ts";
 import { serve } from "./http-helpers.ts";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts");
@@ -230,5 +230,19 @@ test("flow start --inner nests the chain; flow skip skips the current step of th
   assert.equal(s.f.store.getRun("leaf#1")!.entries.b.status, "skipped");
   assert.equal((await flow(["skip", "outer#1", "--note", "not needed"], env)).stdout, "skipped\n");
   assert.equal(s.f.store.getRun("outer#1")!.entries.c.status, "skipped");
+  await s.close();
+});
+
+test("flow say sends the text and the file's absolute path for this session's run", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO, ...CHAT_ON });
+  resetChat();
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  const env = { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1" };
+  const r = await flow(["say", "plan ready", "--file", "test/cli.test.ts"], env);
+  assert.deepEqual([r.code, r.stdout], [0, "sent\n"]);
+  assert.deepEqual(chatLog(), ["open p#1 ", `post T1 plan ready +${join(process.cwd(), "test/cli.test.ts")}`]);
+  const bad = await flow(["say"], env);
+  assert.equal(bad.code, 1);
   await s.close();
 });

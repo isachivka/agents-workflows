@@ -374,3 +374,13 @@ test("paths under the home directory read with ~", async () => {
     await s.close();
   }
 });
+
+test("POST /api/say needs text and answers a refusal with 409", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n") });
+  assert.equal((await s.call("POST", "/api/say", { session: "S1" })).status, 400);
+  assert.equal((await s.call("POST", "/api/say", { session: "S1", text: "x", file: 3 })).status, 400);
+  const r = await s.call("POST", "/api/say", { session: "S1", text: "x" });
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /no chat is set up/);
+  await s.close();
+});
