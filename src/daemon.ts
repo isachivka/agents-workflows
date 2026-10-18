@@ -13,6 +13,7 @@ import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
 import { PluginHost, msg, subscriptionKey, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
+import { killGroup } from "./translate.ts";
 import { TERMINAL } from "./types.ts";
 import type { Defs, Dict, FlowEvent, Input, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
 
@@ -75,15 +76,6 @@ export interface RunSummary {
   resumable: string[];
   created: number; updated: number;
   plan: PlanItem[];
-}
-
-/** Ends a detached child and everything it started; it may have exited already. */
-function killGroup(c: ChildProcess): void {
-  try {
-    if (c.pid) process.kill(-c.pid, "SIGTERM");
-  } catch {
-    c.kill();
-  }
 }
 
 const AGTERM_STATUSES = new Set(["active", "completed", "idle", "blocked"]);
