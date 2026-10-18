@@ -77,3 +77,66 @@ test("an address another messenger opened is not reused", async () => {
   assert.deepEqual(f.store.chatOf("p#1"), { adapter: "fakechat", address: "T1" });
   await f.close();
 });
+
+const HUMAN = proc("  - {step: b, role: pm}\n  - {step: c, role: human}\n", "", "h");
+
+/** The agent does its current step and ends its turn; the next line goes out after the gap. */
+async function finishB(t: Awaited<ReturnType<typeof startFlowd>>) {
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(done("S1"));
+  await t.f.submit(status("S1", "completed"));
+  t.clock.t += 17_000;
+  await settle(t.f);
+}
+
+test("a run that comes to need the person says so, opening its conversation; once, not again while it waits", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...HUMAN, ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("h", { pm: "S1" }));
+  await settle(t.f);
+  await finishB(t);
+  assert.deepEqual(chatLog(), ["open h#1 ", "post T1 h#1 waits for you: c"]);
+  await t.f.submit({ type: "run.set", run: "h#1", data: { vars: { x: "1" } }, source: "cli" });
+  await settle(t.f);
+  assert.equal(chatLog().length, 2);
+  await t.f.close();
+});
+
+test("flow wait --human says what the agent waits for", async () => {
+  const t = await running();
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit({ type: "entry.wait", data: { session: "S1", note: "plan waits for your OK", human: true }, source: "cli" });
+  await settle(t.f);
+  assert.deepEqual(chatLog(), ["open p#1 Fix the thing", "post T1 p#1 waits for you: plan waits for your OK"]);
+  await t.f.close();
+});
+
+test("the end of a run with a conversation is said there and closes it; a run without one opens none", async () => {
+  const t = await running();
+  await t.f.say({ session: "S1", text: "hi" });
+  await finishB(t);
+  await finishB(t);
+  assert.equal(t.f.store.getRun("p#1")?.status, "done");
+  assert.deepEqual(chatLog(), ["open p#1 Fix the thing", "post T1 hi", "post T1 p#1 is done", "close T1 done"]);
+  await t.f.close();
+
+  const quiet = await running();
+  await finishB(quiet);
+  await finishB(quiet);
+  assert.equal(quiet.f.store.getRun("p#1")?.status, "done");
+  assert.deepEqual(chatLog(), []);
+  await quiet.f.close();
+});
+
+test("a messenger that fails leaves the run as it was and shows the error on the plugin", async () => {
+  resetChat(true);
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...HUMAN, ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("h", { pm: "S1" }));
+  await settle(t.f);
+  await finishB(t);
+  assert.equal(t.f.store.getRun("h#1")?.current, "c");
+  assert.equal(t.f.plugins.status().find((p) => p.name === "fakechat")?.lastError, "no rights");
+  await t.f.close();
+});

@@ -135,6 +135,7 @@ export class Flowd {
   private loaded = false;
   private queueing = false;
   private translator: Translator;
+  private notices: Promise<unknown> = Promise.resolve();
   private opening = new Map<string, Promise<string>>(); // a root run's conversation being opened
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
 
@@ -881,6 +882,7 @@ export class Flowd {
 
   private commit(res: StepResult): void {
     const runId = res.run.id;
+    const before = this.store.getRun(runId);
     const emitted: number[] = [];
     this.store.tx(() => {
       this.store.saveRun(res.run, this.now());
@@ -903,6 +905,47 @@ export class Flowd {
     }
     for (const id of emitted) void this.enqueue(() => this.process(id));
     if (res.actions.some((a) => a.kind === "deliver")) void this.flush();
+    this.announce(before, res.run);
+  }
+
+  /** flowd's own words in the run's conversation: when the run comes to need the person, and when it ends. */
+  private announce(before: RunState | null, run: RunState): void {
+    const a = this.plugins.chat();
+    if (!a || "error" in a) return;
+    const open = (r: RunState | null) => r !== null && !TERMINAL.includes(r.status);
+    let say: () => Promise<unknown>;
+    if (open(before) && !open(run)) {
+      const had = this.store.chatOf(run.id);
+      if (run.parent || had?.adapter !== a.name) return; // a nested run's end is its root's business; no conversation, none opened to say so
+      const text = run.status === "done" ? `${run.id} is done` : `${run.id} was stopped${run.reason ? `: ${run.reason}` : ""}`;
+      say = async () => {
+        await a.chat.post(had.address, { text }, a.ctx);
+        await a.chat.close(had.address, { outcome: run.status as "done" | "stopped" }, a.ctx);
+      };
+    } else if (open(run) && this.needsYou(run) && !(before && open(before) && this.needsYou(before))) {
+      const text = `${run.id} waits for you: ${this.waitsFor(run)}`;
+      say = async () => a.chat.post(await this.chatFor(this.rootOf(run), a), { text }, a.ctx);
+    } else return;
+    // ponytail: one chain for every run's notices, so a run's "waits" and "done" keep their order; per run if it gets slow
+    this.notices = this.notices.then(say).catch((e) => this.plugins.fault(a.name, e));
+    this.background(this.notices);
+  }
+
+  private needsYou(run: RunState): boolean {
+    const cur = this.currentEntry(run);
+    const s = cur ? run.entries[cur.id] : undefined;
+    return run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human)
+      // a bare inner: nothing nested, nothing chosen at start, so the person picks or skips
+      || (run.status === "running" && cur?.kind === "inner" && s?.status === "waiting" && !s.child && !run.inner?.length);
+  }
+
+  private waitsFor(run: RunState): string {
+    const cur = this.currentEntry(run);
+    const s = cur ? run.entries[cur.id] : undefined;
+    if (s?.wait?.human) return s.wait.note;
+    if (run.status === "needs-human") return run.reason ?? "it stopped";
+    if (cur?.kind === "human") return (cur.step && this.defs.steps[cur.step]?.summary) || cur.id;
+    return `its ${cur?.id} step: start the process to run inside, or skip it`;
   }
 
   private async runAction(run: string, entry: string, name: string, args: Dict): Promise<void> {
@@ -1320,9 +1363,7 @@ export class Flowd {
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
       waitingOn: s?.status === "waiting" && !s.queued ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,
-      needsYou: run.status === "needs-human" || (cur?.kind === "human" && (s?.status === "active" || s?.status === "waiting")) || Boolean(s?.wait?.human)
-        // a bare inner: nothing nested, nothing chosen at start, so the person picks or skips
-        || (run.status === "running" && cur?.kind === "inner" && s?.status === "waiting" && !s.child && !run.inner?.length),
+      needsYou: this.needsYou(run),
       agentWait: s?.wait ? { note: s.wait.note, human: s.wait.human, since: s.wait.since } : null,
       waitUntil: cur?.kind === "delay" && s?.status === "waiting" && s.startedAt !== undefined && !s.queued ? s.startedAt + cur.delayMs! : null,
       parent: run.parent?.run ?? null, child: s?.child ?? null,

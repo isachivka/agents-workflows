@@ -25,7 +25,7 @@ export interface ChatAdapter {
   /** opens the run's conversation; returns its address, kept by flowd */
   open(run: { id: string; process: string; title?: string }, ctx: PluginCtx): Promise<string> | string;
   post(address: string, msg: { text: string; file?: string }, ctx: PluginCtx): Promise<unknown> | unknown;
-  close(address: string, end: { outcome: "done" | "failed" | "stopped" }, ctx: PluginCtx): Promise<unknown> | unknown;
+  close(address: string, end: { outcome: "done" | "stopped" }, ctx: PluginCtx): Promise<unknown> | unknown;
 }
 export interface ActiveChat { name: string; chat: ChatAdapter; ctx: PluginCtx }
 export interface PluginCtx {
