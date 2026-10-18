@@ -185,9 +185,12 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
   own login on.
 
 - The login page says `no login is set up`: `plugins.yaml` has no `telegram:` section (or two logins).
-- Telegram's widget says "Bot domain invalid": `/setdomain` in BotFather to the public name's host.
-- `the answer is not signed by this bot`: the token in `plugins.yaml` is not the bot the widget
-  belongs to. `is not in users`: add your Telegram id to `users`. `over a day old`: log in again.
+- Telegram says the redirect URI is not allowed: add `<FLOWD_PUBLIC_URL>/auth/telegram` under
+  BotFather → the bot → Login Widget → Redirect URIs, exactly.
+- `telegram needs client_secret`: copy it from the same screen into `plugins.yaml`.
+- `Telegram did not give a token: …`: a wrong `client_secret`, or the code was already used.
+- `this login link is old or was used`: open `/login` again (a login page is good for 10 minutes,
+  once, and flowd forgets it on restart). `is not in users`: add your Telegram id to `users`.
 - A login that bounces back to the page: the browser drops the cookie — it is `Secure`, so the
   public name must be HTTPS.
 

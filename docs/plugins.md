@@ -227,14 +227,23 @@ login: {
 
 ### Telegram login
 
-The Telegram plugin is also a login, with the same `token` and `users`: the
-[Telegram Login Widget](https://core.telegram.org/widgets/login). The person taps "Log in with
-Telegram", confirms in Telegram, and comes back signed in. flowd checks Telegram's signature (an
-HMAC with the SHA-256 of the bot token as the key), that the answer is under a day old and that the
-user is in `users`.
+The Telegram plugin is also a login, with the same `token` and `users`: Telegram's
+[OpenID Connect](https://core.telegram.org/bots/telegram-login), code flow with PKCE. The login page
+links to `oauth.telegram.org/auth`; the person confirms in Telegram and comes back to
+`/auth/telegram` with a code, which flowd trades for an ID token (client id and secret, Basic auth).
+flowd checks the token's RS256 signature against Telegram's published keys, its issuer, audience
+(the bot) and expiry, and that the user's `id` is in `users`. Each login page's state is good for
+10 minutes and once; a flowd restart forgets it (log in again).
 
-Setup: in [@BotFather](https://t.me/BotFather), `/setdomain` for the bot to `FLOWD_PUBLIC_URL`'s
-host (a bot has one domain). The page loads the widget's script from telegram.org.
+Setup, in [@BotFather](https://t.me/BotFather) → the bot → **Login Widget**:
+
+1. **Add a Redirect URI**: `<FLOWD_PUBLIC_URL>/auth/telegram`, exactly.
+2. Keep the signing algorithm at RS256.
+3. Copy the **Client Secret** into the plugin's section: `client_secret: "…"`. The Client ID is the
+   bot's id, the token's first part, so it needs no setting.
+
+(The older login widget, `/setdomain` and a hash signed with the bot token, is legacy; its phone
+confirmation does not always arrive.)
 
 ## A minimal plugin
 

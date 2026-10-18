@@ -32,8 +32,9 @@ export interface ActiveChat { name: string; chat: ChatAdapter; ctx: PluginCtx }
 export interface LoginProvider {
   /** the login page's body: the provider's button, which comes back to `callback` (/auth/<plugin name>) */
   page(o: { callback: string }, ctx: PluginCtx): string;
-  /** the callback's query → who logged in, or why not */
-  verify(query: Record<string, string>, ctx: PluginCtx): { user: string; name: string } | { error: string };
+  /** the callback's query → who logged in, or why not; `callback` is the redirect URI the page used */
+  verify(query: Record<string, string>, o: { callback: string }, ctx: PluginCtx):
+    Promise<{ user: string; name: string } | { error: string }> | { user: string; name: string } | { error: string };
 }
 export interface ActiveLogin { name: string; login: LoginProvider; ctx: PluginCtx }
 export interface PluginCtx {

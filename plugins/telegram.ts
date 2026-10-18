@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createPublicKey, randomBytes, verify as verifySig } from "node:crypto";
 import { Bot, GrammyError, InputFile } from "grammy";
 import type { Plugin, PluginCtx } from "../src/plugins.ts";
 
@@ -6,22 +6,48 @@ import type { Plugin, PluginCtx } from "../src/plugins.ts";
 const TEXT = 4096, CAPTION = 1024, NAME = 128;
 
 let bot: Bot | undefined;
-let username: string | undefined; // the bot's, for the login widget
 
 const attr = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+const b64url = (b: Buffer) => b.toString("base64url");
 
-/** Telegram's check of a login widget's answer: the fields but hash, sorted, signed with SHA-256(bot token). */
-export function checkLogin(q: Record<string, string>, token: string, users: number[], nowSec = Date.now() / 1000): { user: string; name: string } | { error: string } {
-  const lines = Object.keys(q).filter((k) => k !== "hash").sort().map((k) => `${k}=${q[k]}`).join("\n");
-  const want = createHmac("sha256", createHash("sha256").update(token).digest()).update(lines).digest();
-  const got = Buffer.from(q.hash ?? "", "hex");
-  if (got.length !== want.length || !timingSafeEqual(got, want)) return { error: "the answer is not signed by this bot" };
-  if (!(nowSec - Number(q.auth_date) < 86_400)) return { error: "the login is over a day old; log in again" };
-  if (!users.includes(Number(q.id))) return { error: `Telegram user ${q.id} is not in users in plugins.yaml` };
-  return { user: q.id, name: q.first_name ?? q.username ?? q.id };
-}
+// Log in with Telegram: OpenID Connect, code flow with PKCE (core.telegram.org/bots/telegram-login)
+const ISSUER = "https://oauth.telegram.org";
+// each login page's state → its PKCE verifier; flowd's memory is enough: a restart only means "log in again"
+const pending = new Map<string, { verifier: string; expires: number }>();
+let jwks: { keys: { kid?: string }[] } | undefined;
 
 interface Config { token: string; chat: number; users: number[] }
+
+const oauthRoot = (ctx: PluginCtx) => (typeof ctx.config.oauth_root === "string" ? ctx.config.oauth_root : ISSUER);
+/** BotFather's Client ID is the bot's id, the token's first part. */
+const clientId = (c: Config) => c.token.split(":")[0];
+
+async function keyFor(kid: string, ctx: PluginCtx) {
+  let k = jwks?.keys.find((x) => x.kid === kid);
+  if (!k) { // first use, or Telegram rotated its keys
+    const r = await fetch(`${oauthRoot(ctx)}/.well-known/jwks.json`);
+    if (!r.ok) throw new Error(`Telegram's keys: HTTP ${r.status}`);
+    jwks = await r.json() as typeof jwks;
+    k = jwks!.keys.find((x) => x.kid === kid);
+  }
+  if (!k) throw new Error(`Telegram has no key ${kid}`);
+  return createPublicKey({ key: k as JsonWebKey, format: "jwk" });
+}
+
+/** Checks Telegram's ID token: its RS256 signature by Telegram's published key, issuer, audience, expiry. */
+export async function checkIdToken(jwt: string, audience: string, ctx: PluginCtx, nowSec = Date.now() / 1000): Promise<Record<string, unknown>> {
+  const [h, p, sig] = jwt.split(".");
+  if (!h || !p || !sig) throw new Error("the ID token is not a JWT");
+  const header = JSON.parse(Buffer.from(h, "base64url").toString());
+  if (header.alg !== "RS256") throw new Error(`the ID token is signed with ${header.alg}; set the bot's signing algorithm to RS256 in BotFather`);
+  if (!verifySig("RSA-SHA256", Buffer.from(`${h}.${p}`), await keyFor(header.kid, ctx), Buffer.from(sig, "base64url"))) throw new Error("the ID token's signature is wrong");
+  const claims = JSON.parse(Buffer.from(p, "base64url").toString());
+  const aud = Array.isArray(claims.aud) ? claims.aud.map(String) : [String(claims.aud)];
+  if (claims.iss !== ISSUER) throw new Error(`the ID token comes from ${claims.iss}, not Telegram`);
+  if (!aud.includes(audience)) throw new Error("the ID token is for another bot");
+  if (!(Number(claims.exp) > nowSec)) throw new Error("the ID token has expired; log in again");
+  return claims;
+}
 
 function config(ctx: PluginCtx): Config {
   const c = ctx.config;
@@ -92,20 +118,43 @@ export default {
   },
   login: {
     page(o, ctx) {
-      if (!username) return "<p>The Telegram bot has not answered yet; reload in a moment.</p>";
-      // the widget sends the person to Telegram to confirm, then back to the callback with a signed answer
-      return `<script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="${attr(username)}" data-size="large" data-auth-url="${attr(o.callback)}"></script>`
-        + `<p style="opacity:.7;font-size:14px">Only the people in users of plugins.yaml get in.${ctx.config.token ? "" : " (telegram is not set up)"}</p>`;
-    },
-    verify(q, ctx) {
       const c = config(ctx);
-      return checkLogin(q, c.token, c.users);
+      const now = Date.now();
+      for (const [k, v] of pending) if (v.expires < now) pending.delete(k);
+      const state = b64url(randomBytes(16));
+      const verifier = b64url(randomBytes(32));
+      pending.set(state, { verifier, expires: now + 10 * 60_000 });
+      const q = new URLSearchParams({
+        client_id: clientId(c), redirect_uri: o.callback, response_type: "code", scope: "openid profile", state,
+        code_challenge: b64url(createHash("sha256").update(verifier).digest()), code_challenge_method: "S256",
+      });
+      return `<p><a href="${attr(`${oauthRoot(ctx)}/auth?${q}`)}" style="display:inline-block;padding:12px 22px;border-radius:10px;background:#2aabee;color:#fff;text-decoration:none;font-weight:600">Log in with Telegram</a></p>`
+        + `<p style="opacity:.7;font-size:14px">Only the people in users of plugins.yaml get in.</p>`;
+    },
+    async verify(q, o, ctx) {
+      const c = config(ctx);
+      if (q.error) return { error: `Telegram said ${q.error}${q.error_description ? `: ${q.error_description}` : ""}` };
+      const p = q.state ? pending.get(q.state) : undefined;
+      if (!p || p.expires < Date.now() || !q.code) return { error: "this login link is old or was used; start again" };
+      pending.delete(q.state);
+      if (typeof ctx.config.client_secret !== "string") return { error: "telegram needs client_secret (BotFather → the bot → Login Widget) in plugins.yaml" };
+      const r = await fetch(`${oauthRoot(ctx)}/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${Buffer.from(`${clientId(c)}:${ctx.config.client_secret}`).toString("base64")}` },
+        body: new URLSearchParams({ grant_type: "authorization_code", code: q.code, redirect_uri: o.callback, client_id: clientId(c), code_verifier: p.verifier }),
+      });
+      const t = await r.json().catch(() => ({})) as { id_token?: string; error?: string; error_description?: string };
+      if (!r.ok || !t.id_token) return { error: `Telegram did not give a token: ${t.error_description ?? t.error ?? `HTTP ${r.status}`}` };
+      const claims = await checkIdToken(t.id_token, clientId(c), ctx);
+      const id = Number(claims.id ?? claims.sub);
+      if (!c.users.includes(id)) return { error: `Telegram user ${claims.id ?? claims.sub} is not in users in plugins.yaml` };
+      return { user: String(id), name: String(claims.name ?? claims.preferred_username ?? id) };
     },
   },
   start(ctx) {
     if (!ctx.config.token) return; // not set up: the plugin does nothing
     const c = config(ctx);
-    api(ctx).getMe().then((me) => { username = me.username; }, (e) => ctx.error(e));
+    api(ctx);
     bot!.on("message", (t) => {
       const m = t.message;
       if (m.chat.id !== c.chat || !m.is_topic_message || !m.message_thread_id) return;
@@ -127,7 +176,6 @@ export default {
   async stop() {
     const b = bot;
     bot = undefined;
-    username = undefined;
     await b?.stop();
   },
 } satisfies Plugin;

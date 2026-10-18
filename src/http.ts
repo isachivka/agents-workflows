@@ -176,7 +176,12 @@ async function publicGate(f: Flowd, req: IncomingMessage, res: ServerResponse, u
   }
   if (req.method === "GET" && url.pathname.startsWith("/auth/")) {
     if (!active || url.pathname !== `/auth/${active.name}`) { send(res, 404, { error: "not found" }); return true; }
-    const who = active.login.verify(Object.fromEntries(url.searchParams), active.ctx);
+    let who: { user: string; name: string } | { error: string };
+    try {
+      who = await active.login.verify(Object.fromEntries(url.searchParams), { callback: `${pub!.origin}/auth/${active.name}` }, active.ctx);
+    } catch (e) {
+      who = { error: e instanceof Error ? e.message : String(e) };
+    }
     if ("error" in who) { page(res, 403, `<p>Not logged in: ${esc(who.error)}</p><p><a href="/login">Try again</a></p>`); return true; }
     const token = randomBytes(32).toString("base64url");
     f.store.addLogin(sha(token), who.user, who.name, Date.now() + SESSION_DAYS * 86_400_000);
