@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS outbox (
   entry_id TEXT, created REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent REAL);
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY, status TEXT NOT NULL, status_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS chats (
+  run_id TEXT PRIMARY KEY, adapter TEXT NOT NULL, address TEXT NOT NULL);
 `;
 
 // node:sqlite rows are untyped records
@@ -180,6 +182,23 @@ export class Store {
 
   dropOutbox(runId: string): void {
     this.db.prepare("DELETE FROM outbox WHERE run_id = ? AND sent IS NULL").run(runId);
+  }
+
+  /** Where a run's conversation is, as the chat adapter that opened it returned it. */
+  chatOf(runId: string): { adapter: string; address: string } | null {
+    const row = this.db.prepare("SELECT adapter, address FROM chats WHERE run_id = ?").get(runId) as Row | undefined;
+    return row ? { adapter: row.adapter, address: row.address } : null;
+  }
+
+  setChat(runId: string, adapter: string, address: string): void {
+    this.db
+      .prepare("INSERT INTO chats (run_id, adapter, address) VALUES (?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET adapter = excluded.adapter, address = excluded.address")
+      .run(runId, adapter, address);
+  }
+
+  runByChat(adapter: string, address: string): RunState | null {
+    const row = this.db.prepare("SELECT run_id FROM chats WHERE adapter = ? AND address = ?").get(adapter, address) as Row | undefined;
+    return row ? this.getRun(row.run_id) : null;
   }
 
   setSessionStatus(session: string, status: string, at = Date.now()): void {

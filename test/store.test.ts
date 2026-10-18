@@ -123,3 +123,16 @@ test("a session's run is the top of its stack: the open run bound to it with no 
   assert.equal(s.runBySession("S1")?.run.id, "b#1");
   assert.deepEqual(s.childrenOf("b#1"), []);
 });
+
+test("a run's conversation is stored once per run and found by its address", () => {
+  const s = new Store(":memory:");
+  s.createRun(run("p#1"), 1);
+  assert.equal(s.chatOf("p#1"), null);
+  s.setChat("p#1", "telegram", "-100/7");
+  assert.deepEqual(s.chatOf("p#1"), { adapter: "telegram", address: "-100/7" });
+  assert.equal(s.runByChat("telegram", "-100/7")?.id, "p#1");
+  assert.equal(s.runByChat("slack", "-100/7"), null);
+  s.setChat("p#1", "slack", "C1/1.2");
+  assert.deepEqual(s.chatOf("p#1"), { adapter: "slack", address: "C1/1.2" });
+  assert.equal(s.runByChat("telegram", "-100/7"), null);
+});
