@@ -59,6 +59,7 @@ test("a long text goes as several messages into the topic; a file as a document 
   await chat.post("-100/77", { text: "a".repeat(3000) + "\n" + "b".repeat(3000) }, ctx);
   assert.deepEqual(calls.map((c) => c.method), ["sendMessage", "sendMessage"]);
   assert.deepEqual([json(0).message_thread_id, json(0).text.length, json(1).text.length], [77, 3000, 3000]);
+  assert.deepEqual(json(0).link_preview_options, { is_disabled: true });
 
   const file = join(mkdtempSync(join(tmpdir(), "flows-tg-")), "report.html");
   writeFileSync(file, "<p>report</p>");

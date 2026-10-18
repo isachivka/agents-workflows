@@ -66,7 +66,8 @@ export default {
       const { chat, topic } = where(address);
       const opts = { message_thread_id: topic };
       const caption = m.file && m.text.length <= CAPTION;
-      if (!caption) for (const p of parts(m.text)) await call(api(ctx).sendMessage(chat, p, opts));
+      // no previews: one makes Telegram's servers fetch the link, and a report's link is its only key
+      if (!caption) for (const p of parts(m.text)) await call(api(ctx).sendMessage(chat, p, { ...opts, link_preview_options: { is_disabled: true } }));
       if (m.file) await call(api(ctx).sendDocument(chat, new InputFile(m.file), caption ? { ...opts, caption: m.text } : opts));
     },
     async close(address, _end, ctx) {
