@@ -29,7 +29,7 @@ export async function startDaemon(): Promise<void> {
   await f.init();
   const port = Number(process.env.FLOWD_PORT || 7420);
   const host = process.env.FLOWD_HOST || "127.0.0.1";
-  const server = makeServer(f, join(REPO, "ui"), { lan: host !== "127.0.0.1" && host !== "localhost" });
+  const server = makeServer(f, join(REPO, "ui"), { lan: host !== "127.0.0.1" && host !== "localhost", publicUrl: process.env.FLOWD_PUBLIC_URL || undefined });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, resolve);

@@ -179,6 +179,19 @@ test("on the LAN an IP-literal Host is flowd's own; a name still is not", async 
   await local.close();
 });
 
+test("with a public URL, its Host and Origin are flowd's own too; a neighbour's are not", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO }, {}, { publicUrl: "https://flows.example.net" });
+  const pub = { "content-type": "application/json", host: "flows.example.net" };
+  const start = JSON.stringify({ process: "p" });
+  assert.equal(await rawRequest(s.base, "/api/runs", pub, start), 200);
+  assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, origin: "https://flows.example.net" }, start), 200);
+  assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, origin: "http://flows.example.net" }, start), 403);
+  assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, origin: "https://reports.example.net" }, start), 403);
+  assert.equal(await rawRequest(s.base, "/api/runs", { ...pub, host: "reports.example.net" }, start), 403);
+  assert.equal((await s.call("GET", "/api/runs")).status, 200); // local clients as before
+  await s.close();
+});
+
 test("a malformed request target gets 400 and flowd keeps answering", async () => {
   const s = await serve({ ...STEP_FILES, ...TWO });
   const u = new URL(s.base);

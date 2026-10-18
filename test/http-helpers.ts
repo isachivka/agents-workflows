@@ -11,7 +11,7 @@ import type { FlowdOptions } from "../src/daemon.ts";
 const open = new Set<() => Promise<void>>();
 after(() => Promise.all([...open].map((c) => c())));
 
-export async function serve(files: Record<string, string>, opts: Partial<FlowdOptions> = {}, http: { lan?: boolean } = {}) {
+export async function serve(files: Record<string, string>, opts: Partial<FlowdOptions> = {}, http: { lan?: boolean; publicUrl?: string } = {}) {
   const home = makeHome(files);
   const { f, agterm, clock } = await startFlowd(home, opts);
   const ui = mkdtempSync(join(tmpdir(), "flows-ui-"));

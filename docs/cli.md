@@ -316,6 +316,7 @@ Claude down.
 | `FLOWS_OPEN` | flowd | The command used for that. Default `open`. |
 | `FLOWS_LAUNCHCTL` | `flow install` | The `launchctl` binary. Default `launchctl`. |
 | `FLOWS_ZMX` | flowd | The `zmx` binary for `terminal: zmx`. Default `zmx` on `PATH`, else the one inside `/Applications/agterm.app` (agterm's build has the `type` and `screen` commands flowd needs). |
+| `FLOWD_PUBLIC_URL` | flowd | The address a reverse proxy serves the UI under from outside, e.g. `https://flows.example.net`. Requests with that `Host`, and an `Origin` of exactly that address, are flowd's own; everything else foreign is refused as before. flowd has no login: put one on the proxy, never expose the UI without it, and never on the reports' name (a report's JavaScript would reach the API). |
 | `FLOWS_REPORTS_URL` | flowd | The public base of report links; set, it turns on the reports listener ([`flow publish`](#flow-publish)). Unset: reports are not served, `flow say` sends files. |
 | `FLOWS_REPORTS_PORT`, `FLOWS_REPORTS_HOST` | flowd | Where the reports listener listens. Default `7430` on `0.0.0.0`. |
 | `FLOWS_PRETRANSLATE` | flowd | Languages every step's prompt is translated into ahead of time, comma-separated, so Translate in the UI answers at once. Default `ru`; empty turns it off. flowd translates 2 minutes after start and 1 minute after a step file changes, one prompt at a time, only while no requested translation runs. |
