@@ -36,6 +36,7 @@ watch and take over at any time.
 - **A conversation per run in a messenger**: with Telegram set up, each run gets a topic in a
   group. Agents send what needs your decision there (`flow say --file report.html`), flowd says
   when a run waits for you and when it ends, and what you write in the topic reaches the agent.
+  HTML reports arrive as links, served read-only on a port of their own (`flow publish`).
 
 ## Requirements
 

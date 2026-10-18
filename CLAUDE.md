@@ -31,6 +31,7 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 | `src/defs.ts` | parse and validate steps and processes, load `$FLOWS_HOME`, read/write definition files |
 | `src/engine.ts` | the pure run state machine: `step(run, input, ctx) → {run, actions}` |
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses |
+| `src/reports.ts` | agents' reports: a copy under an unguessable link, the read-only reports listener, expiry |
 | `src/translate.ts` | translating a step's prompt for the person reading it: a local command (Codex by default), cached under the state dir's `translations/`, two at a time, process groups killed on timeout and close |
 | `src/agterm.ts` | the `Terminal` interface; agterm behind it, the only caller of `agtermctl`; shell quoting |
 | `src/zmx.ts` | the zmx terminal: headless sessions through the `zmx` CLI, the only caller of `zmx` |

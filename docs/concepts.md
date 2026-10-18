@@ -145,7 +145,8 @@ With a messenger set up ([chat adapters](plugins.md#chat-adapters): a Telegram g
 topics), each run can have a conversation with the person, opened by its first message:
 
 - **The agent writes** with `flow say "text" [--file report.html]` — when it needs a decision on
-  something it wrote, it sends it this way and then `flow wait --human`. Only what it sends goes
+  something it wrote, it sends it this way and then `flow wait --human`. When flowd serves reports,
+  an HTML file arrives as a link that opens in the browser ([`flow publish`](cli.md#flow-publish)). Only what it sends goes
   there, never its terminal output.
 - **flowd writes** when the run comes to need the person (a human step, `flow wait --human`, a run
   stopped for the person: `<run> waits for you: <what>`), opening the conversation if needed; and

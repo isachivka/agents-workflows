@@ -79,7 +79,8 @@ on an `inner` entry with nothing nested and nothing chosen by `--inner`.
 | POST | `/api/report` | `{session?, run?, entry?, outcome: "done"\|"failed", note?, evidence?, human?}` | `{run}`. Without `run` and `entry` the step is found from `session`. `human: true` reports as the human. |
 | POST | `/api/vars` | `{session? \| run?, vars}` | `{run}` |
 | POST | `/api/wait` | `{session? \| run+entry, note, human?}` | `{run}`. The agent ends its turn on purpose (`flow wait`); refused like `/api/report` for anything but the caller's active, delivered agent step, or without a `note`. |
-| POST | `/api/say` | `{session? \| run?, text, file?}` | `{}`. Writes to the run's conversation in the messenger (`flow say`); the root run's conversation for a nested run, opened if needed. 400 without `text`; 409 with no messenger set up, no such run, a missing file, or the messenger's error. |
+| POST | `/api/publish` | `{file}` | `{url}`. A copy of the file under an unguessable link on the reports listener (`flow publish`). 400 without `file`; 409 when reports are not served, the file is missing, not a file, or too big. |
+| POST | `/api/say` | `{session? \| run?, text, file?}` | `{}`. Writes to the run's conversation in the messenger (`flow say`); an `.html` file goes as a link when reports are served; the root run's conversation for a nested run, opened if needed. 400 without `text`; 409 with no messenger set up, no such run, a missing file, or the messenger's error. |
 | POST | `/api/events` | `{type, run?, entry?, outcome?, data?}` | `{}` or `{run}`. Without `run` the event is a broadcast. |
 
 ## Sessions, plugins, the daemon

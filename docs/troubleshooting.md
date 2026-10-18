@@ -168,6 +168,16 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
   `… who is not in users, is ignored`), or you wrote outside the run's topic. A message waits in
   the outbox while the agent works and while you type in its terminal.
 
+## A report link does not open
+
+- `flow publish` says `reports are not served`: `FLOWS_REPORTS_URL` is not in flowd's environment
+  (the launchd plist), or flowd was not restarted after it was added.
+- The link answers 404: the report is older than 30 days, or the link was cut (it is
+  `/r/<32 hex>/<name>`). Publish it again.
+- The link does not answer at all: check the listener locally,
+  `curl -I http://127.0.0.1:7430/r/<token>/<name>`, then the reverse proxy's upstream (this
+  machine's LAN address and `FLOWS_REPORTS_PORT`). flowd's log names the listener at start.
+
 ## Starting over
 
 Runs and their history live in one SQLite file. To start from nothing:

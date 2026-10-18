@@ -103,12 +103,48 @@ What the person writes back in that conversation is typed into your session once
 ended, as `<name> (<messenger>): <text>`. To wait for it, end your turn with
 `flow wait --human --note "…"`.
 
+When flowd serves reports (`FLOWS_REPORTS_URL`, see [`flow publish`](#flow-publish)), an `.html`
+file is published and the message carries its link instead of the file: it opens in the phone's
+browser. Other files go as files.
+
 Refused when no messenger is set up (`no chat is set up: …`), when the file does not exist, or with
 the messenger's own error (`telegram: …`).
 
 ```
 $ flow say "The plan is ready: your OK or your objections" --file /tmp/plan.html
 sent
+```
+
+### `flow publish`
+
+```
+flow publish FILE
+```
+
+Serves a copy of `FILE` (a self-contained HTML report, up to 20 MB) under an unguessable link and
+prints it: `<FLOWS_REPORTS_URL>/r/<32 hex>/<name>`. Each call is a new copy and a new link; copies
+are deleted after 30 days. The link is the only key — anyone who has it can open the report until
+then — so it goes where the person reads (`flow say` does this for `.html` files by itself, or
+`flow set report=<url>`), not into public places.
+
+Refused when reports are not served (`reports are not served: set FLOWS_REPORTS_URL`), for a
+missing file, a directory, or a file over the limit.
+
+**Serving reports.** flowd serves them on a listener of their own, which answers nothing but
+`GET`/`HEAD /r/<token>/<name>` (404 for anything else): the UI and the API stay on their own port.
+Set, in flowd's environment (the launchd plist's `EnvironmentVariables`):
+
+- `FLOWS_REPORTS_URL` — the public base of the links, e.g. `https://reports.example.net`. Each host
+  running a flowd has its own.
+- `FLOWS_REPORTS_PORT` (default `7430`) and `FLOWS_REPORTS_HOST` (default `0.0.0.0`).
+
+Then point an HTTPS reverse proxy at that port — a router's (KeenDNS on a Keenetic:
+`ip http proxy reports`, upstream this machine's port 7430), Caddy, a tunnel — and restart flowd.
+Only that port is exposed; never expose the UI's.
+
+```
+$ flow publish /tmp/plan.html
+https://reports.example.net/r/3f9c0a…/plan.html
 ```
 
 ## For you
@@ -280,5 +316,7 @@ Claude down.
 | `FLOWS_OPEN` | flowd | The command used for that. Default `open`. |
 | `FLOWS_LAUNCHCTL` | `flow install` | The `launchctl` binary. Default `launchctl`. |
 | `FLOWS_ZMX` | flowd | The `zmx` binary for `terminal: zmx`. Default `zmx` on `PATH`, else the one inside `/Applications/agterm.app` (agterm's build has the `type` and `screen` commands flowd needs). |
+| `FLOWS_REPORTS_URL` | flowd | The public base of report links; set, it turns on the reports listener ([`flow publish`](#flow-publish)). Unset: reports are not served, `flow say` sends files. |
+| `FLOWS_REPORTS_PORT`, `FLOWS_REPORTS_HOST` | flowd | Where the reports listener listens. Default `7430` on `0.0.0.0`. |
 | `FLOWS_PRETRANSLATE` | flowd | Languages every step's prompt is translated into ahead of time, comma-separated, so Translate in the UI answers at once. Default `ru`; empty turns it off. flowd translates 2 minutes after start and 1 minute after a step file changes, one prompt at a time, only while no requested translation runs. |
 | `FLOWS_ZMX_DIR` | flowd | zmx's socket directory for flows' sessions. Default `zmx` beside the database (`~/.local/state/flows/zmx`). Keep it short: unix sockets have a path limit. |
