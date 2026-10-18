@@ -83,15 +83,15 @@ const EN = {
   "tech.when": "when", "tech.type": "type", "tech.step": "step", "tech.outcome": "outcome", "tech.data": "data",
   "badge.startsOn": "First waits for {what}", "badge.closesOn": "Closes itself on {what}", "badge.holds": "Holds {hold}",
   "badge.timeout": "At most {d}", "badge.tries.one": "Up to {n} try", "badge.tries.other": "Up to {n} tries",
-  "agent.claude": "Claude agent", "agent.codex": "Codex agent", "agent.generic": "agent",
+  "agent.claude": "Claude agent", "agent.codex": "Codex agent", "agent.generic": "a program",
   "role.beside": "in the right half beside {role}", "role.cwd": "works in {cwd}",
   "fact.who": "Who", "fact.does": "Does", "fact.runs": "Runs", "fact.where": "Where", "fact.args": "With",
   "fact.startsOn": "Starts on", "fact.closesOn": "Closes itself on", "fact.cond": "Conditions", "fact.holds": "Holds",
   "fact.holdsV": "{hold} — while it runs, other runs wait their turn here", "fact.timeout": "At most", "fact.skills": "Skills",
   "fact.tries": "Tries", "fact.ifFails": "If it fails", "fact.asksYou": "asks you what to do",
   "fact.flows": "flows itself, no agent", "fact.procFolder": "the process folder", "fact.nested": "a nested process",
-  "does.inner": "{role} runs a whole other process here, and this one waits until it ends. Which process is chosen at the start (flow start --inner) or here, when the run gets to it.",
-  "does.pause": "nothing: waits {d}, then goes on by itself", "does.wait": "waits for {what}; how they end closes the step",
+  "does.inner": "Here agent {role} runs another whole process, and this one waits until it ends. Which one is chosen when the run starts (flow start --inner) or here, when the run gets to it.",
+  "does.pause": "nothing: waits {d}, then goes on by itself", "does.wait": "waits for {what}; how it ends closes the step",
   "does.type": "types into {role}: {text}", "does.typeNothing": "starts {role} and types nothing: it waits to be spoken to",
 };
 
@@ -182,12 +182,12 @@ const RU = {
   "agent.claude": "агент Claude", "agent.codex": "агент Codex", "agent.generic": "программа",
   "role.beside": "в правой половине рядом с {role}", "role.cwd": "работает в {cwd}",
   "fact.who": "Кто делает", "fact.does": "Что делает", "fact.runs": "Выполняет", "fact.where": "Где", "fact.args": "С параметрами",
-  "fact.startsOn": "Начинается после", "fact.closesOn": "Закроется сам", "fact.cond": "Условия", "fact.holds": "Занимает",
+  "fact.startsOn": "Сначала ждёт", "fact.closesOn": "Закроется сам по событию", "fact.cond": "Условия", "fact.holds": "Занимает",
   "fact.holdsV": "{hold} — пока шаг идёт, другие запуски ждут здесь своей очереди", "fact.timeout": "Не дольше", "fact.skills": "Навыки",
   "fact.tries": "Попытки", "fact.ifFails": "Если не получилось", "fact.asksYou": "спросит тебя, что делать",
   "fact.flows": "flows сам, без агента", "fact.procFolder": "папка процесса", "fact.nested": "вложенный процесс",
-  "does.inner": "{role} целиком проходит здесь другой процесс, а этот ждёт, пока тот закончится. Какой процесс — выбирают при запуске (flow start --inner) или здесь же, когда запуск дойдёт до этого места.",
-  "does.pause": "ничего: ждёт {d} и идёт дальше сам", "does.wait": "ждёт: {what}; чем они кончатся, тем и закроется шаг",
+  "does.inner": "Здесь агент {role} целиком проходит другой процесс, а этот ждёт, пока тот закончится. Какой — выбирают при запуске (flow start --inner) или здесь же, когда запуск дойдёт до этого места.",
+  "does.pause": "ничего: ждёт {d} и идёт дальше сам", "does.wait": "ждёт: {what}; чем это кончится, тем и закроется шаг",
   "does.type": "печатает в {role}: {text}", "does.typeNothing": "запускает {role} и ничего не печатает: он ждёт, пока к нему обратятся",
 };
 
@@ -272,7 +272,7 @@ export function entryBadges(e) {
   if (e.waitFor && e.kind !== "wait") out.push({ tone: "wait", text: t(e.kind === "human" ? "badge.closesOn" : "badge.startsOn", { what: eventPhrase(e.waitFor) }) });
   if (e.hold) out.push({ tone: "hold", text: t("badge.holds", { hold: e.hold }) });
   if (e.timeoutMs) out.push({ tone: "lim", text: t("badge.timeout", { d: duration(e.timeoutMs) }) });
-  if (e.onFail === "retry") out.push({ tone: "lim", text: tn("badge.tries", e.retries) });
+  if (e.onFail === "retry" && (e.kind === "agent" || e.kind === "action")) out.push({ tone: "lim", text: tn("badge.tries", e.retries) });
   return out;
 }
 
@@ -323,7 +323,7 @@ export function entryFacts(e, roleDefs) {
   if (e.hold) fact("fact.holds", t("fact.holdsV", { hold: e.hold }));
   if (e.timeoutMs) fact("fact.timeout", duration(e.timeoutMs));
   if (e.skills && e.skills.length) fact("fact.skills", e.skills.join(", "));
-  if (e.onFail === "retry") fact("fact.tries", tn("badge.tries", e.retries));
+  if (e.onFail === "retry" && (e.kind === "agent" || e.kind === "action")) fact("fact.tries", tn("badge.tries", e.retries));
   if (e.onFail === "human" && (e.kind === "agent" || e.kind === "action")) fact("fact.ifFails", t("fact.asksYou"));
   return out;
 }

@@ -220,6 +220,7 @@ test("entry badges: what it waits for, what it holds, its limits", () => {
   assert.deepEqual(T.entryBadges(pe({ hold: "desk", timeoutMs: 3_600_000 })).map((b: any) => [b.tone, b.text]),
     [["hold", "Holds desk"], ["lim", "At most 1 h"]]);
   assert.deepEqual(T.entryBadges(pe({ kind: "wait", role: null, step: null, waitFor: "gh.checks" })), []); // its phrase says it
+  assert.deepEqual(T.entryBadges(pe({ kind: "human", role: "human", onFail: "retry", retries: 3 })), []); // tries only for agent and action
   T.setLang("ru");
   assert.deepEqual(T.entryBadges(pe({ onFail: "retry", retries: 1 })).map((b: any) => b.text), ["До 1 попытки"]);
   assert.deepEqual(T.entryBadges(pe({ onFail: "retry", retries: 5 })).map((b: any) => b.text), ["До 5 попыток"]);
@@ -243,9 +244,12 @@ test("entry facts: one plain line per thing that applies", () => {
     ["Who", "flows itself, no agent", false], ["Runs", "echo hi", true], ["Where", "the process folder", false], ["At most", "5 min", false],
   ]);
   assert.deepEqual(kv(pe({ kind: "delay", step: null, role: null, waitMs: 72_000_000 })), [["Who", "flows itself, no agent"], ["Does", "nothing: waits 20 h, then goes on by itself"]]);
-  assert.match(kv(pe({ kind: "inner", step: null }))[1][1], /dev runs a whole other process here/);
+  assert.match(kv(pe({ kind: "inner", step: null }))[1][1], /Here agent dev runs another whole process/);
   assert.deepEqual(kv(pe({ kind: "wait", step: null, role: null, waitFor: "gh.checks", onFail: { goto: "fix" } })),
-    [["Who", "flows itself, no agent"], ["Does", "waits for GitHub checks; how they end closes the step"]]);
+    [["Who", "flows itself, no agent"], ["Does", "waits for GitHub checks; how it ends closes the step"]]);
+  T.setLang("ru");
+  assert.deepEqual(kv(pe({ waitFor: "gh.merged" })).filter((f: any) => f[0] === "Сначала ждёт"), [["Сначала ждёт", "мёрдж PR"]]);
+  T.setLang("en");
   assert.deepEqual(kv(pe(), []), [["Who", "dev — agent"], ["If it fails", "asks you what to do"]]); // no role definitions: an invalid process
 });
 
