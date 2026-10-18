@@ -66,29 +66,42 @@ The user reads English slowly. A step's prompt is in English and the UI shows it
 - `GET /api/processes` adds fields; none change:
   - per process: `path` (the YAML file), `workspace`, `terminal`, `roleDefs`:
     `[{ name, agent: "claude" | "codex" | "other", beside, cwd }]`;
-  - per entry: `timeoutMs`, `retries`, `hold`, `with` (the wait's conditions), `text`
-    (`do: type`), `cwd` (shell), `skills` (from the step), `inner` as `kind`.
+  - per entry: `timeoutMs`, `retries`, `hold`, `with` (a plugin action's arguments, as in the
+    definition), `waitWith` and `waitWhere` (the wait's conditions; `waitFor` stays the event type
+    string), `text` (`do: type`), `cwd` (shell), `skills` (from the step), `inner` as `kind`.
+    Paths are shown with `~` for the home directory.
 - `GET /api/steps/:id` adds `path` (the step file).
 - `POST /api/steps/:id/translate` with `{ lang: "ru" }` returns `{ text }`:
   - flowd reads the step's body itself; the browser never sends text to translate;
-  - it runs the translator command with the body on stdin and a fixed instruction (translate into
-    `<lang>`; keep code, commands, `{{placeholders}}`, URLs and Markdown; output only the
-    translation). Default command: `codex exec -m gpt-6-luna --sandbox read-only --ephemeral
-    --skip-git-repo-check -c model_reasoning_effort=low <instruction>` through a login zsh, in a
-    temporary folder. `FlowdOptions.translate` replaces the command (tests, the preview);
-  - the result is cached in `<state dir>/translations/<sha256 of lang, model, body>.txt`; an
-    edited step is translated anew, an unchanged one comes back at once;
-  - two requests for the same key share one run;
-  - a command that fails, prints nothing or takes over 2 minutes gives a 502 that says which
-    (Codex missing, not signed in, timed out) and that the original is still readable;
+  - it runs the translator as an argv with the body on stdin and a fixed instruction as the last
+    argument (translate into `<lang>`; keep code, commands, `{{placeholders}}`, URLs and
+    Markdown; output only the translation). Default: `zsh -lc 'exec "$@"' zsh codex exec -m
+    gpt-6-luna --sandbox read-only --ephemeral --skip-git-repo-check -c
+    model_reasoning_effort=low`, so the login shell finds `codex` and nothing is quoted into a
+    shell string; in a temporary folder, in its own process group. `FlowdOptions.translate`
+    replaces the argv (tests and the preview default to a fake), `translateTimeoutMs` the
+    2-minute limit;
+  - on the time limit and on flowd's close the whole process group is killed: nothing outlives
+    the request;
+  - at most two translations run at once; more wait in line. Two requests for the same text share
+    one run;
+  - the result is cached in `<state dir>/translations/<sha256 of the argv, instruction and
+    body>.txt`, written to a temp file and renamed; an edited step or a changed command is
+    translated anew, an unchanged one comes back at once without starting anything;
+  - a command that fails, prints nothing or runs out of time gives a 502 whose error says which,
+    with the last lines of its stderr (no login, unknown model), and that the original is still
+    readable;
   - unknown step: 404; `lang` other than `ru`/`en`: 400.
 - The route goes through the existing Host/Origin/content-type guard like every POST.
 
 ## Testing
 
-- `test/http.test.ts`: the new process and step fields on a fixture home; translate with a fake
-  command (cache hit runs it once, two concurrent requests run it once, an edited body runs it
-  again, failure and timeout give 502, unknown step 404, bad lang 400).
+- `test/translate.test.ts`: with fake commands — the cache answers without starting a child,
+  two concurrent requests for one text start one child, at most two run at once, an edited body
+  runs again, a sleeping fake is killed with its group at the time limit (502 with the reason),
+  close kills a running one, stderr lines reach the error.
+- `test/http.test.ts`: the new process and step fields on a fixture home; the translate route
+  (200, unknown step 404, bad lang 400, failure 502).
 - `test/ui-text.test.ts`: the badge and "how it works" phrases for each entry kind and option,
   both languages, dictionary parity.
 - `scripts/ui-preview.ts` seeds a process with every entry kind and option and a fake translator,
