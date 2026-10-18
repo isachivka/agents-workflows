@@ -27,7 +27,9 @@ watch and take over at any time.
   its PR and Slack thread, says what waits for you
   and what each run is doing, which round a repeating run is on and what finished today, in
   English or Russian; close human steps, retry, skip or step in by hand; read each process as a
-  story; edit processes and steps; jump to an agent's terminal in one click.
+  story, with each step explained in a side panel (what it waits for, what it holds, its limits,
+  where its files are) and its prompt translated into Russian by a local Codex model; edit
+  processes and steps; jump to an agent's terminal in one click.
 - **Plugins** for event sources and actions, as waits or as triggers that start a process. `gh`
   is built in: required checks, reviews, and per repo merged PRs, newly opened or labelled PRs
   and CI runs on a branch.
