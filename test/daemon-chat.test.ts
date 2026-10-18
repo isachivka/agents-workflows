@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { CHAT_ON, STEP_FILES, chatLog, makeHome, proc, resetChat, settle, startFlowd } from "./daemon-helpers.ts";
+import { CHAT_ON, STEP_FILES, chatCtx, chatLog, makeHome, proc, resetChat, settle, startFlowd } from "./daemon-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
 const OUTER = proc("  - {step: b, role: pm}\n  - {inner: true, role: pm}\n  - {step: c, role: pm}\n", "", "outer");
@@ -138,5 +138,57 @@ test("a messenger that fails leaves the run as it was and shows the error on the
   await finishB(t);
   assert.equal(t.f.store.getRun("h#1")?.current, "c");
   assert.equal(t.f.plugins.status().find((p) => p.name === "fakechat")?.lastError, "no rights");
+  await t.f.close();
+});
+
+const tell = async (t: { f: any }, address: string, text: string) => {
+  chatCtx().message({ address, text, from: "Ann" });
+  await settle(t.f);
+};
+
+test("a message in the conversation is typed to the run's agent once its turn has ended", async () => {
+  const t = await running();
+  await t.f.say({ session: "S1", text: "plan?" });
+  await t.f.submit(status("S1", "active"));
+  t.clock.t += 17_000;
+  await tell(t, "T1", "go on,\nbut keep the tests");
+  assert.ok(!t.agterm.typed().some((x) => x.includes("Ann")));
+  await t.f.submit(status("S1", "completed"));
+  await settle(t.f);
+  assert.equal(t.agterm.typed().at(-1), "type S1 Ann (fakechat): go on,\nbut keep the tests");
+  await t.f.close();
+});
+
+test("a message in a root's conversation goes to the nested run's agent", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...OUTER, ...LEAF, ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("outer", { pm: "S1" }, { inner: ["leaf"] }));
+  await settle(t.f);
+  await finishB(t);
+  await t.f.say({ session: "S1", text: "hi" });
+  await t.f.submit(status("S1", "active"));
+  await tell(t, "T1", "yes");
+  assert.deepEqual(t.f.store.pendingOutbox().map((r) => [r.run_id, r.text]), [["leaf#1", "Ann (fakechat): yes"]]);
+  await t.f.close();
+});
+
+test("with no agent on a step, or an ended run, the message is answered and not typed", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...HUMAN, ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("h", { pm: "S1" }));
+  await settle(t.f);
+  await finishB(t);
+  await tell(t, "T1", "hello?");
+  assert.equal(chatLog().at(-1), "post T1 no agent is on a step now: h#1 is at c (human). Write again when one is");
+  assert.deepEqual(t.f.store.pendingOutbox(), []);
+  await t.f.submit({ type: "entry.report", data: { run: "h#1", entry: "c", outcome: "done", by: "human" }, source: "cli" });
+  await settle(t.f);
+  await tell(t, "T1", "and now?");
+  assert.equal(chatLog().at(-1), "post T1 h#1 has ended");
+  const before = chatLog().length;
+  await tell(t, "T9", "lost");
+  assert.equal(chatLog().length, before);
   await t.f.close();
 });

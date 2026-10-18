@@ -9,7 +9,7 @@ import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
 import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
-import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, type Watch } from "./plugins.ts";
+import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, type ChatMessage, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
@@ -155,6 +155,7 @@ export class Flowd {
       dirs: o.pluginDirs,
       config: readPluginConfig(o.home, this.log),
       sink: (e) => { void this.submit(e); },
+      onMessage: (adapter, m) => { void this.enqueue(() => this.incoming(adapter, m)); },
       log: this.log,
       retryBaseMs: o.retryBaseMs,
     });
@@ -786,6 +787,38 @@ export class Flowd {
       this.opening.set(root.id, p);
     }
     return p;
+  }
+
+  /**
+   * The person wrote in a run's conversation: the agent of the step the stack is on gets it, through
+   * the outbox, so it is typed once the agent's turn has ended and nobody types in the terminal.
+   */
+  private async incoming(adapter: string, m: ChatMessage): Promise<void> {
+    const root = this.store.runByChat(adapter, m.address);
+    if (!root) { this.log(`[${adapter}] a message in a conversation no run has (${m.address})`); return; }
+    const reply = (text: string) => {
+      const a = this.plugins.chat();
+      if (!a || "error" in a || a.name !== adapter) return;
+      this.background(Promise.resolve(a.chat.post(m.address, { text }, a.ctx)).catch((e) => this.plugins.fault(adapter, e)));
+    };
+    if (TERMINAL.includes(root.status)) return reply(`${root.id} has ended`);
+    let top = root;
+    for (let c = this.childOf(top); c; c = this.childOf(top)) top = c;
+    const cur = this.currentEntry(top);
+    const st = cur ? top.entries[cur.id] : undefined;
+    if (top.status !== "running" || cur?.kind !== "agent" || !cur.role || !top.roles[cur.role] || st?.status === "pending") {
+      const where = top.status !== "running" ? `${top.id} is ${top.status}` : `${top.id} is at ${cur?.id ?? "nothing"} (${cur?.kind ?? "no step"})`;
+      return reply(`no agent is on a step now: ${where}. Write again when one is`);
+    }
+    this.store.enqueue(top.id, cur.role, `${m.from} (${adapter}): ${m.text}`, null, this.now());
+    void this.flush();
+  }
+
+  /** The open nested run standing on this run's current inner entry. */
+  private childOf(run: RunState): RunState | undefined {
+    const id = run.current ? run.entries[run.current]?.child : undefined;
+    const c = id ? this.store.getRun(id) : null;
+    return c && !TERMINAL.includes(c.status) ? c : undefined;
   }
 
   /** `flow say`: the agent writes to its run's conversation. */
