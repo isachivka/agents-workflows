@@ -1258,3 +1258,28 @@ test("flowd skips Codex's update screen with Esc, in a trusted folder too, and t
   assert.equal(fresh.f.store.getRun("p#1")!.status, "running");
   await fresh.f.close();
 });
+
+test("a Codex started by do: type with no text gets its update screen and trust question answered too", async () => {
+  const p = "description: d\ncwd: /tmp\nroles: {lead: {spawn: claude}, peer: {spawn: codex, beside: lead}}\nsteps:\n  - {do: type, role: peer, text: \"\"}\n  - {id: hold, wait: 5m}\n";
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, "processes/p.yaml": p, "codex/config.toml": '[projects."/elsewhere"]\ntrust_level = "trusted"\n' }), { trustPollMs: 1 });
+  agterm.screens.set("S1:right", NARROW_UPDATE_SCREEN);
+  agterm.onPress = (s, k) => agterm.screens.set(s, k === "\x1b" ? NARROW_CODEX_DIALOG : "codex is up");
+  await f.submit(start("p"));
+  await settle(f);
+  assert.ok(agterm.calls.some((c) => c.startsWith("beside S1:right | /tmp | codex --no-daemon")), agterm.calls.join("\n"));
+  assert.deepEqual(pressed(agterm), ['press S1:right "\\u001b"', 'press S1:right "\\r"']);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
+  await f.close();
+});
+
+test("the host agent a beside role brings up first gets its trust question answered too", async () => {
+  const home = makeHome({ ...PAIR("peer"), "codex/config.toml": '[projects."/tmp"]\ntrust_level = "trusted"\n' });
+  const agterm = new FakeAgterm();
+  agterm.screens.set("S1", DIALOG(false));
+  agterm.onPress = (s, k) => { if (k === "\x1b[B") agterm.screens.set(s, DIALOG(true)); if (k === "\r") agterm.screens.set(s, "claude is up"); };
+  const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm).filter((c) => c.startsWith("press S1 ")), ['press S1 "\\u001b[B"', 'press S1 "\\r"']);
+  await f.close();
+});

@@ -957,11 +957,8 @@ export class Flowd {
       if (row.entry_id) await this.submit({ type: "entry.delivered", run: run.id, entry: row.entry_id, data: {}, source: "flowd" });
       // an agent may stop on a screen before it reads the first line (Claude's and Codex's folder
       // trust, Codex's update notice): answer it, beside delivery so other sessions are not held up
-      const agent = agentOf(role.spawn);
-      if (row.entry_id && agent !== "other") {
-        const trust = agent === "claude" ? !this.claudeTrusts(cwd) : !this.codexTrusts(cwd);
-        if (trust || agent === "codex") this.background(this.answerStartScreens(run.id, row.entry_id, session, cwd, agent, trust));
-      }
+      // — whatever spawned it: a step's line, or a `do: type` (often empty, just to start the agent)
+      this.watchStartScreens(run.id, row.entry_id, session, cwd, role.spawn);
     } catch (e) {
       this.log(`spawn ${run.id} ${row.role}: ${msg(e)}`);
       if (attempts >= 3) {
@@ -989,8 +986,17 @@ export class Flowd {
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: host, session, by: "spawn" }, source: "flowd" });
       this.log(`${run.id}: started ${host} in ${session} for ${role} to run beside`);
+      this.watchStartScreens(run.id, null, session, cwd, h.spawn);
     }
     return this.agterm.spawnBeside(o, session);
+  }
+
+  /** Every agent flowd spawns, whatever for: a Claude in an untrusted folder, and any Codex. */
+  private watchStartScreens(run: string, entry: string | null, session: string, cwd: string, spawn: string): void {
+    const agent = agentOf(spawn);
+    if (agent === "other") return;
+    const trust = agent === "claude" ? !this.claudeTrusts(cwd) : !this.codexTrusts(cwd);
+    if (trust || agent === "codex") this.background(this.answerStartScreens(run, entry, session, cwd, agent, trust));
   }
 
   /**
@@ -1000,7 +1006,7 @@ export class Flowd {
    *   into it, so it trusts it. Claude starts on "No, exit" (Down, then Enter once "Yes, I trust
    *   this folder" is selected), Codex on "Trust and continue" (Enter). Never writes their configs.
    */
-  private async answerStartScreens(run: string, entry: string, session: string, cwd: string, agent: "claude" | "codex", trust: boolean): Promise<void> {
+  private async answerStartScreens(run: string, entry: string | null, session: string, cwd: string, agent: "claude" | "codex", trust: boolean): Promise<void> {
     const pause = () => new Promise((r) => setTimeout(r, this.o.trustPollMs ?? 1_000));
     const d = agent === "claude"
       ? { who: "Claude Code", marker: "Yes,Itrustthisfolder", yes: /❯(\d+\.)?Yes,Itrustthisfolder/, choice: "Yes, I trust this folder", down: true }
@@ -1010,10 +1016,13 @@ export class Flowd {
     const read = async () => (await this.termOf(session).text(session)).replace(/[\s\u2500-\u257f]+/g, "");
     const isUpdate = (screen: string) => agent === "codex" && screen.includes("Updateavailable") && screen.includes("escskip");
     const yesSelected = (screen: string) => d.yes.test(screen);
-    const stop = (why: string) => this.submit({
-      type: "entry.start-blocked", run, entry, source: "flowd",
-      data: { reason: `${entry}: ${d.who} asks whether to trust ${cwd} and flowd could not ${why} — open the session and choose "${d.choice}"` },
-    });
+    // a spawn for a step stops that step; one for a `do: type` stops the run where it stands now
+    const stop = async (why: string) => {
+      const at = entry ?? this.store.getRun(run)?.current;
+      const reason = `${at ?? run}: ${d.who} asks whether to trust ${cwd} and flowd could not ${why} — open the session and choose "${d.choice}"`;
+      if (at) await this.submit({ type: "entry.start-blocked", run, entry: at, source: "flowd", data: { reason } });
+      else this.log(reason);
+    };
     try {
       let skipped = false;
       for (let i = 0; i < 30; i++) {

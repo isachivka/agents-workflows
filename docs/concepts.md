@@ -172,7 +172,8 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
   already selected: for a folder `~/.codex/config.toml` does not list as trusted
   (`[projects."<path>"]`, `trust_level = "trusted"`), flowd watches for it the same way and presses
   Enter. The screens are matched across line wraps, so a narrow split pane does not hide them.
-- Codex may open on "Update available" instead. flowd watches every Codex it spawns for that
+- Codex may open on "Update available" instead. flowd watches every Codex it spawns (for a step's
+  line, a `do: type`, or as the host a `beside` role needs) for that
   screen (30 s) and presses Esc, which skips it: flowd never updates Codex, and the screen comes
   back on Codex's next start until you update it yourself.
 - An entry's `timeout` fails it when it stays `active` or `waiting` that long, whether or not its
