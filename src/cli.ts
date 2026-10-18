@@ -19,6 +19,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow set key=value …                   run variables (URLs show as links in the UI)
   flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
   flow say TEXT [--file PATH]            write to the run's conversation in the messenger (with a file)
+  flow publish FILE                      serve a copy of a report under an unguessable link; prints it
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
@@ -186,6 +187,11 @@ export async function main(argv: string[]): Promise<number> {
         if (a._.length !== 1 || !a._[0].trim()) throw new CliError('usage: flow say "text" [--file PATH] [--run ID]');
         await call("POST", "/api/say", { session: a.run ? undefined : session, run: a.run, text: a._[0], file: a.file ? resolve(a.file) : undefined });
         out("sent");
+        return 0;
+      }
+      case "publish": {
+        if (a._.length !== 1) throw new CliError("usage: flow publish FILE");
+        out((await call("POST", "/api/publish", { file: resolve(a._[0]) })).url);
         return 0;
       }
       case "skip": {

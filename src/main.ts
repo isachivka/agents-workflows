@@ -5,6 +5,7 @@ import { realAgterm } from "./agterm.ts";
 import { Flowd } from "./daemon.ts";
 import { flowsHome } from "./defs.ts";
 import { makeServer } from "./http.ts";
+import { createServer } from "node:http";
 import { statePath } from "./store.ts";
 import { zmxTerminal } from "./zmx.ts";
 
@@ -22,7 +23,9 @@ export async function startDaemon(): Promise<void> {
   const zmx = zmxTerminal({ bin: zmxBin(), dir: process.env.FLOWS_ZMX_DIR || join(dirname(statePath()), "zmx") });
   const f = new Flowd({ home, statePath: statePath(), agterm: realAgterm(), zmx, pluginDirs: [join(REPO, "plugins"), join(home, "plugins")],
     // step prompts are translated ahead of time into these (comma-separated; empty turns it off)
-    pretranslate: (process.env.FLOWS_PRETRANSLATE ?? "ru").split(",").map((l) => l.trim()).filter(Boolean) });
+    pretranslate: (process.env.FLOWS_PRETRANSLATE ?? "ru").split(",").map((l) => l.trim()).filter(Boolean),
+    // agents' reports, served on their own port for the router's reverse proxy; off without a public base
+    ...(process.env.FLOWS_REPORTS_URL ? { reports: { dir: join(dirname(statePath()), "reports"), url: process.env.FLOWS_REPORTS_URL } } : {}) });
   await f.init();
   const port = Number(process.env.FLOWD_PORT || 7420);
   const host = process.env.FLOWD_HOST || "127.0.0.1";
@@ -32,7 +35,20 @@ export async function startDaemon(): Promise<void> {
     server.listen(port, host, resolve);
   });
   console.error(`[flowd] http://${host}:${port} · FLOWS_HOME ${home} · state ${statePath()}`);
+  // nothing but the reports on this listener: it is the one the outside reaches
+  const reports = f.reports ? createServer((req, res) => f.reports!.handler(req, res)) : undefined;
+  if (reports) {
+    const rPort = Number(process.env.FLOWS_REPORTS_PORT || 7430);
+    const rHost = process.env.FLOWS_REPORTS_HOST || "0.0.0.0";
+    await new Promise<void>((resolve, reject) => {
+      reports.once("error", reject);
+      reports.listen(rPort, rHost, resolve);
+    });
+    console.error(`[flowd] reports on http://${rHost}:${rPort}, linked as ${process.env.FLOWS_REPORTS_URL}`);
+  }
   const stop = async () => {
+    reports?.closeAllConnections();
+    reports?.close();
     server.closeAllConnections();
     server.close();
     await f.close();

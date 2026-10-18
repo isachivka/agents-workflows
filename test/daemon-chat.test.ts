@@ -192,3 +192,27 @@ test("with no agent on a step, or an ended run, the message is answered and not 
   assert.equal(chatLog().length, before);
   await t.f.close();
 });
+
+test("with reports served, flow say sends an HTML file as a link; other files and no reports still go as files", async () => {
+  resetChat();
+  const home = makeHome({ ...STEP_FILES, ...TWO, ...CHAT_ON });
+  const t = await startFlowd(home, { reports: { dir: join(home, "reports"), url: "https://reports.example.net" } });
+  t.agterm.addSession("S1");
+  await t.f.submit(start("p", { pm: "S1" }));
+  await settle(t.f);
+  writeFileSync(join(home, "plan.html"), "<p>plan</p>");
+  writeFileSync(join(home, "log.pdf"), "%PDF");
+  assert.deepEqual(await t.f.say({ session: "S1", text: "the plan", file: join(home, "plan.html") }), {});
+  assert.deepEqual(await t.f.say({ session: "S1", text: "the log", file: join(home, "log.pdf") }), {});
+  assert.match(chatLog()[1], /^post T1 the plan\nhttps:\/\/reports\.example\.net\/r\/[0-9a-f]{32}\/plan\.html$/);
+  assert.equal(chatLog()[2], `post T1 the log +${join(home, "log.pdf")}`);
+  assert.match((t.f.publish(join(home, "plan.html")) as { url: string }).url, /^https:\/\/reports\.example\.net\/r\//);
+  await t.f.close();
+
+  const off = await running();
+  writeFileSync(join(off.home, "plan.html"), "<p>plan</p>");
+  await off.f.say({ session: "S1", text: "the plan", file: join(off.home, "plan.html") });
+  assert.equal(chatLog().at(-1), `post T1 the plan +${join(off.home, "plan.html")}`);
+  assert.deepEqual(off.f.publish(join(off.home, "plan.html")), { error: "reports are not served: set FLOWS_REPORTS_URL (docs/cli.md#flow-publish)" });
+  await off.f.close();
+});

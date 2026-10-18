@@ -13,6 +13,7 @@ import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, ty
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
+import { Reports } from "./reports.ts";
 import { TERMINAL } from "./types.ts";
 import type { Defs, Dict, FlowEvent, Input, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
 
@@ -49,6 +50,8 @@ export interface FlowdOptions {
   trustPollMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
   titleMs?: number;
+  /** agents' reports: where the copies live and the public base of their links (FLOWS_REPORTS_URL); none: not served */
+  reports?: { dir: string; url: string };
   /** how a shell entry's command is run; the command is appended (default: a login zsh) */
   shell?: string[];
 }
@@ -135,6 +138,7 @@ export class Flowd {
   private loaded = false;
   private queueing = false;
   private translator: Translator;
+  reports: Reports | undefined;
   private notices: Promise<unknown> = Promise.resolve();
   private opening = new Map<string, Promise<string>>(); // a root run's conversation being opened
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
@@ -145,6 +149,7 @@ export class Flowd {
       argv: o.translate ?? TRANSLATE, dir: join(dirname(o.statePath), "translations"),
       timeoutMs: o.translateTimeoutMs ?? 120_000, max: 2,
     });
+    this.reports = o.reports ? new Reports(o.reports) : undefined;
     this.home = o.home;
     this.agterm = o.agterm;
     this.zmx = o.zmx;
@@ -197,6 +202,10 @@ export class Flowd {
     if (tickMs > 0) this.timers.push(setInterval(() => { void this.tickNow(); }, tickMs));
     if (flushMs > 0) this.timers.push(setInterval(() => { void this.flush(); }, flushMs));
     const titleMs = this.o.titleMs ?? 600_000;
+    if (this.reports) {
+      this.reports.prune();
+      this.timers.push(setInterval(() => this.reports?.prune(), 86_400_000));
+    }
     if (titleMs > 0) {
       this.timers.push(setInterval(() => { void this.refreshTitles(); }, titleMs));
       this.background(this.refreshTitles()); // runs that got their PR while flowd was down
@@ -821,6 +830,12 @@ export class Flowd {
     return c && !TERMINAL.includes(c.status) ? c : undefined;
   }
 
+  /** `flow publish`: a copy of the file under an unguessable link. */
+  publish(file: string): { url: string } | { error: string } {
+    if (!this.reports) return { error: "reports are not served: set FLOWS_REPORTS_URL (docs/cli.md#flow-publish)" };
+    return this.reports.publish(file);
+  }
+
   /** `flow say`: the agent writes to its run's conversation. */
   async say(q: { session?: string; run?: string; text: string; file?: string }): Promise<{ error?: string }> {
     const a = this.plugins.chat();
@@ -829,8 +844,15 @@ export class Flowd {
     const run = q.run ? this.store.getRun(q.run) : q.session ? this.store.runBySession(q.session)?.run : undefined;
     if (!run) return { error: q.run ? `no run ${q.run}` : q.session ? "no open run is bound to this session" : "no session: run this inside a flow session, or pass --run" };
     if (q.file && !existsSync(q.file)) return { error: `no file ${q.file}` };
+    let m: { text: string; file?: string } = { text: q.text, ...(q.file ? { file: q.file } : {}) };
+    if (q.file && this.reports && /\.html?$/i.test(q.file)) {
+      // a page reads better as a link than as a download
+      const p = this.reports.publish(q.file);
+      if ("error" in p) return p;
+      m = { text: `${q.text}\n${p.url}` };
+    }
     try {
-      await a.chat.post(await this.chatFor(this.rootOf(run), a), { text: q.text, ...(q.file ? { file: q.file } : {}) }, a.ctx);
+      await a.chat.post(await this.chatFor(this.rootOf(run), a), m, a.ctx);
       return {};
     } catch (e) {
       this.plugins.fault(a.name, e);

@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createServer as httpServer } from "node:http";
 import { createServer, type AddressInfo, type Socket } from "node:net";
 import { dirname, join } from "node:path";
@@ -244,5 +246,17 @@ test("flow say sends the text and the file's absolute path for this session's ru
   assert.deepEqual(chatLog(), ["open p#1 ", `post T1 plan ready +${join(process.cwd(), "test/cli.test.ts")}`]);
   const bad = await flow(["say"], env);
   assert.equal(bad.code, 1);
+  await s.close();
+});
+
+test("flow publish prints the report's link; POST /api/publish needs a file", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO }, { reports: { dir: join(mkdtempSync(join(tmpdir(), "flows-r-")), "reports"), url: "https://r.example.net" } });
+  const env = { FLOWD_URL: s.base, AGTERM_SESSION_ID: "" };
+  const r = await flow(["publish", "test/cli.test.ts"], env);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^https:\/\/r\.example\.net\/r\/[0-9a-f]{32}\/cli\.test\.ts\n$/);
+  assert.equal((await s.call("POST", "/api/publish", {})).status, 400);
+  const missing = await s.call("POST", "/api/publish", { file: "/nope.html" });
+  assert.deepEqual([missing.status, missing.body], [409, { error: "no file /nope.html" }]);
   await s.close();
 });
