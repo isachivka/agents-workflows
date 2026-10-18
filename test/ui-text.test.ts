@@ -203,3 +203,60 @@ test("stacks: a run with an open nested run sits under it; tabs say what the run
   // a parent whose nested run is not in the list (finished, filtered) is a card of its own
   assert.deepEqual(T.stacks([a]).map((x: any) => x.top.id), ["a#1"]);
 });
+
+const pe = (extra: Record<string, unknown> = {}) => ({
+  id: "x", kind: "agent", role: "dev", waitFor: null, detour: false, step: "x", summary: "Do x", do: null, onFail: "human",
+  after: null, waitMs: null, sh: null, timeoutMs: null, retries: 3, hold: null, with: {}, waitWith: null, waitWhere: null,
+  text: null, cwd: null, skills: [], ...extra,
+});
+const ROLES = [{ name: "dev", agent: "claude", beside: null, cwd: null }, { name: "peer", agent: "codex", beside: "dev", cwd: "/w" }];
+
+test("entry badges: what it waits for, what it holds, its limits", () => {
+  T.setLang("en");
+  assert.deepEqual(T.entryBadges(pe()), []);
+  assert.deepEqual(T.entryBadges(pe({ waitFor: "gh.review", onFail: "retry", retries: 50 })).map((b: any) => b.text),
+    ["First waits for a PR review", "Up to 50 tries"]);
+  assert.deepEqual(T.entryBadges(pe({ kind: "human", role: "human", waitFor: "gh.merged" })).map((b: any) => b.text), ["Closes itself on the PR merge"]);
+  assert.deepEqual(T.entryBadges(pe({ hold: "desk", timeoutMs: 3_600_000 })).map((b: any) => [b.tone, b.text]),
+    [["hold", "Holds desk"], ["lim", "At most 1 h"]]);
+  assert.deepEqual(T.entryBadges(pe({ kind: "wait", role: null, step: null, waitFor: "gh.checks" })), []); // its phrase says it
+  T.setLang("ru");
+  assert.deepEqual(T.entryBadges(pe({ onFail: "retry", retries: 1 })).map((b: any) => b.text), ["До 1 попытки"]);
+  assert.deepEqual(T.entryBadges(pe({ onFail: "retry", retries: 5 })).map((b: any) => b.text), ["До 5 попыток"]);
+  T.setLang("en");
+});
+
+test("entry facts: one plain line per thing that applies", () => {
+  T.setLang("en");
+  const kv = (e: any, roles: any = ROLES) => T.entryFacts(e, roles).map((f: any) => [f.k, f.v]);
+  assert.deepEqual(kv(pe()), [["Who", "dev — Claude agent"], ["If it fails", "asks you what to do"]]);
+  assert.deepEqual(kv(pe({ waitFor: "gh.review", waitWith: { from: "requested" }, onFail: "retry", retries: 50, skills: ["gh-cli"], hold: "desk", timeoutMs: 600_000 })), [
+    ["Who", "dev — Claude agent"], ["Starts on", "a PR review"], ["Conditions", "from: \"requested\""],
+    ["Holds", "desk — while it runs, other runs wait their turn here"], ["At most", "10 min"], ["Skills", "gh-cli"],
+    ["Tries", "Up to 50 tries"],
+  ]);
+  assert.deepEqual(kv(pe({ kind: "human", role: "human", waitFor: "gh.merged" })), [["Who", "You"], ["Closes itself on", "the PR merge"]]);
+  assert.deepEqual(kv(pe({ kind: "action", step: null, do: "type", role: "peer", text: "" })),
+    [["Who", "flows itself, no agent"], ["Does", "starts peer and types nothing: it waits to be spoken to"], ["If it fails", "asks you what to do"]]);
+  const sh = T.entryFacts(pe({ kind: "action", step: null, role: null, sh: "echo hi", cwd: null, timeoutMs: 300_000, onFail: "end" }), ROLES);
+  assert.deepEqual(sh.map((f: any) => [f.k, f.v, Boolean(f.mono)]), [
+    ["Who", "flows itself, no agent", false], ["Runs", "echo hi", true], ["Where", "the process folder", false], ["At most", "5 min", false],
+  ]);
+  assert.deepEqual(kv(pe({ kind: "delay", step: null, role: null, waitMs: 72_000_000 })), [["Who", "flows itself, no agent"], ["Does", "nothing: waits 20 h, then goes on by itself"]]);
+  assert.match(kv(pe({ kind: "inner", step: null }))[1][1], /dev runs a whole other process here/);
+  assert.deepEqual(kv(pe({ kind: "wait", step: null, role: null, waitFor: "gh.checks", onFail: { goto: "fix" } })),
+    [["Who", "flows itself, no agent"], ["Does", "waits for GitHub checks; how they end closes the step"]]);
+  assert.deepEqual(kv(pe(), []), [["Who", "dev — agent"], ["If it fails", "asks you what to do"]]); // no role definitions: an invalid process
+});
+
+test("role lines and the panel's who line", () => {
+  T.setLang("en");
+  assert.equal(T.roleLine(ROLES[0]), "Claude agent");
+  assert.equal(T.roleLine(ROLES[1]), "Codex agent · in the right half beside dev · works in /w");
+  assert.equal(T.entryWho(pe(), ROLES), "dev · Claude agent");
+  assert.equal(T.entryWho(pe({ kind: "human", role: "human" }), ROLES), "You");
+  assert.equal(T.entryWho(pe({ kind: "action", do: "clear" }), ROLES), "flows itself, no agent");
+  T.setLang("ru");
+  assert.equal(T.roleLine(ROLES[1]), "агент Codex · в правой половине рядом с dev · работает в /w");
+  T.setLang("en");
+});
