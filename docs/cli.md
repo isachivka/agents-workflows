@@ -107,7 +107,7 @@ Refused when no messenger is set up (`no chat is set up: …`), when the file do
 the messenger's own error (`telegram: …`).
 
 ```
-$ flow say "The plan for the dossier is ready: your OK or your objections" --file /tmp/plan.html
+$ flow say "The plan is ready: your OK or your objections" --file /tmp/plan.html
 sent
 ```
 

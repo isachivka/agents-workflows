@@ -15,6 +15,8 @@ export default {
   watch(w, ctx) { return () => {}; },          // optional: a wait or a trigger wants one of its events
   actions: { post(args, ctx) {} },             // optional: `do: gh.post` in a process
   title({ vars, cwd }, ctx) {},                // optional: what a run is about, from its vars
+  chat: { open, post, close },                 // optional: a messenger for runs' conversations
+  stop(ctx) {},                                // optional: when flowd stops
 };
 ```
 
@@ -25,6 +27,8 @@ export default {
 | `start(ctx)` | For sources that push: a socket, a webhook listener. May return a promise; a rejection is reported. |
 | `watch(w, ctx)` | Called when someone subscribes to one of the plugin's types: an entry starts waiting on it (a **wait**), or a process has an `on:` trigger for it (a **trigger subscription**). Returns a function that stops the watch; it is called when the entry stops waiting (event arrived, timeout, goto, stop) or the trigger goes away. Throw to refuse what it cannot serve, with a message that says what to write instead. |
 | `actions` | Functions called by `{do: <name>.<action>, with: {...}}` entries. Resolving marks the entry done; throwing fails it with the error as the note. |
+| `chat` | A messenger: see [Chat adapters](#chat-adapters). |
+| `stop(ctx)` | When flowd stops: end what `start` began (a long poll, a socket). May return a promise. |
 | `title({vars, cwd}, ctx)` | What a run is about, in words, from its vars: `gh` returns the title of `vars.pr`. flowd asks when a run's `pr` changes and every 10 minutes for each open run with a `pr`, and stores a new answer in `vars.title`. Return `undefined` when it does not know; a throw is shown in the plugin's status and the old title stays. The first plugin with an answer wins. |
 
 `w` (a `Watch`):
@@ -50,6 +54,7 @@ trigger's `where`) and wakes no waiting entry.
 | Field | Meaning |
 |---|---|
 | `emit({type, data?, outcome?, run?, entry?})` | Sends an event. The plugin name is prefixed if missing (`checks` → `gh.checks`); `source` is set to the plugin name. With `run` and `entry` it goes to that entry only. Without them, from a trigger subscription's `ctx` it starts only that subscription's processes; from `start` it is a broadcast that wakes every matching wait and trigger. `outcome: "failed"` fails a pure wait or a human step; an agent step sees it as `{{event.outcome}}`. |
+| `message({address, text, from})` | A chat adapter: the person wrote `text` in the conversation at `address`; `from` is their display name. The adapter decides who may write; flowd trusts what it is given. |
 | `log(msg)` | A line in flowd's log, prefixed with the plugin name. |
 | `error(err, w?)` | Reports a problem: shown in Settings → Plugins (and on the watch, with `w`). The waiting entry is not failed. `error(null, w)` clears the watch's error once it works again. |
 | `config` | This plugin's section of `$FLOWS_HOME/plugins.yaml`, or `{}`. |
@@ -137,6 +142,65 @@ PR; as a trigger, `gh.checks` says `to start on CI results use gh.ci`. Nothing t
 before the baseline (or while flowd was down) fires.
 
 `gh` must be installed and logged in for the user flowd runs as.
+
+## Chat adapters
+
+A run talks with the person in its own conversation in a messenger: a topic in a Telegram group,
+a channel in Mattermost, a thread in Slack. The core knows only "the run's conversation"; a
+plugin with a `chat` field speaks the messenger. See [concepts](concepts.md#a-runs-conversation)
+for what goes through it.
+
+```ts
+chat: {
+  open(run: { id, process, title? }, ctx): Promise<string>,              // → the conversation's address
+  post(address, msg: { text: string; file?: string }, ctx): Promise<void>, // file: a local path
+  close(address, end: { outcome: "done" | "stopped" }, ctx): Promise<void>,
+}
+```
+
+- **Which one.** The adapter is active when `plugins.yaml` has a section with its name. Two
+  active is an error, shown in Settings → Plugins and by `flow check`; no conversation works
+  until one section is removed. Switching messengers is moving the section; a run's address is
+  stored with the adapter's name, so after a switch a run opens a new conversation.
+- **Addresses.** `open` returns a string the adapter can post to later and recognise in incoming
+  messages; flowd stores it per root run (a nested run uses its root's) and never parses it.
+- **Incoming.** The adapter calls `ctx.message({address, text, from})` for each message it accepts;
+  it filters who may write (its config) and what (text only, say).
+- **Failures.** A throw from `open` or `post` fails the `flow say` that caused it, with the error;
+  for flowd's own messages it is logged and shown as the plugin's last error, never failing a run.
+- Only conversations flowd opened are routed; a message anywhere else is logged and dropped.
+
+### Telegram
+
+`plugins/telegram.ts`, built in, on [grammY](https://grammy.dev). Each run gets a topic in one
+group; the bot long-polls, so flowd needs no inbound port.
+
+Setup:
+
+1. Make a bot with [@BotFather](https://t.me/BotFather) for this flowd alone: Telegram lets one
+   process poll a bot (a second flowd with the same token gets `409 Conflict`).
+2. Make a group, turn on **Topics** in its settings, add the bot and make it an admin with
+   **Manage topics**. As an admin it sees every message; privacy mode can stay on.
+3. Write anything in the group, then read the group's id and yours from
+   `https://api.telegram.org/bot<token>/getUpdates` (`message.chat.id`, `message.from.id`).
+4. `$FLOWS_HOME/plugins.yaml`:
+   ```yaml
+   telegram:
+     token: "123456:ABC…"
+     chat: -1001234567890   # the group
+     users: [111111111]     # who may write to agents
+   ```
+5. Restart flowd.
+
+| | |
+|---|---|
+| `open` | `createForumTopic`, named `<process> #<n> · <title>` (cut to 128 characters). Address `<chat>/<topic id>`. |
+| `post` | `sendMessage` into the topic as plain text (no Markdown parsing to fail), cut into messages of 4096 characters at a line break. With a file: `sendDocument`, the text as its caption when it fits in 1024 characters, else a message first. |
+| `close` | `closeForumTopic`. |
+| incoming | A message in the group, in a topic, from a user in `users`: its `text` or `caption`. A message from anyone else is logged and ignored. Messages sent while flowd was down arrive at its next start (Telegram keeps them for a day). |
+
+Without a `token` the plugin does nothing. Errors name the fix: not an admin with "Manage topics",
+`chat not found` (the id, or the bot is not in the group), Topics turned off.
 
 ## A minimal plugin
 

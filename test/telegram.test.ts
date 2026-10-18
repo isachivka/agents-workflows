@@ -46,11 +46,11 @@ const json = (i: number) => JSON.parse(calls[i].body);
 
 test("a run's topic is named after it and its address is chat/topic", async () => {
   calls.length = 0;
-  assert.equal(await chat.open({ id: "obs-inv#12", process: "obs-inv", title: "A long title ".repeat(12) }, ctx), "-100/77");
+  assert.equal(await chat.open({ id: "review#12", process: "review", title: "A long title ".repeat(12) }, ctx), "-100/77");
   assert.equal(calls[0].method, "createForumTopic");
   assert.equal(json(0).chat_id, -100);
   assert.equal(json(0).name.length, 128);
-  assert.ok(json(0).name.startsWith("obs-inv #12 · A long title"));
+  assert.ok(json(0).name.startsWith("review #12 · A long title"));
   await assert.rejects(chat.open({ id: "broken#1", process: "broken" }, ctx), /not enough rights to manage topics: make the bot an admin of the group with "Manage topics"/);
 });
 

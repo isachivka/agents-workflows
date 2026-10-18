@@ -43,6 +43,7 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 | `src/check.ts` | `flow check`: offline validation |
 | `src/install.ts` | `flow install`: launchd plist, hooks, skill links |
 | `plugins/gh.ts` | built-in GitHub plugin |
+| `plugins/telegram.ts` | built-in Telegram chat adapter: a topic per run in a group |
 | `ui/` | web UI, Preact + htm vendored, no build |
 | `skills/flow`, `skills/flow-author` | skills for agents running steps / authoring definitions |
 | `examples/` | a sample `$FLOWS_HOME` |
@@ -53,7 +54,7 @@ Specs and plans are records: never rewrite an old one to match new code — writ
 
 - Node 24 runs the TypeScript directly: erasable syntax only (no `enum`, `namespace`, constructor
   parameter properties), relative imports end in `.ts`, type-only imports use `import type`.
-- Runtime dependencies are `yaml` and `croner`. Adding any dependency needs a human's yes.
+- Runtime dependencies are `yaml`, `croner` and `grammy` (the Telegram adapter). Adding any dependency needs a human's yes.
 - `src/engine.ts` stays pure: no I/O, time comes in as `ctx.now`; it returns actions and
   `src/daemon.ts` carries them out.
 - Every `agtermctl` call goes through `src/agterm.ts`, every `zmx` call through `src/zmx.ts`; every

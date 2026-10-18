@@ -43,6 +43,16 @@ add `--human` when the user has to act. Then end your turn. When you come back, 
 give the note — it is what the user sees. Without `flow wait`, flowd types reminders into your
 session and stops the run after the third silent turn end.
 
+## Talking to the user in the messenger
+
+When a messenger is set up, your run has a conversation with the user (a Telegram topic).
+`flow say "text" [--file /abs/report.html]` writes there. When the user must decide on something you
+wrote (a plan, a report), send it with `flow say --file`, say in one line what you need from them,
+then `flow wait --human --note "…"` and end your turn. Their answer arrives in this session as
+`<name> (telegram): <text>`; answer back with `flow say` when they asked something, and go on with
+the step once they decided. `flow say` fails with `no chat is set up` when there is no messenger:
+then ask in the terminal as usual.
+
 ## After `flow failed`
 
 A failure usually stops the run for the user: nothing new arrives and your session stays open.

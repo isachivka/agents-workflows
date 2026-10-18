@@ -33,6 +33,9 @@ watch and take over at any time.
 - **Plugins** for event sources and actions, as waits or as triggers that start a process. `gh`
   is built in: required checks, reviews, and per repo merged PRs, newly opened or labelled PRs
   and CI runs on a branch.
+- **A conversation per run in a messenger**: with Telegram set up, each run gets a topic in a
+  group. Agents send what needs your decision there (`flow say --file report.html`), flowd says
+  when a run waits for you and when it ends, and what you write in the topic reaches the agent.
 
 ## Requirements
 
@@ -127,8 +130,8 @@ An agent sees one line per step:
 ```
 
 and works with a few commands: `flow show` (the instructions), `flow done --note "…"`,
-`flow failed --note "…"`, `flow set key=value`, and `flow wait --note "…"` when it ends its turn
-on purpose to wait for something. The `flow` skill teaches an agent exactly
+`flow failed --note "…"`, `flow set key=value`, `flow wait --note "…"` when it ends its turn
+on purpose to wait for something, and `flow say "…"` to write to the run's conversation. The `flow` skill teaches an agent exactly
 that. The `flow-author` skill teaches an agent to write and change steps, processes, triggers and
 plugins, and to check them with `flow check`.
 
@@ -138,7 +141,7 @@ plugins, and to check them with `flow check`.
 |---|---|
 | [docs/concepts.md](docs/concepts.md) | Steps, processes, roles, runs, events, delivery, reminders, triggers. |
 | [docs/processes.md](docs/processes.md) | Every key of a step file and a process, validation messages, recipes. |
-| [docs/plugins.md](docs/plugins.md) | Writing a plugin; the `gh` plugin as a worked example. |
+| [docs/plugins.md](docs/plugins.md) | Writing a plugin; the `gh` plugin as a worked example; chat adapters and Telegram. |
 | [docs/cli.md](docs/cli.md) | Every `flow` command and environment variable. |
 | [docs/http-api.md](docs/http-api.md) | Every HTTP endpoint. |
 | [docs/architecture.md](docs/architecture.md) | Modules, an event's path, storage, restart recovery, security model. |

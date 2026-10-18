@@ -139,6 +139,28 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
   another live session. Either re-sends the current step's line if that role was working on it,
   and lifts a halt that role caused.
 
+## A run's conversation
+
+With a messenger set up ([chat adapters](plugins.md#chat-adapters): a Telegram group with
+topics), each run can have a conversation with the person, opened by its first message:
+
+- **The agent writes** with `flow say "text" [--file report.html]` — when it needs a decision on
+  something it wrote, it sends it this way and then `flow wait --human`. Only what it sends goes
+  there, never its terminal output.
+- **flowd writes** when the run comes to need the person (a human step, `flow wait --human`, a run
+  stopped for the person: `<run> waits for you: <what>`), opening the conversation if needed; and
+  when a run that has one ends (`<run> is done`, `<run> was stopped: <reason>`), then closes it. A
+  run with nothing to say opens nothing.
+- **The person writes** in the conversation. The message goes to the outbox of the agent the run
+  is on and is typed into its session like a step line — once its turn has ended and nobody types
+  in the terminal — as `<name> (<messenger>): <text>`. When the run's current entry has no agent
+  (an `sh`, a wait, a human step, a paused or stopped run), flowd answers that in the conversation
+  and drops the message; a human step is closed from the UI or `flow done --human`, not by a
+  message. A message to an ended run is answered `<run> has ended`.
+- **Nested runs** use their root's conversation: a tracker run with a PR run inside is one piece
+  of work for one agent, so one conversation; a message reaches the agent of the run on top.
+- A `repeat: true` run keeps one conversation across iterations.
+
 ## Reminders and timeouts
 
 - A turn ends when the session reports `completed` (Claude's and Codex's `Stop` hooks). `idle` is

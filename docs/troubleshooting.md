@@ -154,6 +154,20 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
   first failure and logs `translating steps ahead stopped: …` in `flowd.log`; it tries again after
   the next step change or restart.
 
+## `flow say` says "no chat is set up", or the conversation does not work
+
+- `no chat is set up`: `$FLOWS_HOME/plugins.yaml` has no section for a chat adapter
+  (`telegram:`), or flowd was not restarted after it was added.
+- `two chat adapters are set up`: keep one section ([chat adapters](plugins.md#chat-adapters)).
+- Telegram `not enough rights to manage topics`, `chat not found`, `the chat is not a forum`: the
+  bot is not an admin with "Manage topics", the group id is wrong (a supergroup's starts with
+  -100), or Topics are off. Settings → Plugins shows the last error.
+- `409 Conflict` in the plugin's error: another flowd (or anything else) polls with the same bot
+  token. Give each flowd its own bot.
+- Your messages do not reach the agent: your Telegram id is not in `users` (flowd's log says
+  `… who is not in users, is ignored`), or you wrote outside the run's topic. A message waits in
+  the outbox while the agent works and while you type in its terminal.
+
 ## Starting over
 
 Runs and their history live in one SQLite file. To start from nothing:
