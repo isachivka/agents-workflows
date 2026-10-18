@@ -107,6 +107,12 @@ in the outbox are delivered by the next flush.
   session cookie is `HttpOnly; Secure; SameSite=Lax`, stored only as its SHA-256, 30 days. Writes
   still need `Origin` to be exactly the public address, so another site cannot use the cookie. The
   UI never shares a name (an origin) with the reports. Local and LAN requests need no login.
+- A reverse proxy may rewrite `Host` to this machine's IP and drop `Origin` (a Keenetic's KeenDNS
+  does both, and sends no `X-Forwarded-*`); then the proxy's address, `FLOWD_PUBLIC_FROM`, is what
+  marks a request as from outside. Without `Origin`, cross-site writes are still stopped: the cookie
+  is `SameSite=Lax` (not sent on another site's POST), and flowd takes only JSON bodies, whose
+  cross-origin requests need a preflight flowd never grants. `X-Forwarded-*` from a client is never
+  trusted.
 - Spawned agents usually run with `--dangerously-skip-permissions`, and run variables are pasted
   into their prompts. So anything that can drive flowd can make an agent run code.
 - Web pages are kept out: a request with a foreign `Host` (DNS rebinding) or a foreign `Origin`

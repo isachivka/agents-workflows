@@ -166,11 +166,11 @@ function page(res: ServerResponse, status: number, body: string, headers: Record
  * plugin for one and keeps a session. Answers the request itself (the login page, the callback, a
  * refusal) and returns true, or returns false for a request with a valid session.
  */
-async function publicGate(f: Flowd, req: IncomingMessage, res: ServerResponse, url: URL, pub: URL): Promise<boolean> {
-  const l = f.plugins.login();
+async function publicGate(f: Flowd, req: IncomingMessage, res: ServerResponse, url: URL, pub: URL | undefined): Promise<boolean> {
+  const l = pub ? f.plugins.login() : { error: "FLOWD_PUBLIC_URL is not set, so a login has nowhere to come back to" };
   const active = l && "login" in l ? l : undefined;
   if (req.method === "GET" && url.pathname === "/login") {
-    page(res, 200, active ? active.login.page({ callback: `${pub.origin}/auth/${active.name}` }, active.ctx)
+    page(res, 200, active ? active.login.page({ callback: `${pub!.origin}/auth/${active.name}` }, active.ctx)
       : `<p>no login is set up${l && "error" in l ? `: ${esc(l.error)}` : ""}. Add a login plugin's section to plugins.yaml (docs/plugins.md#logins) and restart flowd.</p>`);
     return true;
   }
@@ -222,7 +222,7 @@ function stream(f: Flowd, req: IncomingMessage, res: ServerResponse): void {
   });
 }
 
-export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publicUrl?: string } = {}): Server {
+export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publicUrl?: string; publicFrom?: string[] } = {}): Server {
   const pub = opts.publicUrl ? new URL(opts.publicUrl) : undefined;
   const submit = async (e: Parameters<Flowd["submit"]>[0]) => refusedIfError(await f.submit(e));
   const routes: [string, RegExp, Handler][] = [
@@ -355,14 +355,17 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
     const origin = req.headers.origin;
     // On the LAN a phone asks by the Mac's IP; an IP literal cannot be rebound, a name can.
     const ownHost = opts.lan ? /^(127\.0\.0\.1|localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?$/ : /^(127\.0\.0\.1|localhost)(:\d+)?$/;
-    // FLOWD_PUBLIC_URL: the name a reverse proxy (with its own login) serves the UI under, and only it
-    const own = pub && host === pub.host
-      ? !origin || origin === pub.origin
+    // From outside: by the public name, or from the reverse proxy's address (FLOWD_PUBLIC_FROM) — a
+    // proxy that rewrites Host to this machine's IP (a Keenetic does, and drops Origin) looks local otherwise.
+    const remote = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+    const outside = Boolean(pub && host === pub.host) || Boolean(opts.publicFrom?.includes(remote));
+    const own = outside
+      ? !origin || origin === pub?.origin
       : ownHost.test(host) && (!origin || origin === `http://${host}`);
     if (!own) {
       return send(res, 403, { error: "flowd only answers its own pages and local clients" });
     }
-    if (pub && host === pub.host && await publicGate(f, req, res, url, pub)) return;
+    if (outside && await publicGate(f, req, res, url, pub)) return;
     try {
       if (req.method === "GET" && url.pathname === "/api/stream") return stream(f, req, res);
       for (const [method, re, handler] of routes) {

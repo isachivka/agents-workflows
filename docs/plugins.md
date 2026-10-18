@@ -206,7 +206,8 @@ Without a `token` the plugin does nothing. Errors name the fix: not an admin wit
 
 ## Logins
 
-Through `FLOWD_PUBLIC_URL` (the UI served from outside by a reverse proxy) flowd asks for a login;
+Through `FLOWD_PUBLIC_URL` (the UI served from outside by a reverse proxy), and for every request
+from `FLOWD_PUBLIC_FROM` (the proxy's address, when it rewrites `Host`), flowd asks for a login;
 local and LAN requests never do. A plugin with a `login` field provides it:
 
 ```ts

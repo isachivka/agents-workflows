@@ -244,6 +244,23 @@ test("through the public name, a session from the login provider is needed; loca
   await s.close();
 });
 
+test("a request from the reverse proxy's address needs a session whatever its Host (a proxy that rewrites Host)", async () => {
+  // the test's requests come from 127.0.0.1: here that is the proxy
+  const s = await serve({ ...STEP_FILES, ...TWO, ...LOGIN_ON }, {}, { lan: true, publicUrl: "https://flows.example.net", publicFrom: ["127.0.0.1"] });
+  const proxied = { host: "192.168.1.128" };
+  assert.equal((await hit(s.base, "GET", "/api/runs", proxied)).status, 401);
+  assert.equal((await hit(s.base, "GET", "/api/runs", { host: "127.0.0.1" })).status, 401);
+  const page = await hit(s.base, "GET", "/login", proxied);
+  assert.match(page.body, /back to https:\/\/flows\.example\.net\/auth\/fakelogin/);
+  const ok = await hit(s.base, "GET", "/auth/fakelogin?ok=1&id=5", proxied);
+  const cookie = String(ok.headers["set-cookie"]).split(";")[0];
+  assert.equal((await hit(s.base, "GET", "/api/runs", { ...proxied, cookie })).status, 200);
+  // the proxy drops Origin; one that does come must be the public address
+  assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "application/json", ...proxied, cookie }, JSON.stringify({ process: "p" })), 200);
+  assert.equal(await rawRequest(s.base, "/api/runs", { "content-type": "application/json", ...proxied, cookie, origin: "https://evil.example" }, JSON.stringify({ process: "p" })), 403);
+  await s.close();
+});
+
 test("a public name without a login provider serves only the page that says how to set one up", async () => {
   const s = await serve({ ...STEP_FILES, ...TWO }, {}, { publicUrl: "https://flows.example.net" });
   const pub = { host: "flows.example.net" };

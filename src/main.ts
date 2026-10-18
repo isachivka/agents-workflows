@@ -29,7 +29,9 @@ export async function startDaemon(): Promise<void> {
   await f.init();
   const port = Number(process.env.FLOWD_PORT || 7420);
   const host = process.env.FLOWD_HOST || "127.0.0.1";
-  const server = makeServer(f, join(REPO, "ui"), { lan: host !== "127.0.0.1" && host !== "localhost", publicUrl: process.env.FLOWD_PUBLIC_URL || undefined });
+  const server = makeServer(f, join(REPO, "ui"), { lan: host !== "127.0.0.1" && host !== "localhost", publicUrl: process.env.FLOWD_PUBLIC_URL || undefined,
+    // the addresses a reverse proxy connects from: everything from them is from outside and needs a login
+    publicFrom: (process.env.FLOWD_PUBLIC_FROM ?? "").split(",").map((a) => a.trim()).filter(Boolean) });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, resolve);

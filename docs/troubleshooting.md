@@ -180,6 +180,10 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
 
 ## Logging in from outside fails
 
+- From outside the UI opens with no login at all: the proxy rewrites `Host` (check what flowd gets),
+  so set `FLOWD_PUBLIC_FROM` to the proxy's address and restart flowd. Until then keep the proxy's
+  own login on.
+
 - The login page says `no login is set up`: `plugins.yaml` has no `telegram:` section (or two logins).
 - Telegram's widget says "Bot domain invalid": `/setdomain` in BotFather to the public name's host.
 - `the answer is not signed by this bot`: the token in `plugins.yaml` is not the bot the widget
