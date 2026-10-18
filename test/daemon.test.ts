@@ -1217,3 +1217,18 @@ test("an agent in another session cannot close a run's step by --run/--step; the
   assert.deepEqual(await f.submit(report({ session: "S9", run: "p#1", entry: "b", outcome: "done", by: "human" })), { run: "p#1" });
   await f.close();
 });
+
+// a narrow split pane: Codex wraps nearly every word onto its own line, and a soft wrap may split one
+const NARROW_CODEX_DIALOG = ["Folder", "access", " /tmp", "Trust this", "folder? Codex can", "read, edit, and", "run files", "here.",
+  "› 1. Trust and", "  continue", "  2. Back to", "  Agent Comma", "nd Center"].join("\n");
+
+test("flowd answers Codex's folder-trust question in a narrow split pane, where the question wraps", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...PAIR("peer"), "codex/config.toml": '[projects."/elsewhere"]\ntrust_level = "trusted"\n' }), { trustPollMs: 1 });
+  agterm.screens.set("S1:right", NARROW_CODEX_DIALOG);
+  agterm.onPress = (s, k) => { if (k === "\r") agterm.screens.set(s, "codex is up"); };
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm), ['press S1:right "\\r"']);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
+  await f.close();
+});

@@ -998,10 +998,13 @@ export class Flowd {
    */
   private async answerTrust(run: string, entry: string, session: string, cwd: string, agent: "claude" | "codex"): Promise<void> {
     const pause = () => new Promise((r) => setTimeout(r, this.o.trustPollMs ?? 1_000));
-    // Claude's dialog starts on "No, exit" (Down, then Enter); Codex's on "Trust and continue" (Enter)
+    // Claude's dialog starts on "No, exit" (Down, then Enter); Codex's on "Trust and continue" (Enter).
+    // The screen is matched with whitespace and box lines taken out: in a narrow pane (a split) the
+    // question wraps nearly a word per line, and a soft wrap can split a word.
     const d = agent === "claude"
-      ? { who: "Claude Code", marker: "Yes, I trust this folder", yes: /❯\s*(\d+\.\s*)?Yes, I trust this folder/, choice: "Yes, I trust this folder", down: true }
-      : { who: "Codex", marker: "Trust this folder?", yes: /›\s*1\.\s*Trust and continue/, choice: "Trust and continue", down: false };
+      ? { who: "Claude Code", marker: "Yes,Itrustthisfolder", yes: /❯(\d+\.)?Yes,Itrustthisfolder/, choice: "Yes, I trust this folder", down: true }
+      : { who: "Codex", marker: "Trustthisfolder?", yes: /›1\.Trustandcontinue/, choice: "Trust and continue", down: false };
+    const read = async () => (await this.termOf(session).text(session)).replace(/[\s\u2500-\u257f]+/g, "");
     const yesSelected = (screen: string) => d.yes.test(screen);
     const stop = (why: string) => this.submit({
       type: "entry.start-blocked", run, entry, source: "flowd",
@@ -1011,14 +1014,14 @@ export class Flowd {
       let screen = "";
       for (let i = 0; i < 30 && !screen.includes(d.marker); i++) {
         if (i) await pause();
-        screen = await this.termOf(session).text(session);
+        screen = await read();
       }
       if (!screen.includes(d.marker)) return; // no dialog: the start watchdog covers any other hang
       // a dialog just drawn may not take keys yet (seen live: one Down, the selection stayed): try again
       for (let i = 0; i < 5 && !yesSelected(screen) && d.down; i++) {
         await this.termOf(session).press(session, "\x1b[B");
         await pause();
-        screen = await this.termOf(session).text(session);
+        screen = await read();
       }
       if (!yesSelected(screen)) {
         await stop('select "Yes"');
