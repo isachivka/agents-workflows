@@ -93,6 +93,11 @@ const EN = {
   "does.inner": "Here agent {role} runs another whole process, and this one waits until it ends. Which one is chosen when the run starts (flow start --inner) or here, when the run gets to it.",
   "does.pause": "nothing: waits {d}, then goes on by itself", "does.wait": "waits for {what}; how it ends closes the step",
   "does.type": "types into {role}: {text}", "does.typeNothing": "starts {role} and types nothing: it waits to be spoken to",
+  "read.hint": "Click a step to read it whole", "read.panel": "Step", "read.of": "Step {n} of {total}", "read.how": "How it works",
+  "read.where": "Where it lives", "read.stepFile": "The step's text", "read.procFile": "The process, step {n}",
+  "read.translate": "Translate", "read.translating": "Translating… about 10 seconds", "read.translation": "Translation",
+  "read.original": "Original", "read.textLang": "Language of the text", "read.byLuna": "Translated by Codex (Luna). Commands and placeholders are kept as the agent sees them.",
+  "act.close": "Close", "act.copy": "Copy", "act.copied": "Copied",
 };
 
 const RU = {
@@ -189,6 +194,11 @@ const RU = {
   "does.inner": "Здесь агент {role} целиком проходит другой процесс, а этот ждёт, пока тот закончится. Какой — выбирают при запуске (flow start --inner) или здесь же, когда запуск дойдёт до этого места.",
   "does.pause": "ничего: ждёт {d} и идёт дальше сам", "does.wait": "ждёт: {what}; чем это кончится, тем и закроется шаг",
   "does.type": "печатает в {role}: {text}", "does.typeNothing": "запускает {role} и ничего не печатает: он ждёт, пока к нему обратятся",
+  "read.hint": "Нажми на шаг, чтобы прочитать его целиком", "read.panel": "Шаг", "read.of": "Шаг {n} из {total}", "read.how": "Как устроен",
+  "read.where": "Где лежит", "read.stepFile": "Текст шага", "read.procFile": "Процесс, шаг {n}",
+  "read.translate": "Перевести на русский", "read.translating": "Перевожу… обычно около 10 секунд", "read.translation": "Перевод",
+  "read.original": "Оригинал", "read.textLang": "Язык текста", "read.byLuna": "Перевела Luna (Codex). Команды и подстановки оставлены как в оригинале — их видит агент.",
+  "act.close": "Закрыть", "act.copy": "Скопировать", "act.copied": "Скопировано",
 };
 
 export const DICT = { en: EN, ru: RU };

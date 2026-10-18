@@ -97,6 +97,27 @@ steps:
   - {inner: true, role: dev}
   - {step: report-sum, role: dev}
 `,
+  "steps/deliver.md": step("The dev deploys the PR branch to the test desk", "Deploy the PR branch to the shared test desk with `desk deploy {{vars.pr}}`.\nWait until the desk answers on /health with the PR's head sha.\n\nDone: `flow done --note \"<sha>\"`."),
+  "steps/feedback.md": step("The dev reacts to the team's review; done once approved and green", "A review arrived on {{vars.pr}}. Read every comment. Fix what is right, answer what is not,\nresolve each thread you handled. Push, then ask for a new look.\n\nApproved and green: `flow done`. Changes requested again: `flow failed` — flows waits for the next review."),
+  "processes/pr-full.yaml": `description: Take a finished branch to merge — PR, the shared test desk, CI, team review
+cwd: /tmp
+max_runs: 3
+roles:
+  dev: {spawn: claude}
+  peer: {spawn: codex, beside: dev}
+steps:
+  - {id: codex, do: type, role: peer, text: ""}
+  - {step: open-pr, role: dev}
+  - {step: deliver, role: dev, timeout: 1h, hold: desk}
+  - {id: ci, wait_for: gh.checks, on_fail: {goto: ci-fix}}
+  - {step: ci-fix, role: dev}
+  - {id: label, sh: 'gh pr edit "$FLOW_VAR_PR" --add-label ready', timeout: 5m}
+  - {step: feedback, role: dev, wait_for: {on: gh.review, with: {from: requested, already: true}}, on_fail: retry, retries: 50}
+  - {inner: true, role: dev}
+  - {step: merge, role: human, wait_for: gh.merged}
+  - {id: tail, wait: 20h}
+  - {step: hello, role: dev, on_fail: end}
+`,
   "processes/broken.yaml": "cwd: /tmp\nsteps:\n  - {step: nope, role: ghost}\n",
 };
 

@@ -3,7 +3,7 @@ import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, 
 import { prUrl, repoName, slackUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
   eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, runTitle, duration, ago, clock, moment, runLabel, holdPhrase,
-  stacks, thenPhrase, handedBack } from "./text.js";
+  stacks, thenPhrase, handedBack, entryBadges, entryFacts, roleLine, entryWho } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
 
 const LANG_KEY = "flows.lang";
@@ -417,7 +417,7 @@ function Current({ r, e, now, post, setErr, live, quiet }) {
       : r.waitingOn ? html`<p class="muted">${t("wait.for", { what: eventPhrase(r.waitingOn) })}</p>`
       : e.kind === "agent" && !quiet && html`<p class="muted">${t("run.agentSilent")}</p>`}
     ${sid && html`<div class="acts"><button class=${`btn${quiet ? "" : " primary"}`} onClick=${focus(sid, setErr)}><${Icon} name="terminal" />${t("act.openTerminalOf", { role: e.role })}</button></div>`}
-    ${(e.kind === "agent" || e.kind === "human") && html`<${PromptFold} run=${r.id} entry=${e.id} label=${e.kind === "agent" ? t("run.toldAgent") : t("proc.toldHuman")} />`}
+    ${(e.kind === "agent" || e.kind === "human") && html`<${PromptFold} run=${r.id} entry=${e.id} step=${e.step} label=${e.kind === "agent" ? t("run.toldAgent") : t("proc.toldHuman")} />`}
     ${live && !quiet && html`<details class="more"><summary>${t("run.stepIn")}</summary><div class="ov">
       <div><button class="btn" onClick=${post(`${path}/done`)}>${t("act.markDone")}</button><span class="muted small">${t("why.markDone")}</span></div>
       <div><button class="btn" onClick=${post(`${path}/retry`)}>${t("run.startAgain")}</button><span class="muted small">${t("why.restart")}</span></div>
@@ -427,11 +427,12 @@ function Current({ r, e, now, post, setErr, live, quiet }) {
   </div>`;
 }
 
-function PromptFold({ run, entry, label }) {
+function PromptFold({ run, entry, step, label }) {
   const [on, setOn] = useState(false);
   const { data, error } = useData(on ? `/api/runs/${enc(run)}/entries/${enc(entry)}/prompt` : null, false);
   return html`<details class="more" onToggle=${(ev) => setOn(ev.currentTarget.open)}><summary>${label}</summary>
-    ${data ? html`<pre class="instr">${data.text}</pre>` : error ? html`<p class="err-box">${error.message}</p>` : on && html`<p class="muted">${t("loading")}</p>`}
+    ${data ? (step ? html`<${Prompt} step=${step} text=${data.text} />` : html`<pre class="instr">${data.text}</pre>`)
+      : error ? html`<p class="err-box">${error.message}</p>` : on && html`<p class="muted">${t("loading")}</p>`}
   </details>`;
 }
 
@@ -522,15 +523,21 @@ function NewProcess() {
   </div></details>`;
 }
 
-function ProcessView({ arg: name, sub }) {
+const look = (e) => ({
+  icon: e.kind === "human" ? "you" : e.kind === "wait" || e.kind === "delay" ? "wait" : e.kind === "inner" ? "nest" : e.kind === "action" ? (e.sh ? "shell" : "again") : "agent",
+  dot: e.kind === "human" ? "hu" : e.kind === "agent" ? "ag" : e.kind === "action" ? "sy" : "wt",
+});
+const stepHref = (name, id) => `#/process/${enc(name)}/step/${enc(id)}`;
+
+function ProcessView({ arg: name, sub, rest }) {
   const { data, error } = useData("/api/processes");
-  const { data: steps } = useData("/api/steps", false);
   const { data: runs } = useData("/api/runs");
   if (sub === "edit") return html`<${ProcessEditor} arg=${name} />`;
   if (!data) return html`<${Loading} error=${error} />`;
   const p = data.find((x) => x.name === name);
   if (!p) return html`<p class="err-box">${t("proc.missing", { name })}</p>`;
   const human = p.entries.some((e) => e.role === "human");
+  const at = sub === "step" ? p.entries.findIndex((e) => e.id === rest) : -1;
   return html`
     <a class="back small" href="#/processes">← ${t("proc.all")}</a>
     <section class="head">
@@ -542,46 +549,117 @@ function ProcessView({ arg: name, sub }) {
       </div>
     </section>
     <${DefErrors} p=${p} />
-    ${p.openRuns.length > 0 && html`<section><h2>${t("proc.openRuns")}</h2><div class="acts">
-      ${p.openRuns.map((rid) => {
-        const r = (runs || []).find((x) => x.id === rid);
-        const d = r && describeRun(r);
-        return html`<a class="btn run-chip" href="#/run/${enc(rid)}"><span class="clip">${r ? runTitle(r) || runName(r) : runLabel(rid)}</span>${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
-      })}</div></section>`}
-    ${(p.roles.length > 0 || human) && html`<section><h2>${t("proc.who")}</h2><div class="ppl">
-      ${p.roles.map((role) => html`<div class="person"><span class="dot ag"><${Icon} name="agent" /></span><span><b>${role}</b><small>${t("proc.agent")}</small></span></div>`)}
-      ${human && html`<div class="person"><span class="dot hu"><${Icon} name="you" /></span><span><b>${t("You")}</b><small>${t("proc.youDo")}</small></span></div>`}
-    </div></section>`}
-    ${p.entries.length > 0 && html`<section><h2>${t("proc.how")}</h2>
-      <ol class="steps">${p.entries.map((e, i) => html`<${ProcessEntry} e=${e} i=${i} plan=${p.entries} steps=${steps || []} process=${p.name} key=${e.id} />`)}</ol>
-      ${p.repeat && html`<p class="loop"><${Icon} name="again" />${t("proc.again")}</p>`}
-    </section>`}`;
+    <div class=${`read${at >= 0 ? " open" : ""}`}>
+      <div class="readl">
+        ${p.openRuns.length > 0 && html`<section><h2>${t("proc.openRuns")}</h2><div class="acts">
+          ${p.openRuns.map((rid) => {
+            const r = (runs || []).find((x) => x.id === rid);
+            const d = r && describeRun(r);
+            return html`<a class="btn run-chip" href="#/run/${enc(rid)}"><span class="clip">${r ? runTitle(r) || runName(r) : runLabel(rid)}</span>${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
+          })}</div></section>`}
+        ${(p.roleDefs.length > 0 || human) && html`<section><h2>${t("proc.who")}</h2><div class="ppl">
+          ${p.roleDefs.map((rd) => html`<div class="person"><span class=${`dot ${rd.agent === "codex" ? "cx" : "ag"}`}><${Icon} name="agent" /></span><span><b>${rd.name}</b><small>${roleLine(rd)}</small></span></div>`)}
+          ${human && html`<div class="person"><span class="dot hu"><${Icon} name="you" /></span><span><b>${t("You")}</b><small>${t("proc.youDo")}</small></span></div>`}
+        </div></section>`}
+        ${p.entries.length > 0 && html`<section><h2>${t("proc.how")} <span class="muted small hint">— ${t("read.hint")}</span></h2>
+          <ol class="steps">${p.entries.map((e, i) => html`<${ProcessEntry} e=${e} i=${i} p=${p} on=${i === at} key=${e.id} />`)}</ol>
+          ${p.repeat && html`<p class="loop"><${Icon} name="again" />${t("proc.again")}</p>`}
+        </section>`}
+      </div>
+      ${at >= 0 && html`<${StepPanel} p=${p} i=${at} key=${p.entries[at].id} />`}
+    </div>`;
 }
 
-function ProcessEntry({ e, i, plan, steps, process }) {
-  const icon = e.kind === "human" ? "you" : e.kind === "wait" ? "wait" : e.kind === "action" ? "again" : "agent";
-  const dot = e.kind === "human" ? "hu" : e.kind === "agent" ? "ag" : e.kind === "wait" ? "wt" : "sy";
-  const step = e.step && steps.find((s) => s.id === e.step);
-  return html`<li class="pstep ${e.kind === "action" ? "sys" : ""} ${e.detour ? "det" : ""}">
+function ProcessEntry({ e, i, p, on }) {
+  const { icon, dot } = look(e);
+  const badges = entryBadges(e);
+  return html`<li><a class=${`pstep${e.kind === "action" ? " sys" : ""}${e.detour ? " det" : ""}${on ? " on" : ""}`}
+      href=${stepHref(p.name, e.id)} aria-current=${on ? "step" : undefined}>
     <span class="num">${i + 1}</span>
-    <span class="dot ${dot}"><${Icon} name=${icon} /></span>
-    <div class="stp">
+    <span class=${`dot ${dot}`}><${Icon} name=${icon} /></span>
+    <span class="stp">
       <span>${roleChip(e)}${entryPhrase(e)}${e.detour ? html` <${Pill} tone="calm">${t("run.onlyIfNeeded")}<//>` : ""}</span>
-      ${entryBranch(e, plan).map((b) => html`<span class="branch small">${b}</span>`)}
-      ${e.step && html`<${StepFold} id=${e.step} human=${e.kind === "human"} usedBy=${step ? step.usedBy.filter((x) => x !== process) : []} />`}
-    </div>
-  </li>`;
+      ${badges.length > 0 && html`<span class="badges">${badges.map((b) => html`<span class=${`badge ${b.tone}`}>${b.text}</span>`)}</span>`}
+      ${entryBranch(e, p.entries).map((b) => html`<span class="branch small">${b}</span>`)}
+    </span>
+  </a></li>`;
 }
 
-function StepFold({ id, human, usedBy }) {
-  const [on, setOn] = useState(false);
-  const { data } = useData(on ? `/api/steps/${enc(id)}` : null, false);
-  return html`<details class="more" onToggle=${(ev) => setOn(ev.currentTarget.open)}>
-    <summary>${human ? t("proc.toldHuman") : t("proc.told")}</summary>
-    ${data && html`<pre class="instr">${data.body}</pre>`}
-    <p class="small muted" style="margin-top:8px">${usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")}${" "}
-      <a href="#/step/${enc(id)}">${t("act.editText")}</a></p>
-  </details>`;
+function StepPanel({ p, i }) {
+  const e = p.entries[i];
+  const { data: step } = useData(e.step ? `/api/steps/${enc(e.step)}` : null, false);
+  const { data: steps } = useData(e.step ? "/api/steps" : null, false);
+  useEffect(() => {
+    const on = (ev) => { if (ev.key === "Escape") go("process", p.name); };
+    addEventListener("keydown", on);
+    return () => removeEventListener("keydown", on);
+  }, [p.name]);
+  const { icon, dot } = look(e);
+  const prev = p.entries[i - 1], next = p.entries[i + 1];
+  const usedBy = ((steps || []).find((s) => s.id === e.step) || { usedBy: [] }).usedBy.filter((x) => x !== p.name);
+  const short = (x) => { const s = x.step || entryPhrase(x); return s.length > 28 ? `${s.slice(0, 27)}…` : s; };
+  return html`<aside class="panel" aria-label=${t("read.panel")}>
+    <div class="phead">
+      <div class="prow"><span class="small muted grow">${t("read.of", { n: i + 1, total: p.entries.length })}${e.step ? html` · <span class="mono">${e.step}</span>` : ""}</span>
+        <a class="x" href=${`#/process/${enc(p.name)}`} aria-label=${t("act.close")}><${Icon} name="close" /></a></div>
+      <div class="ptitle"><span class=${`dot ${dot}`}><${Icon} name=${icon} /></span>
+        <div><span class="small muted">${entryWho(e, p.roleDefs)}</span><h2>${entryPhrase(e)}</h2></div></div>
+    </div>
+    <div class="pbody">
+      <section><h3>${t("read.how")}</h3>
+        <dl class="how">${entryFacts(e, p.roleDefs).map((f) => html`<dt>${f.k}</dt><dd class=${f.mono ? "mono" : ""}>${f.v}</dd>`)}</dl>
+        ${entryBranch(e, p.entries).map((b) => html`<p class="branch small">${b}</p>`)}
+      </section>
+      ${e.step && html`<section>${step
+        ? html`<${Prompt} step=${e.step} text=${step.body} head=${t(e.kind === "human" ? "proc.toldHuman" : "proc.told")} />`
+        : html`<p class="muted">${t("loading")}</p>`}</section>`}
+      <section><h3>${t("read.where")}</h3>
+        ${step && html`<${PathRow} label=${t("read.stepFile")} path=${step.path} />`}
+        <${PathRow} label=${t("read.procFile", { n: i + 1 })} path=${p.path} />
+        ${e.step && html`<p class="small muted">${usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")}${" "}
+          <a href="#/step/${enc(e.step)}">${t("act.editText")}</a></p>`}
+      </section>
+    </div>
+    <div class="pfoot">
+      ${prev ? html`<a class="btn quiet sm" href=${stepHref(p.name, prev.id)}>‹ ${i} · ${short(prev)}</a>` : html`<span></span>`}
+      ${next && html`<a class="btn quiet sm" href=${stepHref(p.name, next.id)}>${i + 2} · ${short(next)} ›</a>`}
+    </div>
+  </aside>`;
+}
+
+function PathRow({ label, path }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => navigator.clipboard.writeText(path).then(() => setCopied(true), () => {});
+  return html`<div class="path"><span class="grow"><small>${label}</small><span class="mono">${path}</span></span>
+    <button class="btn sm" onClick=${copy}><${Icon} name="copy" size=${16} />${t(copied ? "act.copied" : "act.copy")}</button></div>`;
+}
+
+/** A step's text as written, and — in a language other than English — a button that has flowd translate it. */
+function Prompt({ step, text, head }) {
+  const lang = getLang();
+  const [tr, setTr] = useState(null); // null, "busy" or {text}
+  const [show, setShow] = useState("tr");
+  const [err, setErr] = useState(null);
+  const translate = attempt(async () => {
+    setTr("busy");
+    try {
+      setTr(await api("POST", `/api/steps/${enc(step)}/translate`, { lang }));
+    } catch (e) {
+      setTr(null);
+      throw e;
+    }
+  }, setErr);
+  const done = tr && tr !== "busy";
+  const seg = (k, label) => html`<button class=${show === k ? "on" : ""} aria-pressed=${show === k} onClick=${() => setShow(k)}>${label}</button>`;
+  return html`<div class="prompt">
+    <div class="prow">${head && html`<h3 class="grow">${head}</h3>`}
+      ${lang !== "en" && !tr && html`<button class="btn sm" onClick=${translate}><${Icon} name="translate" size=${18} />${t("read.translate")}</button>`}
+      ${done && html`<div class="seg" role="group" aria-label=${t("read.textLang")}>${seg("tr", t("read.translation"))}${seg("orig", t("read.original"))}</div>`}
+    </div>
+    <${Err} msg=${err} />
+    ${tr === "busy" && html`<p class="busy"><span class="spin" aria-hidden="true"></span>${t("read.translating")}</p>`}
+    ${done && show === "tr" ? html`<pre class="instr tr">${tr.text}</pre><p class="small muted">${t("read.byLuna")}</p>` : html`<pre class="instr">${text}</pre>`}
+  </div>`;
 }
 
 function StartForm({ arg: name }) {
@@ -664,7 +742,7 @@ function pageTitle(page, arg, runs) {
 }
 
 function App() {
-  const [page, arg, sub] = useRoute();
+  const [page, arg, sub, rest] = useRoute();
   const [lang, setLangState] = useState(getLang());
   const { data: openRuns } = useData("/api/runs");
   const waiting = (openRuns || []).filter((r) => r.needsYou).length;
@@ -689,7 +767,7 @@ function App() {
         aria-current=${tab === k ? "page" : undefined}>${t(`nav.${k}`)}${k === "now" && waiting > 0 ? html`<span class="count">${waiting}</span>` : ""}</a>`)}</nav>
       <${LangSwitch} lang=${lang} onLang=${onLang} />
     </div></header>
-    <main class="wrap page"><${Page} arg=${arg} sub=${sub} lang=${lang} onLang=${onLang} key=${`${page}/${arg || ""}/${sub || ""}`} /></main>`;
+    <main class="wrap page"><${Page} arg=${arg} sub=${sub} rest=${rest} lang=${lang} onLang=${onLang} key=${`${page}/${arg || ""}/${sub === "step" ? "" : sub || ""}`} /></main>`;
 }
 
 render(html`<${App} />`, document.getElementById("app"));

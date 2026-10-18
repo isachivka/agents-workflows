@@ -99,6 +99,11 @@ const PATHS = {
   external: html`<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />`,
   bell: html`<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" /><path d="M10 21a2 2 0 0 0 4 0" />`,
   again: html`<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />`,
+  close: html`<path d="M6 6l12 12M18 6L6 18" />`,
+  translate: html`<path d="M4 5h9M8.5 3v2M6 5c1 4 4 7 7 8" /><path d="M11 5c-1 4-4 7-7 8" /><path d="M13 21l4-9 4 9M14.5 18h5" />`,
+  copy: html`<rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" />`,
+  nest: html`<rect x="3" y="3" width="18" height="18" rx="3" /><rect x="8" y="8" width="8" height="8" rx="2" />`,
+  shell: html`<path d="M4 17l6-6-6-6" /><path d="M12 19h8" />`,
 };
 export const Icon = ({ name, size = 20 }) => html`<svg class="ic" width=${size} height=${size} viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name]}</svg>`;
