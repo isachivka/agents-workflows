@@ -136,3 +136,15 @@ test("a run's conversation is stored once per run and found by its address", () 
   assert.deepEqual(s.chatOf("p#1"), { adapter: "slack", address: "C1/1.2" });
   assert.equal(s.runByChat("telegram", "-100/7"), null);
 });
+
+test("a login is found by its token's hash until it expires; an expired one is gone", () => {
+  const s = new Store(":memory:");
+  s.addLogin("h1", "5", "Ann", 2_000);
+  assert.deepEqual(s.login("h1", 1_000), { user: "5", name: "Ann" });
+  assert.equal(s.login("h2", 1_000), null);
+  assert.equal(s.login("h1", 2_000), null);
+  assert.equal(s.login("h1", 1_000), null); // deleted when found expired
+  s.addLogin("h3", "5", "Ann", 9_000);
+  s.dropLogin("h3");
+  assert.equal(s.login("h3", 1_000), null);
+});

@@ -181,3 +181,18 @@ test("the chat adapter is the plugin with chat whose section is in plugins.yaml;
   assert.deepEqual(two.h.chat(), { error: "two chat adapters are set up (mm, tg): keep one section in plugins.yaml" });
   assert.equal(two.h.loadErrors.chat, "two chat adapters are set up (mm, tg): keep one section in plugins.yaml");
 });
+
+test("the login is the plugin with login whose section is in plugins.yaml; two are an error", async () => {
+  const login = { page: () => "<b>button</b>", verify: () => ({ user: "5", name: "Ann" }) };
+  const { h } = host({ config: { tg: {} } });
+  h.add({ name: "tg", login });
+  h.add({ name: "gh", login });
+  const l = h.login();
+  assert.ok(l && "login" in l && l.name === "tg");
+  const dir = mkdtempSync(join(tmpdir(), "flows-plugins-"));
+  for (const n of ["tg", "gh"]) writeFileSync(join(dir, `${n}.ts`), `export default { name: "${n}", login: { page() { return ""; }, verify() { return { error: "no" }; } } };`);
+  const two = host({ dirs: [dir], config: { tg: {}, gh: {} } });
+  await two.h.load();
+  assert.deepEqual(two.h.login(), { error: "two logins are set up (gh, tg): keep one section in plugins.yaml" });
+  assert.equal(two.h.loadErrors.login, "two logins are set up (gh, tg): keep one section in plugins.yaml");
+});

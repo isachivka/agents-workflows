@@ -28,6 +28,14 @@ export interface ChatAdapter {
   close(address: string, end: { outcome: "done" | "stopped" }, ctx: PluginCtx): Promise<unknown> | unknown;
 }
 export interface ActiveChat { name: string; chat: ChatAdapter; ctx: PluginCtx }
+/** A way to log in to the UI from outside: a page with the provider's button, and its callback's check. */
+export interface LoginProvider {
+  /** the login page's body: the provider's button, which comes back to /auth/<plugin name> */
+  page(ctx: PluginCtx): string;
+  /** the callback's query → who logged in, or why not */
+  verify(query: Record<string, string>, ctx: PluginCtx): { user: string; name: string } | { error: string };
+}
+export interface ActiveLogin { name: string; login: LoginProvider; ctx: PluginCtx }
 export interface PluginCtx {
   emit(e: PluginEvent): void;
   /** a chat adapter: a message in a run's conversation, from someone the adapter lets write */
@@ -48,6 +56,8 @@ export interface Plugin {
   stop?(ctx: PluginCtx): Promise<unknown> | unknown;
   /** a messenger for runs' conversations; it is the active one when plugins.yaml has its section */
   chat?: ChatAdapter;
+  /** a login for the UI from outside (FLOWD_PUBLIC_URL); active like chat */
+  login?: LoginProvider;
 }
 export interface PluginStatus {
   name: string;
@@ -110,16 +120,31 @@ export class PluginHost {
         }
       }
     }
-    const chat = this.chat();
-    if (chat && "error" in chat) this.loadErrors.chat = chat.error;
-    else delete this.loadErrors.chat;
+    for (const kind of ["chat", "login"] as const) {
+      const a = this.activeOf(kind);
+      if (a && "error" in a) this.loadErrors[kind] = a.error;
+      else delete this.loadErrors[kind];
+    }
+  }
+
+  /** The plugin providing `kind` whose name has a section in plugins.yaml; two are an error. */
+  private activeOf(kind: "chat" | "login"): Loaded | { error: string } | null {
+    const on = [...this.loaded.values()].filter((l) => l.plugin[kind] && l.plugin.name in this.config);
+    const what = kind === "chat" ? "chat adapters" : "logins";
+    if (on.length > 1) return { error: `two ${what} are set up (${on.map((l) => l.plugin.name).join(", ")}): keep one section in plugins.yaml` };
+    return on[0] ?? null;
   }
 
   /** The active chat adapter: a plugin with `chat` whose name has a section in plugins.yaml. */
   chat(): ActiveChat | { error: string } | null {
-    const on = [...this.loaded.values()].filter((l) => l.plugin.chat && l.plugin.name in this.config);
-    if (on.length > 1) return { error: `two chat adapters are set up (${on.map((l) => l.plugin.name).join(", ")}): keep one section in plugins.yaml` };
-    return on[0] ? { name: on[0].plugin.name, chat: on[0].plugin.chat!, ctx: on[0].ctx } : null;
+    const a = this.activeOf("chat");
+    return a && "plugin" in a ? { name: a.plugin.name, chat: a.plugin.chat!, ctx: a.ctx } : a;
+  }
+
+  /** The active login for the UI from outside. */
+  login(): ActiveLogin | { error: string } | null {
+    const a = this.activeOf("login");
+    return a && "plugin" in a ? { name: a.plugin.name, login: a.plugin.login!, ctx: a.ctx } : a;
   }
 
   /** Shown in Settings → Plugins; a chat adapter's failure does not fail the run that caused it. */

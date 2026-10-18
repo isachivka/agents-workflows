@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS outbox (
   entry_id TEXT, created REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent REAL);
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY, status TEXT NOT NULL, status_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS logins (
+  token_hash TEXT PRIMARY KEY, user TEXT NOT NULL, name TEXT NOT NULL, expires REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS chats (
   run_id TEXT PRIMARY KEY, adapter TEXT NOT NULL, address TEXT NOT NULL);
 `;
@@ -182,6 +184,21 @@ export class Store {
 
   dropOutbox(runId: string): void {
     this.db.prepare("DELETE FROM outbox WHERE run_id = ? AND sent IS NULL").run(runId);
+  }
+
+  /** A UI session from outside: kept by the SHA-256 of its cookie, so the database holds no usable cookie. */
+  addLogin(tokenHash: string, user: string, name: string, expires: number): void {
+    this.db.prepare("INSERT INTO logins (token_hash, user, name, expires) VALUES (?, ?, ?, ?)").run(tokenHash, user, name, expires);
+  }
+
+  login(tokenHash: string, now = Date.now()): { user: string; name: string } | null {
+    this.db.prepare("DELETE FROM logins WHERE expires <= ?").run(now);
+    const row = this.db.prepare("SELECT user, name FROM logins WHERE token_hash = ?").get(tokenHash) as Row | undefined;
+    return row ? { user: row.user, name: row.name } : null;
+  }
+
+  dropLogin(tokenHash: string): void {
+    this.db.prepare("DELETE FROM logins WHERE token_hash = ?").run(tokenHash);
   }
 
   /** Where a run's conversation is, as the chat adapter that opened it returned it. */
