@@ -1232,3 +1232,29 @@ test("flowd answers Codex's folder-trust question in a narrow split pane, where 
   assert.equal(f.store.getRun("p#1")!.status, "running");
   await f.close();
 });
+
+const UPDATE_SCREEN = ["Update available · 0.162.1 → 0.163.0", "Release notes: https://github.com/openai/codex/releases/latest",
+  "› 1. Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh'`)",
+  "  2. Skip", "  3. Skip until next version", "  enter continue · esc skip"].join("\n");
+// the same in a narrow split pane
+const NARROW_UPDATE_SCREEN = ["Update", "available ·", "0.162.1 →", "0.163.0", "› 1. Update", "  now (runs", "  `sh -c …`)", "  2. Skip", "  3. Skip", "  until next", "  version", "  enter", "  continue ·", "  esc skip"].join("\n");
+
+test("flowd skips Codex's update screen with Esc, in a trusted folder too, and then answers the trust question", async () => {
+  // a trusted folder: only the update screen is in the way
+  const trusted = await startFlowd(makeHome({ ...PAIR("peer"), "codex/config.toml": '[projects."/tmp"]\ntrust_level = "trusted"\n' }), { trustPollMs: 1 });
+  trusted.agterm.screens.set("S1:right", NARROW_UPDATE_SCREEN);
+  trusted.agterm.onPress = (s, k) => { if (k === "\x1b") trusted.agterm.screens.set(s, "codex is up"); };
+  await trusted.f.submit(start("p"));
+  await settle(trusted.f);
+  assert.deepEqual(pressed(trusted.agterm), ['press S1:right "\\u001b"']);
+  await trusted.f.close();
+  // a new folder: the update screen, then the trust question
+  const fresh = await startFlowd(makeHome({ ...PAIR("peer"), "codex/config.toml": '[projects."/elsewhere"]\ntrust_level = "trusted"\n' }), { trustPollMs: 1 });
+  fresh.agterm.screens.set("S1:right", UPDATE_SCREEN);
+  fresh.agterm.onPress = (s, k) => fresh.agterm.screens.set(s, k === "\x1b" ? NARROW_CODEX_DIALOG : "codex is up");
+  await fresh.f.submit(start("p"));
+  await settle(fresh.f);
+  assert.deepEqual(pressed(fresh.agterm), ['press S1:right "\\u001b"', 'press S1:right "\\r"']);
+  assert.equal(fresh.f.store.getRun("p#1")!.status, "running");
+  await fresh.f.close();
+});

@@ -955,11 +955,12 @@ export class Flowd {
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
       if (row.entry_id) await this.submit({ type: "entry.delivered", run: run.id, entry: row.entry_id, data: {}, source: "flowd" });
-      // Claude stops at its folder-trust dialog before it reads the first line: answer it,
-      // beside delivery so other sessions are not held up
+      // an agent may stop on a screen before it reads the first line (Claude's and Codex's folder
+      // trust, Codex's update notice): answer it, beside delivery so other sessions are not held up
       const agent = agentOf(role.spawn);
-      if (row.entry_id && ((agent === "claude" && !this.claudeTrusts(cwd)) || (agent === "codex" && !this.codexTrusts(cwd)))) {
-        this.background(this.answerTrust(run.id, row.entry_id, session, cwd, agent));
+      if (row.entry_id && agent !== "other") {
+        const trust = agent === "claude" ? !this.claudeTrusts(cwd) : !this.codexTrusts(cwd);
+        if (trust || agent === "codex") this.background(this.answerStartScreens(run.id, row.entry_id, session, cwd, agent, trust));
       }
     } catch (e) {
       this.log(`spawn ${run.id} ${row.role}: ${msg(e)}`);
@@ -993,45 +994,62 @@ export class Flowd {
   }
 
   /**
-   * The process spawned an agent into this folder, so it trusts it: select "Yes, I trust this
-   * folder" (Down, then Enter once the marker is on it). Never writes ~/.claude.json.
+   * Screens an agent shows before it reads its first line, answered so it starts unattended:
+   * - Codex's "Update available": Esc, its skip (the user's choice: flowd never updates Codex);
+   * - the folder-trust question, when the folder is not trusted yet: the process spawned an agent
+   *   into it, so it trusts it. Claude starts on "No, exit" (Down, then Enter once "Yes, I trust
+   *   this folder" is selected), Codex on "Trust and continue" (Enter). Never writes their configs.
    */
-  private async answerTrust(run: string, entry: string, session: string, cwd: string, agent: "claude" | "codex"): Promise<void> {
+  private async answerStartScreens(run: string, entry: string, session: string, cwd: string, agent: "claude" | "codex", trust: boolean): Promise<void> {
     const pause = () => new Promise((r) => setTimeout(r, this.o.trustPollMs ?? 1_000));
-    // Claude's dialog starts on "No, exit" (Down, then Enter); Codex's on "Trust and continue" (Enter).
-    // The screen is matched with whitespace and box lines taken out: in a narrow pane (a split) the
-    // question wraps nearly a word per line, and a soft wrap can split a word.
     const d = agent === "claude"
       ? { who: "Claude Code", marker: "Yes,Itrustthisfolder", yes: /❯(\d+\.)?Yes,Itrustthisfolder/, choice: "Yes, I trust this folder", down: true }
       : { who: "Codex", marker: "Trustthisfolder?", yes: /›1\.Trustandcontinue/, choice: "Trust and continue", down: false };
+    // matched with whitespace and box lines taken out: in a narrow pane (a split) a screen wraps
+    // nearly a word per line, and a soft wrap can split a word
     const read = async () => (await this.termOf(session).text(session)).replace(/[\s\u2500-\u257f]+/g, "");
+    const isUpdate = (screen: string) => agent === "codex" && screen.includes("Updateavailable") && screen.includes("escskip");
     const yesSelected = (screen: string) => d.yes.test(screen);
     const stop = (why: string) => this.submit({
       type: "entry.start-blocked", run, entry, source: "flowd",
       data: { reason: `${entry}: ${d.who} asks whether to trust ${cwd} and flowd could not ${why} — open the session and choose "${d.choice}"` },
     });
     try {
-      let screen = "";
-      for (let i = 0; i < 30 && !screen.includes(d.marker); i++) {
+      let skipped = false;
+      for (let i = 0; i < 30; i++) {
         if (i) await pause();
-        screen = await read();
+        const screen = await read();
+        if (!skipped && isUpdate(screen)) {
+          await this.termOf(session).press(session, "\x1b");
+          this.log(`skipped Codex's update screen in ${session}`);
+          skipped = true;
+          continue;
+        }
+        if (trust && screen.includes(d.marker)) return await this.answerTrust(session, cwd, d, screen, read, pause, stop);
+        // done once nothing more can come: the update screen is Codex's, and comes first
+        if (!trust && (skipped || agent !== "codex")) return;
       }
-      if (!screen.includes(d.marker)) return; // no dialog: the start watchdog covers any other hang
-      // a dialog just drawn may not take keys yet (seen live: one Down, the selection stayed): try again
-      for (let i = 0; i < 5 && !yesSelected(screen) && d.down; i++) {
-        await this.termOf(session).press(session, "\x1b[B");
-        await pause();
-        screen = await read();
-      }
-      if (!yesSelected(screen)) {
-        await stop('select "Yes"');
-        return;
-      }
-      await this.termOf(session).press(session, "\r");
-      this.log(`answered ${d.who}'s folder-trust dialog for ${cwd}`);
+      // no dialog: the start watchdog covers any other hang
     } catch (e) {
-      await stop(`answer it (${msg(e)})`);
+      if (trust) await stop(`answer it (${msg(e)})`);
+      else this.log(`${run}: reading ${session}'s first screen: ${msg(e)}`);
     }
+  }
+
+  private async answerTrust(session: string, cwd: string, d: { who: string; yes: RegExp; down: boolean }, screen: string,
+    read: () => Promise<string>, pause: () => Promise<unknown>, stop: (why: string) => Promise<unknown>): Promise<void> {
+    // a dialog just drawn may not take keys yet (seen live: one Down, the selection stayed): try again
+    for (let i = 0; i < 5 && !d.yes.test(screen) && d.down; i++) {
+      await this.termOf(session).press(session, "\x1b[B");
+      await pause();
+      screen = await read();
+    }
+    if (!d.yes.test(screen)) {
+      await stop('select "Yes"');
+      return;
+    }
+    await this.termOf(session).press(session, "\r");
+    this.log(`answered ${d.who}'s folder-trust dialog for ${cwd}`);
   }
 
   /** A shell entry: run the command as written, the run in its environment; report how it ended. */
