@@ -178,6 +178,15 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
   `curl -I http://127.0.0.1:7430/r/<token>/<name>`, then the reverse proxy's upstream (this
   machine's LAN address and `FLOWS_REPORTS_PORT`). flowd's log names the listener at start.
 
+## Logging in from outside fails
+
+- The login page says `no login is set up`: `plugins.yaml` has no `telegram:` section (or two logins).
+- Telegram's widget says "Bot domain invalid": `/setdomain` in BotFather to the public name's host.
+- `the answer is not signed by this bot`: the token in `plugins.yaml` is not the bot the widget
+  belongs to. `is not in users`: add your Telegram id to `users`. `over a day old`: log in again.
+- A login that bounces back to the page: the browser drops the cookie — it is `Secure`, so the
+  public name must be HTTPS.
+
 ## Starting over
 
 Runs and their history live in one SQLite file. To start from nothing:

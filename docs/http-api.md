@@ -93,6 +93,18 @@ on an `inner` entry with nothing nested and nothing chosen by `--inner`.
 | POST | `/api/restart` | | `{}`, then flowd exits; launchd starts it again |
 | GET | `/api/stream` | | Server-sent events: `data: runs` when any run changed, `data: defs` when definitions were reloaded |
 
+## Logging in (public name only)
+
+Only for requests whose `Host` is `FLOWD_PUBLIC_URL`'s ([Logins](plugins.md#logins)):
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/login` | The login page: the login plugin's button, or how to set one up. |
+| GET | `/auth/<plugin>` | The provider's callback: on a pass, the `flows_session` cookie and `302 /`; else 403 with the reason. |
+| POST | `/logout` | `{}`; ends the session and clears the cookie. |
+
+Without a session every other page redirects to `/login` and `/api/*` answers 401.
+
 ## Hook endpoints
 
 Called by `flow agterm-hook` and `flow claude-hook`. Both answer `{}` at once and process the

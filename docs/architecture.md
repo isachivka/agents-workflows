@@ -102,8 +102,11 @@ in the outbox are delivered by the next flush.
   local network (a phone on the same Wi-Fi): then anyone on that network can drive flowd, and
   through a process with an `sh` step run commands as you. Only on a network you trust.
 - `FLOWD_PUBLIC_URL` adds one more name of its own: the UI served from outside by a reverse proxy.
-  flowd itself still has no login, so that proxy's login is the only thing between the internet and
-  your agents; the UI never shares a name (an origin) with the reports.
+  Requests by that name need a session from the login plugin (Telegram Login: a signature by the
+  bot's token, a user in `users`); with no login plugin nothing but a page saying so is served. The
+  session cookie is `HttpOnly; Secure; SameSite=Lax`, stored only as its SHA-256, 30 days. Writes
+  still need `Origin` to be exactly the public address, so another site cannot use the cookie. The
+  UI never shares a name (an origin) with the reports. Local and LAN requests need no login.
 - Spawned agents usually run with `--dangerously-skip-permissions`, and run variables are pasted
   into their prompts. So anything that can drive flowd can make an agent run code.
 - Web pages are kept out: a request with a foreign `Host` (DNS rebinding) or a foreign `Origin`

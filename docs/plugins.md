@@ -16,6 +16,7 @@ export default {
   actions: { post(args, ctx) {} },             // optional: `do: gh.post` in a process
   title({ vars, cwd }, ctx) {},                // optional: what a run is about, from its vars
   chat: { open, post, close },                 // optional: a messenger for runs' conversations
+  login: { page, verify },                     // optional: a login for the UI from outside
   stop(ctx) {},                                // optional: when flowd stops
 };
 ```
@@ -28,6 +29,7 @@ export default {
 | `watch(w, ctx)` | Called when someone subscribes to one of the plugin's types: an entry starts waiting on it (a **wait**), or a process has an `on:` trigger for it (a **trigger subscription**). Returns a function that stops the watch; it is called when the entry stops waiting (event arrived, timeout, goto, stop) or the trigger goes away. Throw to refuse what it cannot serve, with a message that says what to write instead. |
 | `actions` | Functions called by `{do: <name>.<action>, with: {...}}` entries. Resolving marks the entry done; throwing fails it with the error as the note. |
 | `chat` | A messenger: see [Chat adapters](#chat-adapters). |
+| `login` | A login for the UI from outside: see [Logins](#logins). |
 | `stop(ctx)` | When flowd stops: end what `start` began (a long poll, a socket). May return a promise. |
 | `title({vars, cwd}, ctx)` | What a run is about, in words, from its vars: `gh` returns the title of `vars.pr`. flowd asks when a run's `pr` changes and every 10 minutes for each open run with a `pr`, and stores a new answer in `vars.title`. Return `undefined` when it does not know; a throw is shown in the plugin's status and the old title stays. The first plugin with an answer wins. |
 
@@ -201,6 +203,37 @@ Setup:
 
 Without a `token` the plugin does nothing. Errors name the fix: not an admin with "Manage topics",
 `chat not found` (the id, or the bot is not in the group), Topics turned off.
+
+## Logins
+
+Through `FLOWD_PUBLIC_URL` (the UI served from outside by a reverse proxy) flowd asks for a login;
+local and LAN requests never do. A plugin with a `login` field provides it:
+
+```ts
+login: {
+  page({ callback }, ctx): string,                       // the login page's body: the provider's button
+  verify(query: Record<string, string>, ctx): { user, name } | { error },   // the callback's check
+}
+```
+
+- Active like a chat adapter: its section is in `plugins.yaml`; two active is an error.
+- `GET /login` shows the page; the provider sends the person back to `callback`,
+  `<FLOWD_PUBLIC_URL>/auth/<plugin name>`, whose query `verify` checks. A pass starts a 30-day
+  session (cookie `flows_session`, only its SHA-256 is stored); `POST /logout` ends it.
+- Without a session, pages redirect to `/login` and `/api/*` answer 401. With no login plugin, the
+  public name serves only a page saying so.
+- Who may log in is the plugin's call (its config).
+
+### Telegram login
+
+The Telegram plugin is also a login, with the same `token` and `users`: the
+[Telegram Login Widget](https://core.telegram.org/widgets/login). The person taps "Log in with
+Telegram", confirms in Telegram, and comes back signed in. flowd checks Telegram's signature (an
+HMAC with the SHA-256 of the bot token as the key), that the answer is under a day old and that the
+user is in `users`.
+
+Setup: in [@BotFather](https://t.me/BotFather), `/setdomain` for the bot to `FLOWD_PUBLIC_URL`'s
+host (a bot has one domain). The page loads the widget's script from telegram.org.
 
 ## A minimal plugin
 
