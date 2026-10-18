@@ -1193,7 +1193,7 @@ export class Flowd {
   /** A step's prompt in another language, for the person reading the process (the agent still gets the original). */
   async translateStep(id: string, lang: unknown): Promise<{ text: string } | { error: string; status: number }> {
     if (lang !== "ru" && lang !== "en") return { error: "lang must be ru or en", status: 400 };
-    const s = this.defs.steps[id];
+    const s = Object.hasOwn(this.defs.steps, id) ? this.defs.steps[id] : undefined;
     if (!s) return { error: `no step ${id}`, status: 404 };
     try {
       return { text: await this.translator.translate(s.body, lang) };

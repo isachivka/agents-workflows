@@ -144,6 +144,13 @@ bound to Y`: Y has no `inner` entry, so nothing can run nested in it; use anothe
 The run is `needs-human` with `entry X no longer exists`. Use **goto** on the run page (or
 `POST /api/runs/:id/entries/:entry/goto`) to move it to an entry that exists, or stop it.
 
+## Translate shows an error (502)
+
+- Check: the error text carries the translator's last stderr lines. Common causes: `codex` is not
+  on the login shell's `PATH`; Codex is not signed in (run `codex login`); the model name is unknown.
+- The original text stays readable. Translations are cached under the state directory's
+  `translations/`; delete a file there to translate that text again.
+
 ## Starting over
 
 Runs and their history live in one SQLite file. To start from nothing:

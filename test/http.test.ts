@@ -350,6 +350,7 @@ test("translate a step's prompt: the translator's text, refusals, a failure says
   const ok = await s.call("POST", "/api/steps/b/translate", { lang: "ru" });
   assert.deepEqual([ok.status, ok.body], [200, { text: "[translated] Do B for {{run.id}}" }]);
   assert.equal((await s.call("POST", "/api/steps/nope/translate", { lang: "ru" })).status, 404);
+  assert.equal((await s.call("POST", "/api/steps/__proto__/translate", { lang: "ru" })).status, 404);
   const de = await s.call("POST", "/api/steps/b/translate", { lang: "de" });
   assert.deepEqual([de.status, de.body.error], [400, "lang must be ru or en"]);
   await s.close();

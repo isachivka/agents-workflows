@@ -15,7 +15,7 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml` 
                                       │  plugins · cron      │──► gh, … (plugins)
                                       └──────────────────────┘
                                          ~/.config/flows      (definitions)
-                                         ~/.local/state/flows (database, log)
+                                         ~/.local/state/flows (database, log, translations/)
 ```
 
 ## Modules
@@ -27,6 +27,7 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml` 
 | `src/defs.ts` | Parse and validate steps and processes, load `$FLOWS_HOME`, read/write/delete definition files with an mtime check. |
 | `src/engine.ts` | The pure state machine: `step(run, input, ctx) → {run, actions, error?}`. No I/O. |
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses. |
+| `src/translate.ts` | Translating a step's prompt for the person reading it: a local command (Codex by default), cached under the state directory's `translations/`, two at a time, process groups killed on timeout and close. |
 | `src/agterm.ts` | The `Terminal` interface (spawn, type, press, text, tree, userInput, focus) and agterm behind it: the only caller of `agtermctl`; shell quoting. |
 | `src/zmx.ts` | The zmx terminal: headless sessions through the `zmx` CLI in flows' own socket directory. The daemon picks a session's terminal by its id (`zmx:` or not). |
 | `src/transcripts.ts` | Finds a role's Claude Code conversation in `~/.claude/projects` by the step lines flowd typed into it, so a finished run's agent can be resumed. Read-only. |

@@ -24,7 +24,7 @@ pages out. The web UI and the
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, path, workspace, terminal, roleDefs, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after, timeoutMs, retries, hold, with, waitWith, waitWhere, text, cwd, skills}`; `roleDefs`: `[{name, agent: claude|codex|other, beside, cwd}]`; paths under the home directory start with `~`; `with` is a plugin action's arguments, `waitWith`/`waitWhere` the wait's conditions; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
+| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, path, workspace, terminal, roleDefs, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after, waitMs, sh, timeoutMs, retries, hold, with, waitWith, waitWhere, text, cwd, skills}`; `roleDefs`: `[{name, agent: claude|codex|other, beside, cwd}]`; paths under the home directory start with `~`; `with` is a plugin action's arguments, `waitWith`/`waitWhere` the wait's conditions; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
 | GET | `/api/processes/:name` | | `{name, path, text, mtime, errors, object}` (`object`: the parsed YAML, or `null`) |
 | PUT | `/api/processes/:name` | `{text, mtime}` or `{object, mtime}` | `{mtime}`. `mtime` is the one the edit was based on, `null` for a new file. `object` is re-serialised (comments lost). |
 | DELETE | `/api/processes/:name` | `?mtime=` | `{}` |

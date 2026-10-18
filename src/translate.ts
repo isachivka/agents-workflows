@@ -78,7 +78,7 @@ export class Translator {
   close(): void {
     this.closed = true;
     for (const [c, settle] of [...this.children]) {
-      stopGroup(c);
+      killGroup(c, "SIGKILL"); // the process exits right after close(): no grace timer would ever fire
       settle(); // do not wait for stdio to close: a stubborn grandchild may hold it open
     }
     for (const wake of this.waiting.splice(0)) wake();
@@ -103,7 +103,7 @@ export class Translator {
       let timedOut = false;
       // its own process group: a timeout or a shutdown ends what the translator started too
       const child = spawn(bin, args, { cwd, detached: true, stdio: ["pipe", "pipe", "pipe"] });
-            const out: Buffer[] = [], err: Buffer[] = [];
+      const out: Buffer[] = [], err: Buffer[] = [];
       child.stdout!.on("data", (b: Buffer) => out.push(b));
       child.stderr!.on("data", (b: Buffer) => err.push(b));
       child.stdin!.on("error", () => {}); // a translator that exits before reading: its exit says why

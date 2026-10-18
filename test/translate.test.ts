@@ -64,6 +64,7 @@ test("a translator that runs out of time is killed with everything it started", 
   const pidFile = join(tmp(), "pid");
   const t = tr(fake({ pidFile, child: true, delayMs: 60_000 }), { timeoutMs: 300 });
   await assert.rejects(t.translate("x", "ru"), /took longer than .* and was stopped/);
+  await until(() => existsSync(pidFile));
   const pid = Number(readFileSync(pidFile, "utf8"));
   await until(() => !alive(pid));
   assert.equal(alive(pid), false);
@@ -106,6 +107,24 @@ test("a group that ignores SIGTERM and holds stdout open: the request still ends
   await assert.rejects(t.translate("x", "ru"), /took longer than 300 ms and was stopped/);
   assert.ok(Date.now() - started < 1000, "settled without waiting for stdio to close");
   const pid = Number(readFileSync(pidFile, "utf8"));
+  await until(() => !alive(pid));
+  assert.equal(alive(pid), false);
+});
+
+test("close kills a group that ignores SIGTERM at once, as the process exits right after", async () => {
+  const pidFile = join(tmp(), "pid");
+  const script = `
+    const fs = require("fs");
+    const g = require("child_process").spawn(process.execPath, ["-e",
+      "process.on('SIGTERM', () => {}); setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+    fs.writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));
+    process.stdin.resume(); setTimeout(() => {}, 60000);`;
+  const t = tr([process.execPath, "-e", script]);
+  const p = t.translate("x", "ru").catch((e: Error) => e);
+  await until(() => existsSync(pidFile));
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  t.close();
+  await p;
   await until(() => !alive(pid));
   assert.equal(alive(pid), false);
 });

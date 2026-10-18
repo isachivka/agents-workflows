@@ -431,7 +431,7 @@ function PromptFold({ run, entry, step, label }) {
   const [on, setOn] = useState(false);
   const { data, error } = useData(on ? `/api/runs/${enc(run)}/entries/${enc(entry)}/prompt` : null, false);
   return html`<details class="more" onToggle=${(ev) => setOn(ev.currentTarget.open)}><summary>${label}</summary>
-    ${data ? (step ? html`<${Prompt} step=${step} text=${data.text} />` : html`<pre class="instr">${data.text}</pre>`)
+    ${data ? (step ? html`<${Prompt} key=${getLang()} step=${step} text=${data.text} />` : html`<pre class="instr">${data.text}</pre>`)
       : error ? html`<p class="err-box">${error.message}</p>` : on && html`<p class="muted">${t("loading")}</p>`}
   </details>`;
 }
@@ -559,7 +559,7 @@ function ProcessView({ arg: name, sub, rest }) {
             return html`<a class="btn run-chip" href="#/run/${enc(rid)}"><span class="clip">${r ? runTitle(r) || runName(r) : runLabel(rid)}</span>${d && html` <${Pill} tone=${d.tone}>${d.tag}<//>`}</a>`;
           })}</div></section>`}
         ${(p.roleDefs.length > 0 || human) && html`<section><h2>${t("proc.who")}</h2><div class="ppl">
-          ${p.roleDefs.map((rd) => html`<div class="person"><span class=${`dot ${rd.agent === "codex" ? "cx" : "ag"}`}><${Icon} name="agent" /></span><span><b>${rd.name}</b><small>${roleLine(rd)}</small></span></div>`)}
+          ${p.roleDefs.map((rd) => html`<div class="person"><span class=${`dot ${rd.agent === "codex" ? "cx" : "ag"}`}><${Icon} name="agent" /></span><span><b>${rd.name}</b><small>${roleLine(rd, p.cwd)}</small></span></div>`)}
           ${human && html`<div class="person"><span class="dot hu"><${Icon} name="you" /></span><span><b>${t("You")}</b><small>${t("proc.youDo")}</small></span></div>`}
         </div></section>`}
         ${p.entries.length > 0 && html`<section><h2>${t("proc.how")} <span class="muted small hint">— ${t("read.hint")}</span></h2>
@@ -614,12 +614,12 @@ function StepPanel({ p, i, steps }) {
         ${entryBranch(e, p.entries).map((b) => html`<p class="branch small">${b}</p>`)}
       </section>
       ${e.step && html`<section>${step
-        ? html`<${Prompt} step=${e.step} text=${step.body} head=${t(e.kind === "human" ? "proc.toldHuman" : "proc.told")} />`
+        ? html`<${Prompt} key=${getLang()} step=${e.step} text=${step.body} head=${t(e.kind === "human" ? "proc.toldHuman" : "proc.told")} />`
         : html`<${Loading} error=${error} />`}</section>`}
       <section><h3>${t("read.where")}</h3>
         ${step && html`<${PathRow} label=${t("read.stepFile")} path=${step.path} />`}
         <${PathRow} label=${t("read.procFile", { n: i + 1 })} path=${p.path} />
-        ${e.step && html`<p class="small muted">${usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")}${" "}
+        ${e.step && html`<p class="small muted">${steps ? (usedBy.length ? t("proc.usedIn", { list: usedBy.join(", ") }) : t("proc.usedNowhere")) : ""}${" "}
           <a href="#/step/${enc(e.step)}">${t("act.editText")}</a></p>`}
       </section>
     </div>
@@ -634,7 +634,7 @@ function PathRow({ label, path }) {
   const [copied, setCopied] = useState(false);
   const copy = () => navigator.clipboard.writeText(path).then(() => setCopied(true), () => {});
   return html`<div class="path"><span class="grow"><small>${label}</small><span class="mono">${path}</span></span>
-    <button class="btn sm" onClick=${copy}><${Icon} name="copy" size=${16} />${t(copied ? "act.copied" : "act.copy")}</button></div>`;
+    <button class="btn sm" aria-label=${`${t("act.copy")}: ${label}`} onClick=${copy}><${Icon} name="copy" size=${16} />${t(copied ? "act.copied" : "act.copy")}</button></div>`;
 }
 
 /** A step's text as written, and — in a language other than English — a button that has flowd translate it. */
@@ -661,7 +661,7 @@ function Prompt({ step, text, head }) {
     </div>
     <${Err} msg=${err} />
     ${tr === "busy" && html`<p class="busy"><span class="spin" aria-hidden="true"></span>${t("read.translating")}</p>`}
-    ${done && show === "tr" ? html`<pre class="instr tr">${tr.text}</pre><p class="small muted">${t("read.byLuna")}</p>` : html`<pre class="instr">${text}</pre>`}
+    ${done && show === "tr" ? html`<pre class="instr tr">${tr.text}</pre><p class="small muted">${t("read.machine")}</p>` : html`<pre class="instr">${text}</pre>`}
   </div>`;
 }
 

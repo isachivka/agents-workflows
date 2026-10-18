@@ -95,8 +95,8 @@ const EN = {
   "does.type": "types into {role}: {text}", "does.typeNothing": "starts {role} and types nothing: it waits to be spoken to",
   "read.hint": "Click a step to read it whole", "read.panel": "Step", "read.of": "Step {n} of {total}", "read.how": "How it works",
   "read.where": "Where it lives", "read.stepFile": "The step's text", "read.procFile": "The process, step {n}",
-  "read.translate": "Translate", "read.translating": "Translating… about 10 seconds", "read.translation": "Translation",
-  "read.original": "Original", "read.textLang": "Language of the text", "read.byLuna": "Translated by Codex (Luna). Commands and placeholders are kept as the agent sees them.",
+  "read.translate": "Translate", "read.translating": "Translating… usually about 10 seconds", "read.translation": "Translation",
+  "read.original": "Original", "read.textLang": "Language of the text", "read.machine": "Machine translation. Commands and placeholders are kept as the agent sees them.",
   "act.close": "Close", "act.copy": "Copy", "act.copied": "Copied",
 };
 
@@ -197,7 +197,7 @@ const RU = {
   "read.hint": "Нажми на шаг, чтобы прочитать его целиком", "read.panel": "Шаг", "read.of": "Шаг {n} из {total}", "read.how": "Как устроен",
   "read.where": "Где лежит", "read.stepFile": "Текст шага", "read.procFile": "Процесс, шаг {n}",
   "read.translate": "Перевести на русский", "read.translating": "Перевожу… обычно около 10 секунд", "read.translation": "Перевод",
-  "read.original": "Оригинал", "read.textLang": "Язык текста", "read.byLuna": "Перевела Luna (Codex). Команды и подстановки оставлены как в оригинале — их видит агент.",
+  "read.original": "Оригинал", "read.textLang": "Язык текста", "read.machine": "Машинный перевод. Команды и подстановки оставлены как в оригинале — их видит агент.",
   "act.close": "Закрыть", "act.copy": "Скопировать", "act.copied": "Скопировано",
 };
 
@@ -290,8 +290,8 @@ export const agentName = (agent) => t(`agent.${agent === "claude" || agent === "
 const roleDef = (role, roleDefs) => (roleDefs || []).find((r) => r.name === role) || null;
 
 /** Under a role's name on a process page: which agent, where it runs. */
-export function roleLine(rd) {
-  return [agentName(rd.agent), rd.beside ? t("role.beside", { role: rd.beside }) : "", rd.cwd ? t("role.cwd", { cwd: rd.cwd }) : ""]
+export function roleLine(rd, processCwd) {
+  return [agentName(rd.agent), rd.beside ? t("role.beside", { role: rd.beside }) : "", rd.cwd && rd.cwd !== processCwd ? t("role.cwd", { cwd: rd.cwd }) : ""]
     .filter(Boolean).join(" · ");
 }
 

@@ -257,6 +257,7 @@ test("role lines and the panel's who line", () => {
   T.setLang("en");
   assert.equal(T.roleLine(ROLES[0]), "Claude agent");
   assert.equal(T.roleLine(ROLES[1]), "Codex agent · in the right half beside dev · works in /w");
+  assert.equal(T.roleLine(ROLES[1], "/w"), "Codex agent · in the right half beside dev");
   assert.equal(T.entryWho(pe(), ROLES), "dev · Claude agent");
   assert.equal(T.entryWho(pe({ kind: "human", role: "human" }), ROLES), "You");
   assert.equal(T.entryWho(pe({ kind: "action", do: "clear" }), ROLES), "flows itself, no agent");
