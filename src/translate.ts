@@ -5,12 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Ends a detached child and everything it started; it may have exited already. */
-export function killGroup(c: ChildProcess): void {
+export function killGroup(c: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): void {
   try {
-    if (c.pid) process.kill(-c.pid, "SIGTERM");
+    if (c.pid) process.kill(-c.pid, signal);
   } catch {
-    c.kill();
+    c.kill(signal);
   }
+}
+
+/** SIGTERM now, SIGKILL after a grace: something in the group may ignore SIGTERM. */
+function stopGroup(c: ChildProcess): void {
+  killGroup(c);
+  setTimeout(() => killGroup(c, "SIGKILL"), 1000).unref();
 }
 
 const LANG_NAMES: Record<string, string> = { ru: "Russian", en: "English" };
@@ -35,7 +41,8 @@ export class Translator {
   private running = 0;
   private waiting: (() => void)[] = [];
   private pending = new Map<string, Promise<string>>();
-  private children = new Set<ChildProcess>();
+  // each running child with the function that settles its request at once
+  private children = new Map<ChildProcess, () => void>();
   private closed = false;
 
   constructor(o: TranslatorOptions) {
@@ -52,10 +59,14 @@ export class Translator {
     if (!p) {
       p = this.slot(() => this.run(argv, body))
         .then((text) => {
-          mkdirSync(this.o.dir, { recursive: true });
           const part = `${file}.${process.pid}.part`;
-          writeFileSync(part, text);
-          renameSync(part, file); // a reader never sees half a file
+          try {
+            mkdirSync(this.o.dir, { recursive: true });
+            writeFileSync(part, text);
+            renameSync(part, file); // a reader never sees half a file
+          } catch {
+            rmSync(part, { force: true }); // the cache is best effort: a good translation is not lost over it
+          }
           return text;
         })
         .finally(() => this.pending.delete(key));
@@ -66,7 +77,10 @@ export class Translator {
 
   close(): void {
     this.closed = true;
-    for (const c of this.children) killGroup(c);
+    for (const [c, settle] of [...this.children]) {
+      stopGroup(c);
+      settle(); // do not wait for stdio to close: a stubborn grandchild may hold it open
+    }
     for (const wake of this.waiting.splice(0)) wake();
   }
 
@@ -89,13 +103,12 @@ export class Translator {
       let timedOut = false;
       // its own process group: a timeout or a shutdown ends what the translator started too
       const child = spawn(bin, args, { cwd, detached: true, stdio: ["pipe", "pipe", "pipe"] });
-      this.children.add(child);
-      const out: Buffer[] = [], err: Buffer[] = [];
+            const out: Buffer[] = [], err: Buffer[] = [];
       child.stdout!.on("data", (b: Buffer) => out.push(b));
       child.stderr!.on("data", (b: Buffer) => err.push(b));
       child.stdin!.on("error", () => {}); // a translator that exits before reading: its exit says why
       child.stdin!.end(body);
-      const timer = setTimeout(() => { timedOut = true; killGroup(child); }, this.o.timeoutMs);
+      const timer = setTimeout(() => { timedOut = true; stopGroup(child); end(null); }, this.o.timeoutMs);
       let ended = false;
       const end = (code: number | null, error?: Error) => {
         if (ended) return; // a spawn error may be followed by close
@@ -105,14 +118,16 @@ export class Translator {
         rmSync(cwd, { recursive: true, force: true });
         const text = Buffer.concat(out).toString().trim();
         const tail = Buffer.concat(err).toString().trim().split("\n").slice(-5).join("\n");
+        const limit = this.o.timeoutMs < 1000 ? `${this.o.timeoutMs} ms` : `${Math.round(this.o.timeoutMs / 1000)} s`;
         const fail = (why: string) => reject(new Error(tail ? `${why}:\n${tail}` : why));
         if (error) return fail(`the translator could not start (${error.message})`);
-        if (timedOut) return fail(`the translator took longer than ${Math.round(this.o.timeoutMs / 1000)} s and was stopped`);
+        if (timedOut) return fail(`the translator took longer than ${limit} and was stopped`);
         if (this.closed) return fail("flows is shutting down");
         if (code !== 0) return fail(`the translator failed (exit ${code})`);
         if (!text) return fail("the translator printed nothing");
         resolve(text);
       };
+      this.children.set(child, () => end(null));
       child.on("error", (e) => end(null, e));
       child.on("close", (code) => end(code));
     });
