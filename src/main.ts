@@ -20,7 +20,9 @@ function zmxBin(): string {
 export async function startDaemon(): Promise<void> {
   const home = flowsHome();
   const zmx = zmxTerminal({ bin: zmxBin(), dir: process.env.FLOWS_ZMX_DIR || join(dirname(statePath()), "zmx") });
-  const f = new Flowd({ home, statePath: statePath(), agterm: realAgterm(), zmx, pluginDirs: [join(REPO, "plugins"), join(home, "plugins")] });
+  const f = new Flowd({ home, statePath: statePath(), agterm: realAgterm(), zmx, pluginDirs: [join(REPO, "plugins"), join(home, "plugins")],
+    // step prompts are translated ahead of time into these (comma-separated; empty turns it off)
+    pretranslate: (process.env.FLOWS_PRETRANSLATE ?? "ru").split(",").map((l) => l.trim()).filter(Boolean) });
   await f.init();
   const port = Number(process.env.FLOWD_PORT || 7420);
   const host = process.env.FLOWD_HOST || "127.0.0.1";

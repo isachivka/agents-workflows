@@ -150,6 +150,9 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
   on the login shell's `PATH`; Codex is not signed in (run `codex login`); the model name is unknown.
 - The original text stays readable. Translations are cached under the state directory's
   `translations/`; delete a file there to translate that text again.
+- flowd also translates every step ahead of time (`FLOWS_PRETRANSLATE`). Such a pass stops at its
+  first failure and logs `translating steps ahead stopped: …` in `flowd.log`; it tries again after
+  the next step change or restart.
 
 ## Starting over
 

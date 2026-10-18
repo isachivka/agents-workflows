@@ -42,6 +42,10 @@ export interface FlowdOptions {
   translate?: string[];
   /** how long a translation may take before its process group is killed (default 2 minutes) */
   translateTimeoutMs?: number;
+  /** languages every step's prompt is translated into ahead of time, while the translator is idle (none by default) */
+  pretranslate?: string[];
+  /** how long after a step file changes the steps are translated ahead (default 1 minute; twice that after start) */
+  pretranslateDelayMs?: number;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
@@ -84,6 +88,15 @@ export interface RunSummary {
 
 const AGTERM_STATUSES = new Set(["active", "completed", "idle", "blocked"]);
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+const stepBodies = (d: Defs) => JSON.stringify(Object.values(d.steps).map((s) => [s.id, s.body]));
+/** Text already mostly in a language's script needs no translation into it. */
+const SCRIPTS: Record<string, RegExp> = { ru: /\p{Script=Cyrillic}/gu, en: /\p{Script=Latin}/gu };
+const writtenIn = (text: string, lang: string): boolean => {
+  const letters = text.match(/\p{L}/gu)?.length ?? 0;
+  const own = SCRIPTS[lang] ? text.match(SCRIPTS[lang])?.length ?? 0 : 0;
+  // commands and paths are Latin in any language: a third in Cyrillic is a Russian prompt
+  return letters > 0 && own / letters > (lang === "ru" ? 0.3 : 0.7);
+};
 const strings = (v: unknown): string[] | undefined => (Array.isArray(v) ? v.map(String) : undefined);
 const stringVars = (v: unknown): Record<string, string> =>
   Object.fromEntries(Object.entries(v && typeof v === "object" ? (v as Dict) : {}).map(([k, x]) => [k, String(x)]));
@@ -120,6 +133,9 @@ export class Flowd {
   /** running shell entries, killed on close */
   private children = new Set<ChildProcess>();
   private closing = false;
+  private warmTimer: ReturnType<typeof setTimeout> | undefined;
+  private warming = false;
+  private warmAgain = false;
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
   private spawning = new Set<string>();
@@ -160,6 +176,8 @@ export class Flowd {
     this.reloadDefs();
     await this.reconcileSessions();
     this.plugins.startAll();
+    // runs resuming come first: the steps are translated ahead a while after start
+    this.scheduleWarm(2 * (this.o.pretranslateDelayMs ?? 60_000));
     for (const e of this.store.unprocessed()) void this.enqueue(() => this.process(e.id));
     // Behind the replayed events, so a report stored before a crash wins, and before any watch is
     // armed, so an action a fresh event starts is not mistaken for one the restart cut off.
@@ -197,6 +215,7 @@ export class Flowd {
 
   async close(): Promise<void> {
     this.closing = true;
+    clearTimeout(this.warmTimer);
     this.translator.close();
     for (const c of this.children) killGroup(c); // a restart fails what was cut off: see init
     for (const t of this.timers) clearInterval(t);
@@ -249,6 +268,8 @@ export class Flowd {
   reloadDefs(): void {
     const before = this.defs;
     this.defs = loadDefs(this.home, this.plugins.eventTypes(), this.plugins.actionNames());
+    // an edited prompt is translated ahead once the edits settle (the UI editor saves often)
+    if (this.loaded && stepBodies(before) !== stepBodies(this.defs)) this.scheduleWarm(this.o.pretranslateDelayMs ?? 60_000);
     // A waiting entry whose wait_for was edited gets its watch armed again from the new definition.
     // Unchanged ones keep theirs: a fresh watch can miss what happened since the last poll (gh.review
     // takes its baseline at start). The first load arms nothing; init does that once events replayed.
@@ -1191,6 +1212,45 @@ export class Flowd {
   }
 
   /** A step's prompt in another language, for the person reading the process (the agent still gets the original). */
+  /** (Re)starts the wait before steps are translated ahead; a later change restarts it. */
+  private scheduleWarm(ms: number): void {
+    if (!this.o.pretranslate?.length || this.closing) return;
+    clearTimeout(this.warmTimer);
+    this.warmTimer = setTimeout(() => void this.warm(), ms);
+    this.warmTimer.unref();
+  }
+
+  /**
+   * Translates every step's prompt not yet cached, one at a time and only while no requested
+   * translation runs or waits, then drops the cached ones no prompt uses any more. Stops at the
+   * first failure (not logged in, a model gone): the next change or restart tries again.
+   */
+  private async warm(): Promise<void> {
+    if (this.warming) { this.warmAgain = true; return; }
+    this.warming = true;
+    const idle = Math.max(1, Math.round((this.o.pretranslateDelayMs ?? 60_000) / 12));
+    try {
+      const all = Object.values(this.defs.steps).flatMap((s) => (this.o.pretranslate ?? []).map((lang) => ({ body: s.body, lang })));
+      for (const t of all) {
+        if (writtenIn(t.body, t.lang)) continue;
+        while (this.translator.busy && !this.closing) await new Promise((r) => setTimeout(r, idle));
+        if (this.closing) return;
+        if (this.translator.isCached(t.body, t.lang)) continue;
+        try {
+          await this.translator.translate(t.body, t.lang);
+        } catch (e) {
+          if (!this.closing) this.log(`translating steps ahead stopped: ${msg(e)}`);
+          return;
+        }
+      }
+      // a button may have asked for another language: those stay while their prompt is unchanged
+      if (!this.warmAgain) this.translator.prune(Object.values(this.defs.steps).flatMap((s) => ["ru", "en", ...(this.o.pretranslate ?? [])].map((lang) => ({ body: s.body, lang }))));
+    } finally {
+      this.warming = false;
+      if (this.warmAgain) { this.warmAgain = false; this.scheduleWarm(this.o.pretranslateDelayMs ?? 60_000); }
+    }
+  }
+
   async translateStep(id: string, lang: unknown): Promise<{ text: string } | { error: string; status: number }> {
     if (lang !== "ru" && lang !== "en") return { error: "lang must be ru or en", status: 400 };
     const s = Object.hasOwn(this.defs.steps, id) ? this.defs.steps[id] : undefined;

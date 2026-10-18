@@ -257,4 +257,5 @@ Claude down.
 | `FLOWS_OPEN` | flowd | The command used for that. Default `open`. |
 | `FLOWS_LAUNCHCTL` | `flow install` | The `launchctl` binary. Default `launchctl`. |
 | `FLOWS_ZMX` | flowd | The `zmx` binary for `terminal: zmx`. Default `zmx` on `PATH`, else the one inside `/Applications/agterm.app` (agterm's build has the `type` and `screen` commands flowd needs). |
+| `FLOWS_PRETRANSLATE` | flowd | Languages every step's prompt is translated into ahead of time, comma-separated, so Translate in the UI answers at once. Default `ru`; empty turns it off. flowd translates 2 minutes after start and 1 minute after a step file changes, one prompt at a time, only while no requested translation runs. |
 | `FLOWS_ZMX_DIR` | flowd | zmx's socket directory for flows' sessions. Default `zmx` beside the database (`~/.local/state/flows/zmx`). Keep it short: unix sockets have a path limit. |

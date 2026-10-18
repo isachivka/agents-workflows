@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,10 +49,31 @@ export class Translator {
     this.o = o;
   }
 
+  /** Where a translation of this text lands: the command and the instruction are in the key, so changing either does not serve old translations. */
+  private keyOf(body: string, lang: string): string {
+    return createHash("sha256").update(JSON.stringify([[...this.o.argv, instruction(lang)], body])).digest("hex");
+  }
+
+  isCached(body: string, lang: string): boolean {
+    return existsSync(join(this.o.dir, `${this.keyOf(body, lang)}.txt`));
+  }
+
+  /** A translation runs or waits for its turn: work done ahead of time stays out of the way. */
+  get busy(): boolean {
+    return this.running > 0 || this.waiting.length > 0;
+  }
+
+  /** Deletes the cached translations of every text but these. */
+  prune(keep: { body: string; lang: string }[]): void {
+    const wanted = new Set(keep.map((k) => `${this.keyOf(k.body, k.lang)}.txt`));
+    let files: string[] = [];
+    try { files = readdirSync(this.o.dir); } catch { return; }
+    for (const f of files) if (f.endsWith(".txt") && !wanted.has(f)) rmSync(join(this.o.dir, f), { force: true });
+  }
+
   translate(body: string, lang: string): Promise<string> {
     const argv = [...this.o.argv, instruction(lang)];
-    // the command and the instruction are in the key: changing either must not serve old translations
-    const key = createHash("sha256").update(JSON.stringify([argv, body])).digest("hex");
+    const key = this.keyOf(body, lang);
     const file = join(this.o.dir, `${key}.txt`);
     if (existsSync(file)) return Promise.resolve(readFileSync(file, "utf8"));
     let p = this.pending.get(key);
