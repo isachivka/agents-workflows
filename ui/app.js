@@ -1,4 +1,4 @@
-import { html, render, useState, useEffect } from "./vendor/preact-htm.js";
+import { html, render, useState, useEffect, useRef } from "./vendor/preact-htm.js";
 import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, sessionLabel, Icon, Err } from "./lib.js";
 import { prUrl, repoName, slackUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
@@ -532,6 +532,7 @@ const stepHref = (name, id) => `#/process/${enc(name)}/step/${enc(id)}`;
 function ProcessView({ arg: name, sub, rest }) {
   const { data, error } = useData("/api/processes");
   const { data: runs } = useData("/api/runs");
+  const { data: steps } = useData("/api/steps", false);
   if (sub === "edit") return html`<${ProcessEditor} arg=${name} />`;
   if (!data) return html`<${Loading} error=${error} />`;
   const p = data.find((x) => x.name === name);
@@ -566,7 +567,7 @@ function ProcessView({ arg: name, sub, rest }) {
           ${p.repeat && html`<p class="loop"><${Icon} name="again" />${t("proc.again")}</p>`}
         </section>`}
       </div>
-      ${at >= 0 && html`<${StepPanel} p=${p} i=${at} key=${p.entries[at].id} />`}
+      ${at >= 0 && html`<${StepPanel} p=${p} i=${at} steps=${steps} key=${p.entries[at].id} />`}
     </div>`;
 }
 
@@ -585,10 +586,12 @@ function ProcessEntry({ e, i, p, on }) {
   </a></li>`;
 }
 
-function StepPanel({ p, i }) {
+function StepPanel({ p, i, steps }) {
   const e = p.entries[i];
-  const { data: step } = useData(e.step ? `/api/steps/${enc(e.step)}` : null, false);
-  const { data: steps } = useData(e.step ? "/api/steps" : null, false);
+  const { data: step, error } = useData(e.step ? `/api/steps/${enc(e.step)}` : null, false);
+  const close = useRef(null);
+  // below the breakpoint the panel is a sheet over the list: focus moves into it, off the hidden card
+  useEffect(() => { if (matchMedia("(max-width: 960px)").matches && close.current) close.current.focus(); }, []);
   useEffect(() => {
     const on = (ev) => { if (ev.key === "Escape") go("process", p.name); };
     addEventListener("keydown", on);
@@ -597,11 +600,11 @@ function StepPanel({ p, i }) {
   const { icon, dot } = look(e);
   const prev = p.entries[i - 1], next = p.entries[i + 1];
   const usedBy = ((steps || []).find((s) => s.id === e.step) || { usedBy: [] }).usedBy.filter((x) => x !== p.name);
-  const short = (x) => { const s = x.step || entryPhrase(x); return s.length > 28 ? `${s.slice(0, 27)}…` : s; };
+  const short = (x) => { const s = entryPhrase(x); return s.length > 28 ? `${s.slice(0, 27)}…` : s; };
   return html`<aside class="panel" aria-label=${t("read.panel")}>
     <div class="phead">
       <div class="prow"><span class="small muted grow">${t("read.of", { n: i + 1, total: p.entries.length })}${e.step ? html` · <span class="mono">${e.step}</span>` : ""}</span>
-        <a class="x" href=${`#/process/${enc(p.name)}`} aria-label=${t("act.close")}><${Icon} name="close" /></a></div>
+        <a class="x" ref=${close} href=${`#/process/${enc(p.name)}`} aria-label=${t("act.close")}><${Icon} name="close" /></a></div>
       <div class="ptitle"><span class=${`dot ${dot}`}><${Icon} name=${icon} /></span>
         <div><span class="small muted">${entryWho(e, p.roleDefs)}</span><h2>${entryPhrase(e)}</h2></div></div>
     </div>
@@ -612,7 +615,7 @@ function StepPanel({ p, i }) {
       </section>
       ${e.step && html`<section>${step
         ? html`<${Prompt} step=${e.step} text=${step.body} head=${t(e.kind === "human" ? "proc.toldHuman" : "proc.told")} />`
-        : html`<p class="muted">${t("loading")}</p>`}</section>`}
+        : html`<${Loading} error=${error} />`}</section>`}
       <section><h3>${t("read.where")}</h3>
         ${step && html`<${PathRow} label=${t("read.stepFile")} path=${step.path} />`}
         <${PathRow} label=${t("read.procFile", { n: i + 1 })} path=${p.path} />
