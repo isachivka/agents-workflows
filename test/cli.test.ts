@@ -260,3 +260,13 @@ test("flow publish prints the report's link; POST /api/publish needs a file", as
   assert.deepEqual([missing.status, missing.body], [409, { error: "no file /nope.html" }]);
   await s.close();
 });
+
+test("flow start on a busy agent before its inner says the process will run inside it later", async () => {
+  const s = await serve({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n  - {inner: true, role: pm}\n", "", "outer"), ...proc("  - {step: c, role: pm}\n", "", "leaf") });
+  s.agterm.addSession("S1");
+  await s.call("POST", "/api/runs", { process: "outer", bind: { pm: "S1" } });
+  await settle(s.f);
+  const r = await flow(["start", "leaf", "--bind", "pm=S1"], { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1" });
+  assert.deepEqual([r.code, r.stdout], [0, "leaf will run inside outer#1 when it reaches inner\n"]);
+  await s.close();
+});

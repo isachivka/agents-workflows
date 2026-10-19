@@ -56,7 +56,11 @@ export interface FlowdOptions {
   shell?: string[];
 }
 
-export interface Result { error?: string; run?: string; queued?: { position: number; open: number; max: number } }
+export interface Result {
+  error?: string; run?: string; queued?: { position: number; open: number; max: number };
+  /** a start taken as the choice for a run's inner still ahead: `process` runs inside `in` once it gets there */
+  nests?: { process: string; in: string };
+}
 
 export interface PlanItem {
   id: string; kind: string; role: string | null; detour: boolean; waitFor: string | null; status: string;
@@ -679,6 +683,19 @@ export class Flowd {
       const taken = this.store.runBySession(session);
       if (!taken || taken.run.id === parent?.run) continue;
       const at = this.lendingEntry(taken.run, session);
+      if (!at && !parent && this.innerAhead(taken.run, taken.role)) {
+        // the inner is still ahead: this start is its choice, as --inner at that run's start would have been
+        const host = taken.run;
+        if (host.inner?.length) return { error: `${host.id} already runs ${host.inner[0]} inside when it reaches inner; stop ${host.id} to choose again` };
+        if (Object.keys(vars).length) return { error: `${name} cannot keep --var until ${host.id} reaches inner: start it then, or without --var` };
+        const chain = [name, ...(opts.inner ?? [])];
+        const why = this.chainError(host.process, chain);
+        if (why) return { error: why };
+        host.inner = chain;
+        this.store.saveRun(host, this.now());
+        this.changed("runs");
+        return { run: host.id, nests: { process: name, in: host.id } };
+      }
       if (!at || parent) {
         const nests = this.defs.processes[taken.run.process]?.entries.some((e) => e.kind === "inner");
         return { error: nests && !parent
@@ -753,6 +770,12 @@ export class Flowd {
       host = next;
     }
     return undefined;
+  }
+
+  /** Whether the run has an inner entry for this role still to come in this iteration. */
+  private innerAhead(run: RunState, role: string): boolean {
+    return (this.defs.processes[run.process]?.entries ?? []).some((e) =>
+      e.kind === "inner" && e.role === role && (run.entries[e.id]?.status ?? "pending") === "pending");
   }
 
   /** The inner entry a run lends this session's agent on: current, waiting, nobody nested yet. */

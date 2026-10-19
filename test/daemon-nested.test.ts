@@ -55,8 +55,6 @@ test("a start on a busy agent waits for inner; there it becomes the nested run w
   t.agterm.addSession("S1");
   await t.f.submit(start("outer", { pm: "S1" }, { vars: { issue: "K-1" } }));
   await settle(t.f);
-  assert.equal((await t.f.submit(start("leaf", { pm: "S1" }))).error,
-    "pm is busy with outer#1 at step b; a nested process can start when it reaches inner");
   await t.f.submit(status("S1", "active"));
   await t.f.submit(done("S1"));
   await settle(t.f);
@@ -183,4 +181,45 @@ test("a bare inner waits for the person; the UI's nest starts a process there or
   const chained = await outerOnInner({}, { inner: ["leaf"] });
   assert.equal(chained.f.runSummary(chained.f.store.getRun("outer#1")!).needsYou, false);
   await chained.f.close();
+});
+
+test("a start on a busy agent before its inner is the choice for that inner; the nested run starts when it is reached", async () => {
+  const t = await startFlowd(makeHome(HOME));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("outer", { pm: "S1" }, { vars: { issue: "K-1" } }));
+  await settle(t.f);
+  assert.equal((await t.f.submit(start("leaf", { pm: "S1" }, { vars: { pr: "u" } }))).error,
+    "leaf cannot keep --var until outer#1 reaches inner: start it then, or without --var");
+  assert.deepEqual(await t.f.submit(start("leaf", { pm: "S1" })), { run: "outer#1", nests: { process: "leaf", in: "outer#1" } });
+  assert.deepEqual(t.f.store.getRun("outer#1")!.inner, ["leaf"]);
+  assert.equal(t.f.store.openRuns().length, 1);
+  assert.equal((await t.f.submit(start("mid", { pm: "S1" }))).error,
+    "outer#1 already runs leaf inside when it reaches inner; stop outer#1 to choose again");
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(done("S1"));
+  await settle(t.f);
+  const leaf = t.f.store.getRun("leaf#1")!;
+  assert.deepEqual([leaf.parent?.run, leaf.vars.issue], ["outer#1", "K-1"]);
+  assert.equal(t.f.store.getRun("outer#1")!.entries.inner.child, "leaf#1");
+  await t.f.close();
+});
+
+test("a chosen-ahead chain goes on down; an inner already passed is busy as before", async () => {
+  const t = await startFlowd(makeHome(HOME));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("outer", { pm: "S1" }));
+  await settle(t.f);
+  assert.deepEqual(await t.f.submit(start("mid", { pm: "S1" }, { inner: ["leaf"] })), { run: "outer#1", nests: { process: "mid", in: "outer#1" } });
+  assert.deepEqual(t.f.store.getRun("outer#1")!.inner, ["mid", "leaf"]);
+  assert.equal((await t.f.submit(start("nope", { pm: "S1" }))).error?.startsWith("no valid process nope"), true);
+  await t.f.close();
+
+  const past = await startFlowd(makeHome({ ...HOME, ...proc("  - {inner: true, role: pm}\n  - {step: b, role: pm}\n", "", "early") }));
+  past.agterm.addSession("S1");
+  await past.f.submit(start("early", { pm: "S1" }, { inner: ["none"] }));
+  await settle(past.f);
+  assert.equal(past.f.store.getRun("early#1")!.current, "b");
+  assert.equal((await past.f.submit(start("leaf", { pm: "S1" }))).error,
+    "pm is busy with early#1 at step b; a nested process can start when it reaches inner");
+  await past.f.close();
 });

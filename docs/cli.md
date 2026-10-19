@@ -174,7 +174,9 @@ may hold spaces and `=`: `flow start triage --var title="Fix the login timeout" 
 a repeating process they last for the first iteration, like any vars. Refused when the process is
 invalid or a session is bound to another open run — unless that run stands on an `inner` entry
 lending that session's agent: then the new run is nested there (see "Nested runs" in
-[processes.md](processes.md)) and starts with a copy of that run's vars.
+[processes.md](processes.md)) and starts with a copy of that run's vars. When that run has not
+reached its `inner` yet, the start is the choice for it: it prints
+`<process> will run inside <run> when it reaches inner`, and the nested run starts there.
 
 `--inner` (repeatable, in order) names what runs in the process's `inner` entry, then in that
 process's `inner`, and so on: `flow start tracker --inner pr --bind dev=$AGTERM_SESSION_ID`.

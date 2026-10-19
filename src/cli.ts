@@ -224,7 +224,8 @@ export async function main(argv: string[]): Promise<number> {
         if (!name) throw new CliError("usage: flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]");
         const r = await call("POST", "/api/runs", { process: name, bind: pairs(a.bind), vars: pairs(a.vars), ...(a.inner.length ? { inner: a.inner } : {}) });
         // the id stays the first word: scripts read it
-        out(r.queued ? `${r.run} queued: ${ordinal(r.queued.position)} in line, ${r.queued.open} of ${r.queued.max} runs open` : r.run);
+        out(r.nests ? `${r.nests.process} will run inside ${r.nests.in} when it reaches inner`
+          : r.queued ? `${r.run} queued: ${ordinal(r.queued.position)} in line, ${r.queued.open} of ${r.queued.max} runs open` : r.run);
         return 0;
       }
       case "ls": {

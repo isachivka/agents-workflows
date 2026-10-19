@@ -134,8 +134,10 @@ background review, the user reading a PR) but did not say so.
 ## `flow start` says a session is busy or already bound
 
 `dev is busy with tracker#4 at step tracker-find; a nested process can start when it reaches
-inner`: that agent works for another run, whose process has an `inner` entry. Start again once
-`flow ls` shows it on `inner`, or give `--inner` to its start next time. `session X is already
+inner`: that agent works for another run whose `inner` for it is already behind (a start while it
+is still ahead is taken as the choice for it). `tracker#4 already runs pr inside when it reaches
+inner`: a process is chosen for that `inner` already. `pr cannot keep --var until …`: start it
+when the run reaches `inner`, or without `--var`. `session X is already
 bound to Y`: Y has no `inner` entry, so nothing can run nested in it; use another session or no
 `--bind`. See "Nested runs" in [processes.md](processes.md).
 

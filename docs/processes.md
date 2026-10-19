@@ -272,8 +272,11 @@ flow skip --note "nothing to nest"                             # … or it is sk
 - **Choosing.** `--inner` names the processes in order, outer to inner: `flow start a --inner b
   --inner c` runs `b` in `a`'s `inner` and `c` in `b`'s. `none` skips that `inner`. A chain that
   cannot be placed is refused at start. Without `--inner` the run waits at `inner`; a start with
-  `--bind <role>=<that session>` then becomes the nested run. A start on a busy session anywhere
-  else is refused.
+  `--bind <role>=<that session>` then becomes the nested run. Such a start made earlier, while the
+  run has not reached its `inner` yet, is taken as the choice for it, as `--inner` would have been:
+  nothing starts then, `flow start` prints `<process> will run inside <run> when it reaches inner`,
+  and the nested run starts there. It is refused when something is already chosen, with `--var`
+  (those could not be kept), or when no `inner` for that agent is ahead.
 - **Roles.** The nested run takes the agent in its role named like the `inner` entry's role, else
   in its only role; otherwise the `inner` fails. Its other roles spawn sessions as usual.
 - **Variables.** The nested run starts with a copy of its parent's vars (and its own `--var`).
