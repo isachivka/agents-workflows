@@ -52,9 +52,9 @@ then `flow wait --human --note "…"` and end your turn. With reports served, an
 a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
 
 Their message arrives in this session as `<name> wrote in the run's telegram conversation (<run>):`,
-the text, and a line telling you to answer with `flow say` — any time they write in the topic, not
-only after you asked. Always answer it with `flow say`, never only in the terminal: flowd reminds you
-once if a turn ends without it. Answer back with `flow say` (they read Telegram, not this terminal),
+the text, and a reminder of where to answer — any time they write in the topic, not only after you
+asked. When you answer, answer with `flow say`, never only in the terminal: nobody reads it. A
+go-ahead ("approve", "go on") needs no answer — carry on with the step; do not send "ok" for its own sake. Answer back with `flow say` (they read Telegram, not this terminal),
 and go on with the step once they decided. flowd itself tells them when the run waits for them and
 when it ends: do not repeat that. `flow say` fails with `no chat is set up` when there is no
 messenger: then ask in the terminal as usual.

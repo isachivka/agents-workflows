@@ -157,9 +157,9 @@ topics), each run can have a conversation with the person, opened by its first m
 - **The person writes** in the conversation. The message goes to the outbox of the agent the run
   is on and is typed into its session like a step line — once its turn has ended and nobody types
   in the terminal — as `<name> wrote in the run's <messenger> conversation (<run>):`, the text, and a
-  line telling it to answer with `flow say` (the person reads the messenger, not the terminal). If
-  that agent's next turn ends without a `flow say` from its run, flowd types one reminder; there is
-  no second. When the run's current entry has no agent (an `sh`, a wait, a human step, a paused or
+  line saying that an answer goes with `flow say` (the person reads the messenger, not the terminal)
+  and that a go-ahead needs none. flowd never pushes for an answer: an approval ends the talk. When
+  the run's current entry has no agent (an `sh`, a wait, a human step, a paused or
   stopped run), flowd answers that in the conversation and drops the message; a human step is closed
   from the UI or `flow done --human`, not by a message. A message to an ended run is answered
   `<run> has ended`.

@@ -155,7 +155,7 @@ test("a message in the conversation is typed to the run's agent once its turn ha
   assert.ok(!t.agterm.typed().some((x) => x.includes("Ann")));
   await t.f.submit(status("S1", "completed"));
   await settle(t.f);
-  assert.equal(t.agterm.typed().at(-1), "type S1 Ann wrote in the run's fakechat conversation (p#1):\ngo on,\nbut keep the tests\n↳ Ann reads fakechat, not this terminal: answer with `flow say \"…\"`.");
+  assert.equal(t.agterm.typed().at(-1), "type S1 Ann wrote in the run's fakechat conversation (p#1):\ngo on,\nbut keep the tests\n↳ Ann reads fakechat, not this terminal: when you answer, answer with `flow say \"…\"`. A go-ahead needs no answer — just carry on.");
   await t.f.close();
 });
 
@@ -295,35 +295,3 @@ test("the run's end can be turned off (the conversation still closes) and worded
   await broken.f.close();
 });
 
-test("an agent whose turn ends without answering the person's message is reminded once; one that answered is not", async () => {
-  const t = await running();
-  await t.f.say({ session: "S1", text: "plan?" });
-  const reminder = "type S1 You did not answer Ann's message in fakechat. Answer with `flow say \"…\"` — they do not read this terminal.";
-  const deliver = async (text: string) => {
-    await t.f.submit(status("S1", "completed"));
-    t.clock.t += 17_000;
-    await tell(t, "T1", text);
-    t.clock.t += 17_000;
-    await settle(t.f);
-  };
-  await deliver("why?");
-  await t.f.submit(status("S1", "active"));
-  await t.f.submit(status("S1", "completed")); // answered in the terminal only
-  t.clock.t += 17_000;
-  await settle(t.f);
-  assert.equal(t.agterm.typed().at(-1), reminder);
-  await t.f.submit(status("S1", "active"));
-  await t.f.submit(status("S1", "completed")); // still nothing: no second reminder
-  t.clock.t += 17_000;
-  await settle(t.f);
-  assert.equal(t.agterm.typed().filter((x) => x === reminder).length, 1);
-
-  await deliver("and now?");
-  await t.f.submit(status("S1", "active"));
-  assert.deepEqual(await t.f.say({ session: "S1", text: "because" }), {});
-  await t.f.submit(status("S1", "completed"));
-  t.clock.t += 17_000;
-  await settle(t.f);
-  assert.equal(t.agterm.typed().filter((x) => x === reminder).length, 1);
-  await t.f.close();
-});
