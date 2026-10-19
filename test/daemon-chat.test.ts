@@ -216,3 +216,81 @@ test("with reports served, flow say sends an HTML file as a link; other files an
   assert.deepEqual(off.f.publish(join(off.home, "plan.html")), { error: "reports are not served: set FLOWS_REPORTS_URL (docs/cli.md#flow-publish)" });
   await off.f.close();
 });
+
+const NOTE_STEPS = {
+  "steps/quiet.md": "---\nsummary: q\nnotify: {waits: false}\n---\nQuiet.\n",
+  "steps/plan.md": "---\nsummary: The lead writes the plan\nnotify: {done: true, done_text: \"{{step.summary}} — {{note}} ({{vars.x}})\"}\n---\nPlan.\n",
+  "steps/ask.md": "---\nsummary: a\nnotify: {waits_text: \"{{run.process}} #{{run.n}} «{{run.title}}» needs you: {{note}}\"}\n---\nAsk.\n",
+};
+const reportNote = (session: string, note: string) => ({ type: "entry.report", data: { session, outcome: "done", note }, source: "cli" });
+
+async function startProc(files: Record<string, string>, name: string, vars: Record<string, string> = {}) {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...NOTE_STEPS, ...CHAT_ON, ...files }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start(name, { pm: "S1" }, { vars }));
+  await settle(t.f);
+  return t;
+}
+async function turn(t: Awaited<ReturnType<typeof startFlowd>>, report: unknown) {
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(report as never);
+  await t.f.submit(status("S1", "completed"));
+  t.clock.t += 17_000;
+  await settle(t.f);
+}
+
+test("waits can be turned off on a step, and worded with placeholders", async () => {
+  const quiet = await startProc(proc("  - {step: b, role: pm}\n  - {step: quiet, role: human}\n", "", "q"), "q");
+  await turn(quiet, done("S1"));
+  assert.equal(quiet.f.store.getRun("q#1")?.current, "quiet");
+  assert.deepEqual(chatLog(), []);
+  await quiet.f.close();
+
+  const t = await startProc(proc("  - {step: ask, role: pm}\n", "", "w"), "w", { title: "The thing" });
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit({ type: "entry.wait", data: { session: "S1", note: "your OK on the plan", human: true }, source: "cli" });
+  await settle(t.f);
+  assert.equal(chatLog().at(-1), "post T1 w #1 «The thing» needs you: your OK on the plan");
+  await t.f.close();
+});
+
+test("an entry's done is posted only when asked, with its note; an entry's notify overrides its step file's", async () => {
+  const t = await startProc(proc("  - {step: plan, role: pm}\n  - {step: plan, id: again, role: pm, notify: {done_text: \"again: {{note}}\"}}\n  - {step: b, role: pm}\n  - {id: apply, sh: 'true', notify: {done: true, done_text: \"applied\"}}\n  - {step: c, role: pm, notify: {done: false}}\n", "", "d"), "d", { x: "42" });
+  await turn(t, reportNote("S1", "three items"));
+  assert.equal(chatLog().at(-1), "post T1 The lead writes the plan — three items (42)");
+  await turn(t, reportNote("S1", "two more"));
+  assert.equal(chatLog().at(-1), "post T1 again: two more");
+  await turn(t, done("S1")); // b: no notify; then the sh entry apply runs at once
+  for (let i = 0; i < 50 && t.f.store.getRun("d#1")?.current !== "c"; i++) { await new Promise((r) => setTimeout(r, 20)); await settle(t.f); }
+  assert.deepEqual(chatLog().slice(-2), ["post T1 again: two more", "post T1 applied"]);
+  await turn(t, done("S1")); // c: notify.done false on the entry; the run ends
+  assert.deepEqual(chatLog().slice(-3), ["post T1 applied", "post T1 d#1 is done", "close T1 done"]);
+  await t.f.close();
+});
+
+test("the run's end can be turned off (the conversation still closes) and worded; a broken text falls back and is logged", async () => {
+  const off = await startProc(proc("  - {step: b, role: pm}\n", "notify: {end: false}\n", "e"), "e");
+  await off.f.say({ session: "S1", text: "hi" });
+  await turn(off, done("S1"));
+  assert.deepEqual(chatLog(), ["open e#1 ", "post T1 hi", "close T1 done"]);
+  await off.f.close();
+
+  const custom = await startProc(proc("  - {step: b, role: pm}\n", "notify: {done_text: \"{{run.process}} готов ({{vars.week}})\"}\n", "e"), "e", { week: "W42" });
+  await custom.f.say({ session: "S1", text: "hi" });
+  await turn(custom, done("S1"));
+  assert.deepEqual(chatLog().slice(-2), ["post T1 e готов (W42)", "close T1 done"]);
+  await custom.f.close();
+
+  const logs: string[] = [];
+  resetChat();
+  const broken = await startFlowd(makeHome({ ...STEP_FILES, ...CHAT_ON, ...proc("  - {step: b, role: pm}\n", "notify: {done_text: \"{{vars.nope}} done\"}\n", "e") }), { log: (m: string) => logs.push(m) });
+  broken.agterm.addSession("S1");
+  await broken.f.submit(start("e", { pm: "S1" }));
+  await settle(broken.f);
+  await broken.f.say({ session: "S1", text: "hi" });
+  await turn(broken, done("S1"));
+  assert.equal(chatLog().at(-2), "post T1 e#1 is done");
+  assert.ok(logs.some((l) => /e#1: a notify text was not used \(\{\{vars\.nope\}\} has no value\)/.test(l)), logs.join("\n"));
+  await broken.f.close();
+});

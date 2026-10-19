@@ -15,7 +15,7 @@ import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
 import { Reports } from "./reports.ts";
 import { TERMINAL } from "./types.ts";
-import type { Defs, Dict, FlowEvent, Input, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
+import type { Defs, Dict, Entry, FlowEvent, Input, Notify, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
 
 export interface FlowdOptions {
   home: string;
@@ -963,27 +963,75 @@ export class Flowd {
     this.announce(before, res.run);
   }
 
-  /** flowd's own words in the run's conversation: when the run comes to need the person, and when it ends. */
+  /**
+   * flowd's own words in the run's conversation, each switched and worded by `notify`: an entry is done
+   * (off unless asked), the run comes to need the person, the run ends (then the conversation closes).
+   */
   private announce(before: RunState | null, run: RunState): void {
     const a = this.plugins.chat();
     if (!a || "error" in a) return;
     const open = (r: RunState | null) => r !== null && !TERMINAL.includes(r.status);
-    let say: () => Promise<unknown>;
+    const entries = this.defs.processes[run.process]?.entries ?? [];
+    const says: (() => Promise<unknown>)[] = [];
+    const post = (text: string) => says.push(async () => a.chat.post(await this.chatFor(this.rootOf(run), a), { text }, a.ctx));
+
+    // entries that turned done in this commit (a new iteration starts them all over: nothing turned done)
+    if (before && before.iteration === run.iteration) {
+      for (const e of entries) {
+        if (run.entries[e.id]?.status !== "done" || before.entries[e.id]?.status === "done") continue;
+        const n = this.notifyOf(e);
+        if (!n.done) continue;
+        const note = run.entries[e.id]?.note ?? "";
+        post(this.notice(n.doneText, run, e, note, `${run.id}: ${e.id} done${note ? `: ${note}` : ""}`));
+      }
+    }
     if (open(before) && !open(run)) {
       const had = this.store.chatOf(run.id);
-      if (run.parent || had?.adapter !== a.name) return; // a nested run's end is its root's business; no conversation, none opened to say so
-      const text = run.status === "done" ? `${run.id} is done` : `${run.id} was stopped${run.reason ? `: ${run.reason}` : ""}`;
-      say = async () => {
-        await a.chat.post(had.address, { text }, a.ctx);
-        await a.chat.close(had.address, { outcome: run.status as "done" | "stopped" }, a.ctx);
-      };
+      // a nested run's end is its root's business; with no conversation, none is opened to say so
+      if (!run.parent && had?.adapter === a.name) {
+        const n = this.defs.processes[run.process]?.notify ?? {};
+        const text = run.status === "done"
+          ? this.notice(n.doneText, run, undefined, "", `${run.id} is done`)
+          : this.notice(n.stoppedText, run, undefined, run.reason ?? "", `${run.id} was stopped${run.reason ? `: ${run.reason}` : ""}`);
+        says.push(async () => {
+          if (n.end !== false) await a.chat.post(had.address, { text }, a.ctx);
+          await a.chat.close(had.address, { outcome: run.status as "done" | "stopped" }, a.ctx);
+        });
+      }
     } else if (open(run) && this.needsYou(run) && !(before && open(before) && this.needsYou(before))) {
-      const text = `${run.id} waits for you: ${this.waitsFor(run)}`;
-      say = async () => a.chat.post(await this.chatFor(this.rootOf(run), a), { text }, a.ctx);
-    } else return;
-    // ponytail: one chain for every run's notices, so a run's "waits" and "done" keep their order; per run if it gets slow
-    this.notices = this.notices.then(say).catch((e) => this.plugins.fault(a.name, e));
-    this.background(this.notices);
+      const cur = this.currentEntry(run);
+      const n = cur ? this.notifyOf(cur) : {};
+      if (n.waits !== false) {
+        const note = this.waitsFor(run);
+        post(this.notice(n.waitsText, run, cur, note, `${run.id} waits for you: ${note}`));
+      }
+    }
+    // ponytail: one chain for every run's notices, so a run's "done", "waits" and "end" keep their order; per run if it gets slow
+    for (const say of says) this.notices = this.notices.then(say).catch((e) => this.plugins.fault(a.name, e));
+    if (says.length) this.background(this.notices);
+  }
+
+  /** An entry's notify: its own keys over its step file's. */
+  private notifyOf(e: Entry): Notify {
+    return { ...(e.step ? this.defs.steps[e.step]?.notify : undefined), ...e.notify };
+  }
+
+  /** A notify text rendered for this run; one that cannot be rendered gives way to the default, with a line in the log. */
+  private notice(text: string | undefined, run: RunState, e: Entry | undefined, note: string, fallback: string): string {
+    if (!text) return fallback;
+    const n = Number(run.id.split("#").pop());
+    const data = {
+      ...renderData(run),
+      run: { ...(renderData(run).run as Dict), n, title: run.vars.title ?? "" },
+      step: { id: e?.id ?? "", summary: (e?.step && this.defs.steps[e.step]?.summary) || "" },
+      note, reason: run.reason ?? "",
+    };
+    try {
+      return renderTemplate(text, data);
+    } catch (err) {
+      this.log(`${run.id}: a notify text was not used (${msg(err)}); sent the default instead`);
+      return fallback;
+    }
   }
 
   private needsYou(run: RunState): boolean {
