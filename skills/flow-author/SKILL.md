@@ -57,6 +57,8 @@ From the installed copy of this skill, the repo is
 | two agents side by side in one agterm session (Claude left, Codex right) | `roles: {lead: {spawn: claude …}, peer: {spawn: codex …, beside: lead}}`; `peer` runs in `lead`'s split pane. A step can have them talk: `skills: [bos:peer-chat]` on the lead's step |
 | a Codex agent instead of Claude | `spawn: codex --dangerously-bypass-approvals-and-sandbox` on the role; it gets `$flow` and the step's skills as `$name`, its trust question answered. No `do: compact` for it, and it needs `terminal: agterm` |
 | run the agents headless, without agterm | `terminal: zmx` on the process: each role runs in a zmx session `flows-<process>-<n>-<role>-<k>` (`workspace:` and a role's `name:` do not apply); the run's terminal button attaches it in agterm. Turn tracking needs `flow install`'s Claude hooks. The agent keeps running after the run ends unless the last step has it run `zmx kill "${FLOW_SESSION#zmx:}"` (docs/processes.md) |
+| the person decides on something an agent wrote (a plan, a report) | the prompt says: `flow say "<what you need from them>" --file <abs path>.html`, then `flow wait --human --note "…"` and end the turn; their answer arrives in the session. See "Talking to the person" below |
+| tell the person the result of a mechanical step | in the `sh`: `r=$(./do-it) && echo "$r" && flow say --run "$FLOW_RUN" "Done: $r"` |
 | close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1 or a shared `workspace:`: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
 
 ## Traps
@@ -124,9 +126,30 @@ From the installed copy of this skill, the repo is
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
   for the user.
 
+## Talking to the person
+
+With a messenger set up (a `telegram:` section in `plugins.yaml`, see
+[docs/plugins.md](../../docs/plugins.md#chat-adapters)), every run has a conversation with the person:
+a topic in one Telegram group, opened by the run's first message. A nested run uses its root's.
+
+- **flowd writes there by itself**: "`<run>` waits for you: …" when the run reaches a human step, a
+  `flow wait --human` or stops for the person, and "`<run>` is done / was stopped" at the end. Do not
+  make steps announce those.
+- **An agent writes** with `flow say "…" [--file …]`; an `sh` entry with `flow say --run "$FLOW_RUN" "…"`.
+  Write that into the prompt where it matters — a report, a decision, a result — not every step.
+  An `.html` file arrives as a link when flowd serves reports (`FLOWS_REPORTS_URL`), else as a file.
+- **The person's replies** in the topic are typed into the agent of the run's current step once its
+  turn ends (`<name> (telegram): …`). With no agent on the step (an `sh`, a wait, a human step) the bot
+  answers that and drops the message. So a step that waits for a decision keeps its agent on it:
+  `flow wait --human`, not a separate human step, when the answer should reach the agent.
+- `flow say` fails with `no chat is set up` without a messenger: a prompt that relies on it should
+  say what to do then (ask in the terminal).
+- One bot per flowd: a second host needs its own bot (the same group is fine).
+
 ## New event sources and actions
 
 Write a plugin, not daemon code: a TS file in `$FLOWS_HOME/plugins/` whose default export is
-`{name, events, start?, watch?, actions?}`, configured in `plugins.yaml` — see
+`{name, events, start?, watch?, actions?, title?, chat?, login?, stop?}` (`chat` makes it the
+messenger, `login` the UI's login from outside), configured in `plugins.yaml` — see
 [docs/plugins.md](../../docs/plugins.md). flowd loads plugins at start: ask the user before
 restarting it (UI → Plugins → Restart, or `launchctl kickstart -k gui/$UID/local.flows`).

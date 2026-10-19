@@ -48,11 +48,14 @@ session and stops the run after the third silent turn end.
 When a messenger is set up, your run has a conversation with the user (a Telegram topic).
 `flow say "text" [--file /abs/report.html]` writes there. When the user must decide on something you
 wrote (a plan, a report), send it with `flow say --file`, say in one line what you need from them,
-then `flow wait --human --note "…"` and end your turn. With reports served, an HTML file arrives
-as a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`). Their answer arrives in this session as
-`<name> (telegram): <text>`; answer back with `flow say` when they asked something, and go on with
-the step once they decided. `flow say` fails with `no chat is set up` when there is no messenger:
-then ask in the terminal as usual.
+then `flow wait --human --note "…"` and end your turn. With reports served, an HTML file arrives as
+a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
+
+Their answer arrives in this session as `<name> (telegram): <text>` — any time they write in the
+topic, not only after you asked. Answer back with `flow say` (they read Telegram, not this terminal),
+and go on with the step once they decided. flowd itself tells them when the run waits for them and
+when it ends: do not repeat that. `flow say` fails with `no chat is set up` when there is no
+messenger: then ask in the terminal as usual.
 
 ## After `flow failed`
 
