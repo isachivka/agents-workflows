@@ -236,3 +236,23 @@ test("an inner entry: another process runs there in a role's agent", () => {
   assert.ok(errs.includes("steps[5]: inner runs another process; it cannot go with step, do, wait_for, wait, sh or hold"), errs.join(" | "));
   assert.equal(errs.filter((x) => /needs step, do/.test(x)).length, 0, errs.join(" | "));
 });
+
+test("notify parses on a step, an entry and a process; wrong keys, types and places are reported", () => {
+  const s = parseStep("x", "---\nsummary: s\nnotify: {waits: false, done: true, done_text: \"{{step.summary}}: {{note}}\"}\n---\nDo x.\n");
+  assert.deepEqual(s.notify, { waits: false, done: true, doneText: "{{step.summary}}: {{note}}" });
+  const p = parseProcess("p", `description: d\ncwd: /tmp\nnotify: {end: false, stopped_text: "{{run.id}} stopped"}\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: pick, role: pm}\n  - {id: apply, sh: 'true', notify: {done: true, done_text: "applied"}}\n`, ctx);
+  assert.deepEqual(p.notify, { end: false, stoppedText: "{{run.id}} stopped" });
+  assert.equal(p.entries[0].notify, undefined);
+  assert.deepEqual(p.entries[1].notify, { done: true, doneText: "applied" });
+
+  assert.deepEqual(errorsOf(() => parseStep("x", "---\nsummary: s\nnotify: {waits: yes please, end: true, loud: 1, done_text: \"\"}\n---\nDo.\n")), [
+    "notify.waits must be true or false",
+    "notify.end belongs to the process's notify (the run's end)",
+    "notify: unknown key loud",
+    "notify.done_text must be a text",
+  ]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", `description: d\ncwd: /tmp\nnotify: {waits: true}\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: pick, role: pm, notify: [1]}\n`, ctx)), [
+    "steps[1]: notify must be a mapping",
+    "notify.waits belongs to a step's or an entry's notify, not the process's",
+  ]);
+});

@@ -31,6 +31,8 @@ Something to fix: `flow failed --note "<what to fix>"`. Good: `flow done --note 
 ```
 
 - `summary` (required): the headline a person reads for that step in the UI. Write it as a plain sentence saying who does what ("The dev fixes red CI"), not a label.
+- `notify` (optional): what the run's conversation in the messenger is told about this step — see
+  [Messages to the person](#messages-to-the-person).
 - `skills` (optional): the skills the agent needs for the step, `[deliver, aqa]` (`plugin:skill` for a plugin's). A skill named only in the prompt arrives inside `flow show`'s output, where an agent reads it as text and may not load it. These are named in the line flowd types, the person's own message, as the agent loads them: `/deliver /aqa` for Claude, `$deliver $aqa` for Codex. `flow show` lists them too.
 - The body is the prompt an agent reads with `flow show`. It must not be empty.
 
@@ -83,6 +85,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
 | `terminal` | `agterm` or `zmx` | `agterm` | Where its roles' agents run: agterm sessions, or headless zmx sessions flowd runs itself (named `flows-<process>-<n>-<role>-<k>`; the terminal button attaches one in agterm; see [Sessions and roles](concepts.md#sessions-and-roles)). Only new spawns follow an edit. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
+| `notify` | mapping | | What the run's conversation is told when the run ends: `{end, done_text, stopped_text}`. See [Messages to the person](#messages-to-the-person). |
 | `max_runs` | integer ≥ 1 | `1` | Runs working at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |
 | `roles` | mapping | none | Agent roles, see below. |
@@ -168,7 +171,49 @@ Keys on any entry:
 | `wait` | duration | | A pause: `30s`, `10m`, `2h`, `1d`. Only on its own (no `step`, `do`, `wait_for`). |
 | `timeout` | duration | none | `30s`, `10m`, `2h`, `1d`. An entry `active` or `waiting` longer than this fails. Time queued for a `hold` does not count. |
 | `hold` | name | | Something only one run at a time may use, such as a shared test environment: `hold: desk-1`. See "Holds" below. |
+| `notify` | mapping | | What the run's conversation is told about this entry: `{waits, waits_text, done, done_text}`, over the step file's `notify` key by key; works on every kind of entry. See [Messages to the person](#messages-to-the-person). |
 | `inner` | `true` | | Another process runs here, in the agent of this entry's `role` (a nested run). With `role`, and optionally `timeout`, `on_fail`, `retries`, `after`, `detour`; nothing else. See "Nested runs" below. |
+
+## Messages to the person
+
+With a messenger set up ([chat adapters](plugins.md#chat-adapters)), flowd itself tells the run's
+conversation three things. Each can be turned off and worded with a template:
+
+| Message | When | Switch | Default |
+|---|---|---|---|
+| waits | the run comes to need the person: its current entry is a human step, an agent's `flow wait --human`, a bare `inner`, or the run stopped for the person | `notify.waits` of the step file or the entry | on — `<run.id> waits for you: <note>` |
+| done | an entry's status turns `done` (not `skipped` or `failed`) | `notify.done` of the step file or the entry | off — `<run.id>: <step.id> done[: <note>]` |
+| end | a root run ends, if it has a conversation; the conversation is closed after it either way | `notify.end` of the process | on — `<run.id> is done`, `<run.id> was stopped[: <reason>]` |
+
+```yaml
+# steps/plan.md
+---
+summary: The lead writes the plan
+notify: {waits_text: "{{run.title}}: план ждёт тебя — {{note}}", done: true, done_text: "План готов: {{note}}"}
+---
+```
+
+```yaml
+# processes/weekly.yaml
+notify: {end: true, done_text: "Неделя {{vars.week}} посчитана", stopped_text: "{{run.id}} остановлен: {{reason}}"}
+steps:
+  - {id: apply, sh: './apply', notify: {done: true, done_text: "Применено: {{note}}"}}
+```
+
+Texts are templates, as in prompts:
+
+| Path | Value |
+|---|---|
+| `run.id`, `run.process`, `run.n`, `run.iteration`, `run.date`, `run.title` | the run (`run.title` is `vars.title`, empty when unset) |
+| `vars.<name>` | the run's vars |
+| `step.id`, `step.summary` | the entry (the summary is the step file's, empty for others) |
+| `note` | waits: the wait's note, else the stop reason, else the step's summary; done: the report's note; stopped: the reason |
+| `reason` | the run's reason (stopped, stopped for the person), empty otherwise |
+
+A text that cannot be rendered (a missing var) falls back to the default and flowd logs which
+placeholder was missing, so a typo never silences a notice. An entry's `notify` overrides its step
+file's key by key. A nested run posts into its root's conversation with its own settings; its end is
+not posted (the root goes on). What agents write themselves (`flow say`) is the prompt's business.
 
 ## How a run moves
 

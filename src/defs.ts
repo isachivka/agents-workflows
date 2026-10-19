@@ -41,6 +41,32 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** a skill as Claude Code and Codex name it: `deliver`, or `plugin:skill` */
 const SKILL_RE = /^[A-Za-z0-9][\w.-]*(:[A-Za-z0-9][\w.-]*)?$/;
 
+const NOTIFY = new Set(["waits", "waits_text", "done", "done_text"]);
+const PROCESS_NOTIFY = new Set(["end", "done_text", "stopped_text"]);
+const camel = (k: string) => k.replace(/_(\w)/g, (_m, c: string) => c.toUpperCase());
+
+/** `notify:` of a step or an entry (`process: false`), or of a process; errors name where a misplaced key belongs. */
+function parseNotify(raw: unknown, at: string, err: (m: string) => void, process = false): Dict | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObj(raw)) { err(`${at}notify must be a mapping`); return undefined; }
+  const keys = process ? PROCESS_NOTIFY : NOTIFY;
+  const out: Dict = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!keys.has(k)) {
+      if (process && NOTIFY.has(k)) err(`${at}notify.${k} belongs to a step's or an entry's notify, not the process's`);
+      else if (!process && PROCESS_NOTIFY.has(k)) err(`${at}notify.${k} belongs to the process's notify (the run's end)`);
+      else err(`${at}notify: unknown key ${k}`);
+      continue;
+    }
+    if (k.endsWith("_text")) {
+      if (typeof v !== "string" || !v.trim()) err(`${at}notify.${k} must be a text`);
+      else out[camel(k)] = v;
+    } else if (typeof v !== "boolean") err(`${at}notify.${k} must be true or false`);
+    else out[k] = v;
+  }
+  return out;
+}
+
 export function parseStep(id: string, text: string, source = ""): StepDef {
   const errors: string[] = [];
   if (!NAME_RE.test(id)) errors.push(`step id ${id} must match ${NAME_RE}`);
@@ -54,13 +80,14 @@ export function parseStep(id: string, text: string, source = ""): StepDef {
   } catch (e) {
     errors.push(`frontmatter: ${message(e)}`);
   }
-  for (const k of Object.keys(fm)) if (k !== "summary" && k !== "skills") errors.push(`unknown key ${k}`);
+  for (const k of Object.keys(fm)) if (k !== "summary" && k !== "skills" && k !== "notify") errors.push(`unknown key ${k}`);
+  const notify = parseNotify(fm.notify, "", (m) => errors.push(m));
   if (typeof fm.summary !== "string" || !fm.summary.trim()) errors.push("summary is required");
   const skills = fm.skills ?? [];
   if (!Array.isArray(skills) || !skills.every((x) => typeof x === "string" && SKILL_RE.test(x))) errors.push("skills must be a list of skill names (deliver, plugin:skill)");
   if (!m[2].trim()) errors.push("body is empty");
   if (errors.length) throw new DefError(errors);
-  return { id, summary: String(fm.summary).trim(), body: m[2].trim(), skills: skills as string[], source };
+  return { id, summary: String(fm.summary).trim(), body: m[2].trim(), skills: skills as string[], ...(notify ? { notify } : {}), source };
 }
 
 export function splitStep(text: string): { summary: string; body: string; skills: string[] } {
@@ -78,8 +105,8 @@ export function splitStep(text: string): { summary: string; body: string; skills
   return { summary, body: m[2].trim(), skills };
 }
 
-export const PROCESS_KEYS = new Set(["description", "cwd", "workspace", "terminal", "repeat", "max_runs", "triggers", "roles", "steps"]);
-export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner"]);
+export const PROCESS_KEYS = new Set(["description", "cwd", "workspace", "terminal", "repeat", "max_runs", "triggers", "roles", "steps", "notify"]);
+export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner", "notify"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
 const knownEvent = (type: string, ctx: DefCtx) => ctx.eventTypes.has(type) || /^signal\.[a-z0-9.-]+$/.test(type);
@@ -263,6 +290,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       waitFor, onFail, retries: retries as number, after, detour: detour === true, timeoutMs, delayMs,
       sh, cwd: sh !== undefined && typeof r.cwd === "string" ? r.cwd : undefined,
       hold: typeof r.hold === "string" ? r.hold : undefined,
+      ...(r.notify !== undefined ? { notify: parseNotify(r.notify, `${at}: `, err) } : {}),
     });
   }
 
@@ -289,8 +317,9 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       err(`${e.id}: ${e.step ? `step ${e.step}` : "text"} uses {{event.*}}, but only an agent step or action with wait_for (or the first entry of a non-repeating run an on: trigger started) gets an event`);
     }
   }
+  const notify = parseNotify(raw.notify, "", err, true);
   if (errors.length) throw new DefError(errors);
-  return { name, description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number,
+  return { name, description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number, ...(notify ? { notify } : {}),
     workspace: typeof raw.workspace === "string" && raw.workspace.trim() ? raw.workspace.trim() : undefined,
     terminal: terminal as Process["terminal"], triggers, roles, entries, source };
 }

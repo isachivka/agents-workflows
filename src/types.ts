@@ -6,6 +6,11 @@ export type OnFail = "retry" | "human" | "end" | { goto: string };
 /** inner: another process runs here in the role's agent (a nested run) */
 export type EntryKind = "agent" | "human" | "action" | "wait" | "delay" | "inner";
 
+/** What a run says in its conversation about an entry: `notify:` in a step file or a process entry */
+export interface Notify { waits?: boolean; waitsText?: string; done?: boolean; doneText?: string }
+/** What a run says about its own end: `notify:` of a process */
+export interface ProcessNotify { end?: boolean; doneText?: string; stoppedText?: string }
+
 export interface Entry {
   id: string;
   kind: EntryKind;
@@ -28,6 +33,8 @@ export interface Entry {
   cwd?: string;
   /** a name only one open run at a time may stand on (`hold: desk-1`); the others queue */
   hold?: string;
+  /** overrides the step file's notify, key by key */
+  notify?: Notify;
 }
 
 /** name: the agterm session name, a template over run and role (default "{{run.id}} {{role}}") */
@@ -51,6 +58,7 @@ export interface Process {
   triggers: Trigger[];
   roles: Record<string, Role>;
   entries: Entry[];
+  notify?: ProcessNotify;
   source: string;
 }
 
@@ -58,6 +66,7 @@ export interface StepDef {
   id: string; summary: string; body: string;
   /** skills the agent should have loaded for this step: named in the line typed to it */
   skills: string[];
+  notify?: Notify;
   source: string;
 }
 
