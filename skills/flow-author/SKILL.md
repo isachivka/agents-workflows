@@ -58,6 +58,8 @@ From the installed copy of this skill, the repo is
 | a Codex agent instead of Claude | `spawn: codex --dangerously-bypass-approvals-and-sandbox` on the role; it gets `$flow` and the step's skills as `$name`, its trust question answered. No `do: compact` for it, and it needs `terminal: agterm` |
 | run the agents headless, without agterm | `terminal: zmx` on the process: each role runs in a zmx session `flows-<process>-<n>-<role>-<k>` (`workspace:` and a role's `name:` do not apply); the run's terminal button attaches it in agterm. Turn tracking needs `flow install`'s Claude hooks. The agent keeps running after the run ends unless the last step has it run `zmx kill "${FLOW_SESSION#zmx:}"` (docs/processes.md) |
 | the person decides on something an agent wrote (a plan, a report) | the prompt says: `flow say "<what you need from them>" --file <abs path>.html`, then `flow wait --human --note "…"` and end the turn; their answer arrives in the session. See "Talking to the person" below |
+| tell the person a step is done, in your words | `notify: {done: true, done_text: "…{{note}}"}` in the step file's frontmatter or on the entry |
+| no "waits for you" for one step, or no "is done" for a process | `notify: {waits: false}` on the step or entry; `notify: {end: false}` on the process |
 | tell the person the result of a mechanical step | in the `sh`: `r=$(./do-it) && echo "$r" && flow say --run "$FLOW_RUN" "Done: $r"` |
 | close the agent's terminal at the end | the last step's prompt says: after a successful `flow done`, run `agtermctl workspace delete --target "$AGTERM_WORKSPACE_ID"` (with `max_runs` > 1 or a shared `workspace:`: `agtermctl session close --target "$AGTERM_SESSION_ID"`); on failure leave it open. See the recipe in docs/processes.md |
 
@@ -134,7 +136,10 @@ a topic in one Telegram group, opened by the run's first message. A nested run u
 
 - **flowd writes there by itself**: "`<run>` waits for you: …" when the run reaches a human step, a
   `flow wait --human` or stops for the person, and "`<run>` is done / was stopped" at the end. Do not
-  make steps announce those.
+  make steps announce those. Switch and word them with `notify`: on a step file or an entry
+  `{waits, waits_text, done, done_text}` (`done` — "this step is done" — is off by default), on the
+  process `{end, done_text, stopped_text}`; texts take `{{run.*}}`, `{{vars.*}}`, `{{step.*}}`,
+  `{{note}}`, `{{reason}}` (docs/processes.md, "Messages to the person").
 - **An agent writes** with `flow say "…" [--file …]`; an `sh` entry with `flow say --run "$FLOW_RUN" "…"`.
   Write that into the prompt where it matters — a report, a decision, a result — not every step.
   An `.html` file arrives as a link when flowd serves reports (`FLOWS_REPORTS_URL`), else as a file.

@@ -100,7 +100,8 @@ A nested run writes into the conversation of the run it works for. `--file` atta
 HTML report); the path is made absolute here and read by flowd. Prints `sent`.
 
 What the person writes back in that conversation is typed into your session once your turn has
-ended, as `<name> (<messenger>): <text>`. To wait for it, end your turn with
+ended: `<name> wrote in the run's <messenger> conversation (<run>):`, the text, and a line saying to
+answer with `flow say`. A turn that ends without one gets a single reminder. To wait for it, end your turn with
 `flow wait --human --note "…"`.
 
 When flowd serves reports (`FLOWS_REPORTS_URL`, see [`flow publish`](#flow-publish)), an `.html`

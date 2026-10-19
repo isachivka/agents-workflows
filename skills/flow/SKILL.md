@@ -51,8 +51,10 @@ wrote (a plan, a report), send it with `flow say --file`, say in one line what y
 then `flow wait --human --note "…"` and end your turn. With reports served, an HTML file arrives as
 a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
 
-Their answer arrives in this session as `<name> (telegram): <text>` — any time they write in the
-topic, not only after you asked. Answer back with `flow say` (they read Telegram, not this terminal),
+Their message arrives in this session as `<name> wrote in the run's telegram conversation (<run>):`,
+the text, and a line telling you to answer with `flow say` — any time they write in the topic, not
+only after you asked. Always answer it with `flow say`, never only in the terminal: flowd reminds you
+once if a turn ends without it. Answer back with `flow say` (they read Telegram, not this terminal),
 and go on with the step once they decided. flowd itself tells them when the run waits for them and
 when it ends: do not repeat that. `flow say` fails with `no chat is set up` when there is no
 messenger: then ask in the terminal as usual.
