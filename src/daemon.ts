@@ -140,6 +140,9 @@ export class Flowd {
   private translator: Translator;
   reports: Reports | undefined;
   private notices: Promise<unknown> = Promise.resolve();
+  // a person's message in the outbox (by row), then, once typed, the run whose agent owes an answer
+  private chatRows = new Map<number, { run: string; role: string; from: string; adapter: string }>();
+  private awaiting = new Map<string, { role: string; from: string; adapter: string; session: string }>();
   private opening = new Map<string, Promise<string>>(); // a root run's conversation being opened
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
 
@@ -352,6 +355,14 @@ export class Flowd {
 
   private async sessionTurn(session: string, status: SessionStatus): Promise<Result> {
     this.store.setSessionStatus(session, status, this.now());
+    if (status === "completed") {
+      // a turn that took the person's message ended with no `flow say`: one reminder, then it is theirs to notice
+      for (const [run, w] of this.awaiting) {
+        if (w.session !== session) continue;
+        this.awaiting.delete(run);
+        this.store.enqueue(run, w.role, `You did not answer ${w.from}'s message in ${w.adapter}. Answer with \`flow say "…"\` — they do not read this terminal.`, null, this.now());
+      }
+    }
     for (const r of this.store.openRuns()) {
       if (Object.values(r.roles).includes(session)) await this.apply(r.id, { kind: "session", session, status });
     }
@@ -819,7 +830,11 @@ export class Flowd {
       const where = top.status !== "running" ? `${top.id} is ${top.status}` : `${top.id} is at ${cur?.id ?? "nothing"} (${cur?.kind ?? "no step"})`;
       return reply(`no agent is on a step now: ${where}. Write again when one is`);
     }
-    this.store.enqueue(top.id, cur.role, `${m.from} (${adapter}): ${m.text}`, null, this.now());
+    // the agent is told plainly where the person is, or it answers in a terminal nobody reads
+    const row = this.store.enqueue(top.id, cur.role,
+      `${m.from} wrote in the run's ${adapter} conversation (${top.id}):\n${m.text}\n↳ ${m.from} reads ${adapter}, not this terminal: answer with \`flow say "…"\`.`,
+      null, this.now());
+    this.chatRows.set(row, { run: top.id, role: cur.role, from: m.from, adapter });
     void this.flush();
   }
 
@@ -844,6 +859,7 @@ export class Flowd {
     const run = q.run ? this.store.getRun(q.run) : q.session ? this.store.runBySession(q.session)?.run : undefined;
     if (!run) return { error: q.run ? `no run ${q.run}` : q.session ? "no open run is bound to this session" : "no session: run this inside a flow session, or pass --run" };
     if (q.file && !existsSync(q.file)) return { error: `no file ${q.file}` };
+    this.awaiting.delete(run.id);
     let m: { text: string; file?: string } = { text: q.text, ...(q.file ? { file: q.file } : {}) };
     if (q.file && this.reports && /\.html?$/i.test(q.file)) {
       // a page reads better as a link than as a download
@@ -1103,6 +1119,11 @@ export class Flowd {
         if (await this.termOf(session).userInput(session)) continue; // the line stays queued; retried on the next flush
         await this.termOf(session).type(session, this.lineFor(run, row));
         this.store.markSent(row.id, this.now());
+        const chat = this.chatRows.get(row.id);
+        if (chat) {
+          this.chatRows.delete(row.id);
+          this.awaiting.set(chat.run, { role: chat.role, from: chat.from, adapter: chat.adapter, session });
+        }
         this.lastTyped.set(session, this.now());
         if (row.entry_id) void this.submit({ type: "entry.delivered", run: row.run_id, entry: row.entry_id, data: {}, source: "flowd" });
       } catch (e) {
