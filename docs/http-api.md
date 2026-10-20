@@ -24,7 +24,7 @@ pages out. The web UI and the
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/processes` | | `[{name, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, path, workspace, terminal, roleDefs, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after, waitMs, sh, timeoutMs, retries, hold, with, waitWith, waitWhere, text, cwd, skills}`; `roleDefs`: `[{name, agent: claude|codex|other, beside, cwd}]`; paths under the home directory start with `~`; `with` is a plugin action's arguments, `waitWith`/`waitWhere` the wait's conditions; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
+| GET | `/api/processes` | | `[{name, label, valid, errors, description, repeat, maxRuns, cwd, triggers, roles, path, workspace, terminal, roleDefs, entries, openRuns, triggerErrors}]`, every file in `processes/`, each entry `{id, kind, role, waitFor, detour, step, summary, do, onFail, after, waitMs, sh, timeoutMs, retries, hold, with, waitWith, waitWhere, text, cwd, skills}`; `roleDefs`: `[{name, agent: claude|codex|other, beside, cwd}]`; paths under the home directory start with `~`; `with` is a plugin action's arguments, `waitWith`/`waitWhere` the wait's conditions; `triggerErrors` lists `"<type>: <error>"` for each of its trigger subscriptions that fails |
 | GET | `/api/processes/:name` | | `{name, path, text, mtime, errors, object}` (`object`: the parsed YAML, or `null`) |
 | PUT | `/api/processes/:name` | `{text, mtime}` or `{object, mtime}` | `{mtime}`. `mtime` is the one the edit was based on, `null` for a new file. `object` is re-serialised (comments lost). |
 | DELETE | `/api/processes/:name` | `?mtime=` | `{}` |
@@ -57,9 +57,10 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
 | POST | `/api/runs/:id/roles/:role/restore` | | `{session}`; reopens the role's conversation in a new agterm session and focuses it: Claude with `<spawn> --resume <id>` (found in `~/.claude/projects`), Codex with `<spawn> resume <id>` (found in `~/.codex/sessions`), by the step lines flowd typed into it; an open session is just focused. The run does not change. 409 when the role is not Claude or Codex in agterm, or no conversation is found |
 
-`RunSummary`: `{id, process, iteration, status, reason, current, currentStatus, currentKind,
+`RunSummary`: `{id, name, label, process, iteration, status, reason, current, currentStatus, currentKind,
 waitingOn, roles, vars, needsYou, agentWait, waitUntil, parent, child, heldBy, queue, resumable, created, updated, plan}`, where `created` and
-`updated` are ms, when the run was created and last saved, `plan` lists every entry as
+`updated` are ms, when the run was created and last saved, `name` what a person calls the run
+(`<title> · <label>`, else `<label> · DD.MM HH:MM`), `label` its process's `label` (else its name), `plan` lists every entry as
 `{id, kind, role, detour, waitFor, status, step, summary, do, startedAt, note, onFail, after, waitMs, sh, child}`
 (`summary`: the step's summary, `null` for actions and waits; `onFail`: `"human"`, `"retry"`,
 `"end"` or `{goto}`; `after`: `{goto}` or `null`), `agentWait` is `{note, human, since}` while the

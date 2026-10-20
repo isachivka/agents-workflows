@@ -89,6 +89,14 @@ export function parts(text: string, max = TEXT): string[] {
   return out;
 }
 
+/** A topic name fits 128 characters by cutting what comes before its last " · " (the title), not the label after it. */
+const fit = (name: string) => {
+  if (name.length <= NAME) return name;
+  const at = name.lastIndexOf(" · ");
+  const tail = at > 0 && name.length - at < NAME / 2 ? name.slice(at) : "";
+  return `${name.slice(0, NAME - tail.length - 1)}…${tail}`;
+};
+
 const where = (address: string) => {
   const [chat, topic] = address.split("/").map(Number);
   return { chat, topic };
@@ -98,10 +106,13 @@ export default {
   name: "telegram",
   chat: {
     async open(run, ctx) {
-      const name = `${run.id.replace("#", " #")}${run.title ? ` · ${run.title}` : ""}`;
       const chat = config(ctx).chat;
-      const topic = await call(api(ctx).createForumTopic(chat, name.length > NAME ? `${name.slice(0, NAME - 1)}…` : name));
+      const topic = await call(api(ctx).createForumTopic(chat, fit(run.name)));
       return `${chat}/${topic.message_thread_id}`;
+    },
+    async rename(address, name, ctx) {
+      const { chat, topic } = where(address);
+      await call(api(ctx).editForumTopic(chat, topic, { name: fit(name) }));
     },
     async post(address, m, ctx) {
       const { chat, topic } = where(address);

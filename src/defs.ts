@@ -105,7 +105,7 @@ export function splitStep(text: string): { summary: string; body: string; skills
   return { summary, body: m[2].trim(), skills };
 }
 
-export const PROCESS_KEYS = new Set(["description", "cwd", "workspace", "terminal", "repeat", "max_runs", "triggers", "roles", "steps", "notify"]);
+export const PROCESS_KEYS = new Set(["label", "description", "cwd", "workspace", "terminal", "repeat", "max_runs", "triggers", "roles", "steps", "notify"]);
 export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner", "notify"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
@@ -133,6 +133,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   const maxRuns = raw.max_runs ?? 1;
   if (!Number.isInteger(maxRuns) || (maxRuns as number) < 1) err("max_runs must be an integer >= 1");
 
+  if (raw.label !== undefined && (typeof raw.label !== "string" || !raw.label.trim())) err("label must be a few words");
   if (raw.workspace !== undefined && (typeof raw.workspace !== "string" || !raw.workspace.trim())) err("workspace must be a name");
   const terminal = raw.terminal ?? "agterm";
   if (terminal !== "agterm" && terminal !== "zmx") err("terminal must be agterm or zmx");
@@ -319,7 +320,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   }
   const notify = parseNotify(raw.notify, "", err, true);
   if (errors.length) throw new DefError(errors);
-  return { name, description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number, ...(notify ? { notify } : {}),
+  return { name, ...(typeof raw.label === "string" ? { label: raw.label.trim() } : {}), description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number, ...(notify ? { notify } : {}),
     workspace: typeof raw.workspace === "string" && raw.workspace.trim() ? raw.workspace.trim() : undefined,
     terminal: terminal as Process["terminal"], triggers, roles, entries, source };
 }

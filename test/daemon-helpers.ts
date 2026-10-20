@@ -94,7 +94,8 @@ let n = 0;
 export default {
   name: "fakechat",
   chat: {
-    async open(run: any) { await new Promise((r) => setTimeout(r, 5)); (g.__flowsChat ??= []).push("open " + run.id + " " + (run.title ?? "")); return "T" + ++n; },
+    async open(run: any) { await new Promise((r) => setTimeout(r, 5)); (g.__flowsChat ??= []).push("open " + run.id + " " + (run.title ?? "")); (g.__flowsChatNames ??= []).push(run.name); return "T" + ++n; },
+    async rename(address: string, name: string) { (g.__flowsChat ??= []).push("rename " + address + " " + name); },
     async post(address: string, m: any) { if (g.__flowsChatFail) throw new Error("no rights"); (g.__flowsChat ??= []).push("post " + address + " " + m.text + (m.file ? " +" + m.file : "")); },
     async close(address: string, end: any) { (g.__flowsChat ??= []).push("close " + address + " " + end.outcome); },
   },
@@ -104,7 +105,9 @@ export default {
 export const CHAT_ON = { "plugins/fakechat.ts": CHAT_PLUGIN, "plugins.yaml": "fakechat: {}\n" };
 export const chatLog = (): string[] => ((globalThis as any).__flowsChat ??= []);
 export const chatCtx = (): any => (globalThis as any).__flowsChatCtx;
-export const resetChat = (fail = false) => { (globalThis as any).__flowsChat = []; (globalThis as any).__flowsChatFail = fail; };
+/** the names flowd opened conversations with */
+export const chatNames = (): string[] => ((globalThis as any).__flowsChatNames ??= []);
+export const resetChat = (fail = false) => { (globalThis as any).__flowsChat = []; (globalThis as any).__flowsChatNames = []; (globalThis as any).__flowsChatFail = fail; };
 /** A login provider: `?ok=1&id=<user>` passes, anything else is refused. */
 export const LOGIN_PLUGIN = `export default {
   name: "fakelogin",

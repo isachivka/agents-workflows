@@ -29,6 +29,7 @@ const answers: Record<string, unknown> = {
   sendMessage: { message_id: 1, date: 0, chat: { id: -100, type: "supergroup" } },
   sendDocument: { message_id: 2, date: 0, chat: { id: -100, type: "supergroup" } },
   closeForumTopic: true,
+  editForumTopic: true,
 };
 const server = createServer((req, res) => {
   let body = "";
@@ -61,14 +62,19 @@ const ctx: PluginCtx = {
 const chat = telegram.chat;
 const json = (i: number) => JSON.parse(calls[i].body);
 
-test("a run's topic is named after it and its address is chat/topic", async () => {
+test("a run's topic is named after it, a long title cut and the label kept; its address is chat/topic", async () => {
   calls.length = 0;
-  assert.equal(await chat.open({ id: "review#12", process: "review", title: "A long title ".repeat(12) }, ctx), "-100/77");
+  const title = "A long title ".repeat(12);
+  assert.equal(await chat.open({ id: "review#12", process: "review", title, name: `${title} · Review` }, ctx), "-100/77");
   assert.equal(calls[0].method, "createForumTopic");
   assert.equal(json(0).chat_id, -100);
   assert.equal(json(0).name.length, 128);
-  assert.ok(json(0).name.startsWith("review #12 · A long title"));
-  await assert.rejects(chat.open({ id: "broken#1", process: "broken" }, ctx), /not enough rights to manage topics: make the bot an admin of the group with "Manage topics"/);
+  assert.ok(json(0).name.startsWith("A long title"));
+  assert.ok(json(0).name.endsWith("… · Review"), json(0).name);
+  await chat.rename!("-100/77", "Short · Review", ctx);
+  assert.equal(calls[1].method, "editForumTopic");
+  assert.deepEqual([json(1).chat_id, json(1).message_thread_id, json(1).name], [-100, 77, "Short · Review"]);
+  await assert.rejects(chat.open({ id: "broken#1", process: "broken", name: "broken · 01.01 00:00" }, ctx), /not enough rights to manage topics: make the bot an admin of the group with "Manage topics"/);
 });
 
 test("a long text goes as several messages into the topic; a file as a document with the text as caption", async () => {
@@ -126,7 +132,7 @@ test("only an allowed user's text in a topic of the group reaches flowd", async 
 test("without a token the plugin does nothing; chat calls say what to set up", async () => {
   const bare = { ...ctx, config: {} };
   telegram.start(bare);
-  await assert.rejects(chat.open({ id: "p#1", process: "p" }, bare), /telegram needs token, chat \(the group's id\) and users/);
+  await assert.rejects(chat.open({ id: "p#1", process: "p", name: "p" }, bare), /telegram needs token, chat \(the group's id\) and users/);
 });
 
 const CALLBACK = "https://flows.example.net/auth/telegram";

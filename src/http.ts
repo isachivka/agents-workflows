@@ -70,7 +70,7 @@ function listProcesses(f: Flowd) {
   return fileNames(join(f.home, "processes"), ".yaml").map((name) => {
     const p = f.defs.processes[name];
     return {
-      name, valid: Boolean(p), errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
+      name, label: p?.label ?? null, valid: Boolean(p), errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
       repeat: p?.repeat ?? false, maxRuns: p?.maxRuns ?? 1, cwd: p?.cwd ?? "",
       triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
       path: defPath(f, "process", name), workspace: p?.workspace ?? name, terminal: p?.terminal ?? "agterm",

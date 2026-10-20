@@ -154,9 +154,10 @@ for what goes through it.
 
 ```ts
 chat: {
-  open(run: { id, process, title? }, ctx): Promise<string>,              // → the conversation's address
+  open(run: { id, process, title?, name }, ctx): Promise<string>,        // → the conversation's address
   post(address, msg: { text: string; file?: string }, ctx): Promise<void>, // file: a local path
   close(address, end: { outcome: "done" | "stopped" }, ctx): Promise<void>,
+  rename?(address, name, ctx): Promise<void>,                             // optional
 }
 ```
 
@@ -166,6 +167,9 @@ chat: {
   stored with the adapter's name, so after a switch a run opens a new conversation.
 - **Addresses.** `open` returns a string the adapter can post to later and recognise in incoming
   messages; flowd stores it per root run (a nested run uses its root's) and never parses it.
+- **Names.** `name` is what a person calls the run ([`label`](processes.md)): `<title> · <label>`, or
+  `<label> · DD.MM HH:MM` without a title. When a root run's title comes or changes while its
+  conversation is open, flowd calls `rename` with the new name, if the adapter has it.
 - **Incoming.** The adapter calls `ctx.message({address, text, from})` for each message it accepts;
   it filters who may write (its config) and what (text only, say).
 - **Failures.** A throw from `open` or `post` fails the `flow say` that caused it, with the error;
@@ -196,7 +200,8 @@ Setup:
 
 | | |
 |---|---|
-| `open` | `createForumTopic`, named `<process> #<n> · <title>` (cut to 128 characters). Address `<chat>/<topic id>`. |
+| `open` | `createForumTopic`, named after the run (`name`; past 128 characters the title is cut, the label after it kept). Address `<chat>/<topic id>`. |
+| `rename` | `editForumTopic` with the new name, cut the same way. |
 | `post` | `sendMessage` into the topic as plain text (no Markdown parsing to fail), cut into messages of 4096 characters at a line break. With a file: `sendDocument`, the text as its caption when it fits in 1024 characters, else a message first. |
 | `close` | `closeForumTopic`. |
 | incoming | A message in the group, in a topic, from a user in `users`: its `text` or `caption`. A message from anyone else is logged and ignored. Messages sent while flowd was down arrive at its next start (Telegram keeps them for a day). |

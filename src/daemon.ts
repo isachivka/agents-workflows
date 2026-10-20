@@ -73,7 +73,8 @@ export interface PlanItem {
 }
 
 export interface RunSummary {
-  id: string; process: string; iteration: number; status: string; reason: string | null;
+  /** what a person calls it (runName), and its process (`label:`, else the name) */
+  id: string; name: string; label: string; process: string; iteration: number; status: string; reason: string | null;
   current: string | null; currentStatus: string | null; currentKind: string | null; waitingOn: string | null;
   roles: Record<string, string | null>; vars: Record<string, string>; needsYou: boolean;
   agentWait: { note: string; human: boolean; since: number } | null;
@@ -90,6 +91,20 @@ export interface RunSummary {
   resumable: string[];
   created: number; updated: number;
   plan: PlanItem[];
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+/**
+ * What a person calls a run: its title first (`<title> · <label>`), else `<label> · DD.MM HH:MM`, when it
+ * was created in local time — a sync is known by its day, not its number. The label is the process's
+ * `label:`, else its name.
+ */
+export function runName(run: RunState, label: string | undefined, created: number): string {
+  const what = label ?? run.process;
+  const title = run.vars.title?.trim();
+  if (title) return `${title} · ${what}`;
+  const d = new Date(created);
+  return `${what} · ${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 const AGTERM_STATUSES = new Set(["active", "completed", "idle", "blocked"]);
@@ -812,7 +827,7 @@ export class Flowd {
     let p = this.opening.get(root.id);
     if (!p) {
       p = (async () => {
-        const address = await a.chat.open({ id: root.id, process: root.process, title: root.vars.title }, a.ctx);
+        const address = await a.chat.open({ id: root.id, process: root.process, title: root.vars.title, name: this.nameOf(root) }, a.ctx);
         this.store.setChat(root.id, a.name, address);
         return address;
       })().finally(() => this.opening.delete(root.id));
@@ -1011,6 +1026,12 @@ export class Flowd {
         const note = run.entries[e.id]?.note ?? "";
         post(this.notice(n.doneText, run, e, note, `${run.id}: ${e.id} done${note ? `: ${note}` : ""}`));
       }
+    }
+    // a title that came or changed renames the root's open conversation
+    const named = a.chat.rename && !run.parent && open(run) && before && before.vars.title !== run.vars.title && this.store.chatOf(run.id);
+    if (named && named.adapter === a.name) {
+      const name = this.nameOf(run);
+      says.push(() => a.chat.rename!(named.address, name, a.ctx) as Promise<unknown>);
     }
     if (open(before) && !open(run)) {
       const had = this.store.chatOf(run.id);
@@ -1483,13 +1504,18 @@ export class Flowd {
     };
   }
 
+  /** What a person calls the run: see runName. */
+  nameOf(run: RunState): string {
+    return runName(run, this.defs.processes[run.process]?.label, this.store.runTimes(run.id)?.created ?? this.now());
+  }
+
   runSummary(run: RunState): RunSummary {
     const p = this.defs.processes[run.process];
     const cur = run.current ? p?.entries.find((x) => x.id === run.current) : undefined;
     const s = cur ? run.entries[cur.id] : undefined;
     const times = this.store.runTimes(run.id);
     return {
-      id: run.id, process: run.process, iteration: run.iteration, status: run.status, reason: run.reason ?? null,
+      id: run.id, name: this.nameOf(run), label: p?.label ?? run.process, process: run.process, iteration: run.iteration, status: run.status, reason: run.reason ?? null,
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
       waitingOn: s?.status === "waiting" && !s.queued ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,

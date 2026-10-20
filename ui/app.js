@@ -16,10 +16,10 @@ const Loading = ({ error }) => (error ? html`<p class="err-box">${error.message}
 const Pill = ({ tone, children }) => html`<span class="pill ${tone}">${children}</span>`;
 const isOpen = (r) => r.status !== "done" && r.status !== "stopped";
 
-/** "pr-loop · run 4", plus "· round 2" once a repeating run is past its first round. */
-const runName = (r) => `${runLabel(r.id)}${r.iteration > 1 ? ` · ${t("run.round", { n: r.iteration })}` : ""}`;
-/** The small line over a card's headline: the repo, then the run when the headline is its title. */
-const cardLabel = (r, about) => [repoName(r.vars), about ? runName(r) : null].filter(Boolean).join(" · ");
+/** A run without a title: "Daily errors · 20.10 06:00" (flowd's name), plus "· round 2" once a repeating run is past its first round. */
+const runName = (r) => `${r.name || runLabel(r.id)}${r.iteration > 1 ? ` · ${t("run.round", { n: r.iteration })}` : ""}`;
+/** The small line over a card's headline: the repo, then the process when the headline is the run's title. */
+const cardLabel = (r, about) => [repoName(r.vars), about ? r.label : null].filter(Boolean).join(" · ");
 const SlackLink = ({ vars, cls = "btn" }) => {
   const url = slackUrl(vars);
   return url && html`<a class=${cls} href=${url} target="_blank" rel="noreferrer">${t("act.openSlack")}<${Icon} name="external" /></a>`;
@@ -193,8 +193,8 @@ function FinishedRow({ r, now, sessions }) {
   const gone = goneAgents(r, sessions);
   return html`<div class="row">
     <${Pill} tone=${r.status === "done" ? "ok" : "calm"}>${t(`st.${r.status}`)}<//>
-    <a href="#/run/${enc(r.id)}"><b>${runTitle(r) || runLabel(r.id)}</b></a>
-    ${(runTitle(r) || repoName(r.vars)) && html`<span class="muted small">${[repoName(r.vars), runTitle(r) ? runLabel(r.id) : null].filter(Boolean).join(" · ")}</span>`}
+    <a href="#/run/${enc(r.id)}"><b>${runTitle(r) || runName(r)}</b></a>
+    ${(runTitle(r) || repoName(r.vars)) && html`<span class="muted small">${[repoName(r.vars), runTitle(r) ? r.label : null].filter(Boolean).join(" · ")}</span>`}
     ${last && html`<span class="muted grow note" title=${last.note}>— ${last.note}</span>`}
     ${prUrl(r.vars) && html`<a class="small" href=${prUrl(r.vars)} target="_blank" rel="noreferrer">PR<${Icon} name="external" /></a>`}
     <${SlackLink} vars=${r.vars} cls="small" />
@@ -227,10 +227,10 @@ function Run({ arg: id }) {
     <a class="back small" href="#/runs">← ${t("nav.now")}</a>
     <section class="head">
       <div>
-        <div class="title-row"><h1 title=${runTitle(r) ? r.vars.title : undefined}>${runTitle(r) || runLabel(r.id)}</h1>
+        <div class="title-row"><h1 title=${runTitle(r) ? r.vars.title : undefined}>${runTitle(r) || runName(r)}</h1>
           <${Pill} tone=${s ? "you" : r.status === "done" ? "ok" : r.status === "running" ? "work" : "calm"}>${s ? t("st.needs-human") : t(`st.${r.status}`)}<//></div>
         <${ProcessLine} name=${r.process} />
-        <p class="muted small">${repoName(r.vars) ? `${repoName(r.vars)} · ` : ""}${runTitle(r) ? `${runLabel(r.id)} · ` : ""}${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
+        <p class="muted small">${repoName(r.vars) ? `${repoName(r.vars)} · ` : ""}${runLabel(r.id)} · ${t("run.round", { n: r.iteration })} · ${t("run.started", { when: moment(r.created, now) })}</p>
       </div>
       ${live && html`<div class="acts">
         <${PingButton} r=${r} setErr=${setErr} />
@@ -498,7 +498,7 @@ function Processes() {
     <section class="head"><div><h1>${t("nav.processes")}</h1><p class="lead">${t("procs.lead")}</p></div></section>
     ${data.length === 0 && html`<p class="muted">${t("procs.empty")}</p>`}
     <div class="stack">${[...data].sort((a, b) => Number(!a.valid) - Number(!b.valid)).map((p) => html`<article class="box" key=${p.name}>
-      <h3><a href="#/process/${enc(p.name)}">${p.name}</a></h3>
+      <h3><a href="#/process/${enc(p.name)}">${p.label || p.name}</a>${p.label && html` <span class="muted small mono">${p.name}</span>`}</h3>
       ${p.description && html`<p class="muted">${p.description}</p>`}
       ${p.valid && html`<p class="small muted">${tn("proc.steps", p.entries.length)} · ${processFacts(p).join(" · ")}</p>`}
       <${DefErrors} p=${p} />
@@ -542,7 +542,7 @@ function ProcessView({ arg: name, sub, rest }) {
   return html`
     <a class="back small" href="#/processes">← ${t("proc.all")}</a>
     <section class="head">
-      <div><h1>${p.name}</h1>${p.description && html`<p class="lead">${p.description}</p>`}
+      <div><h1>${p.label || p.name}</h1>${p.label && html`<p class="muted small mono">${p.name}</p>`}${p.description && html`<p class="lead">${p.description}</p>`}
         ${p.valid && html`<div class="facts">${processFacts(p).map((f) => html`<span class="fact">${f}</span>`)}</div>`}</div>
       <div class="acts">
         ${p.valid && html`<button class="btn primary" onClick=${() => go("start", p.name)}>${t("act.start")}</button>`}

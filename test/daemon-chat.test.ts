@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { CHAT_ON, STEP_FILES, chatCtx, chatLog, makeHome, proc, resetChat, settle, startFlowd } from "./daemon-helpers.ts";
+import { CHAT_ON, STEP_FILES, chatCtx, chatLog, chatNames, makeHome, proc, resetChat, settle, startFlowd } from "./daemon-helpers.ts";
 
 const TWO = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n");
 const OUTER = proc("  - {step: b, role: pm}\n  - {inner: true, role: pm}\n  - {step: c, role: pm}\n", "", "outer");
@@ -295,3 +295,45 @@ test("the run's end can be turned off (the conversation still closes) and worded
   await broken.f.close();
 });
 
+
+const stamp = (ms: number) => {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+test("a conversation is named after the run: its title and the process label, else the label and when it was created", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...proc("  - {step: b, role: pm}\n", "label: Daily errors\n", "sync"), ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  t.agterm.addSession("S2");
+  await t.f.submit(start("sync", { pm: "S1" }));
+  await t.f.submit(start("p", { pm: "S2" }, { vars: { title: "Fix the thing" } }));
+  await settle(t.f);
+  assert.deepEqual(await t.f.say({ run: "sync#1", text: "x" }), {});
+  assert.deepEqual(await t.f.say({ run: "p#1", text: "y" }), {});
+  assert.deepEqual(chatNames(), [`Daily errors · ${stamp(1_000_000)}`, "Fix the thing · p"]);
+  assert.equal(t.f.runSummary(t.f.store.getRun("sync#1")!).name, `Daily errors · ${stamp(1_000_000)}`);
+  await t.f.close();
+});
+
+test("a title that comes or changes renames the open conversation once; a nested run's or a closed one is not renamed", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...OUTER, ...LEAF, ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("outer", { pm: "S1" }, { inner: ["leaf"] }));
+  await settle(t.f);
+  await t.f.submit({ type: "run.set", run: "outer#1", data: { vars: { title: "Before" } }, source: "cli" });
+  await settle(t.f);
+  assert.deepEqual(chatLog(), [], "no conversation yet: nothing to rename");
+  assert.deepEqual(await t.f.say({ run: "outer#1", text: "hi" }), {});
+  await t.f.submit({ type: "run.set", run: "outer#1", data: { vars: { title: "After" } }, source: "cli" });
+  await t.f.submit({ type: "run.set", run: "outer#1", data: { vars: { other: "1" } }, source: "cli" });
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(done("S1"));
+  await settle(t.f);
+  await t.f.submit({ type: "run.set", run: "leaf#1", data: { vars: { title: "Leaf" } }, source: "cli" });
+  await settle(t.f);
+  assert.deepEqual(chatLog(), ["open outer#1 Before", "post T1 hi", "rename T1 After · outer"]);
+  await t.f.close();
+});

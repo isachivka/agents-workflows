@@ -408,6 +408,7 @@ test("processes and steps carry what the reading view shows", async () => {
     "steps/c.md": "---\nsummary: c\nskills: [gh-cli]\n---\nDo C\n",
     "processes/p.yaml": `description: d
 cwd: /tmp
+label: Daily errors
 workspace: W
 roles:
   pm: {spawn: claude}
@@ -422,7 +423,7 @@ steps:
   });
   const [p] = (await s.call("GET", "/api/processes")).body;
   assert.equal(p.path, join(s.home, "processes", "p.yaml"));
-  assert.deepEqual([p.workspace, p.terminal], ["W", "agterm"]);
+  assert.deepEqual([p.workspace, p.terminal, p.label], ["W", "agterm", "Daily errors"]);
   assert.deepEqual(p.roleDefs, [
     { name: "pm", agent: "claude", beside: null, cwd: null },
     { name: "peer", agent: "codex", beside: "pm", cwd: "/var" },

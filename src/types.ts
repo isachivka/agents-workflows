@@ -47,6 +47,8 @@ export interface Trigger { cron?: string; on?: string; where: Dict; with: Dict }
 
 export interface Process {
   name: string;
+  /** what a person calls it, in their language (`label:`); the UI and run names use it over `name` */
+  label?: string;
   description: string;
   cwd: string;
   repeat: boolean;

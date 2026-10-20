@@ -67,7 +67,7 @@ Names every process and agent uses the same way, so the UI and plugins can rely 
 |---|---|---|
 | `pr` | the URL of the run's pull request (GitHub) or merge request | the UI's "Open the PR" button on every run card and the run page, and the repository name (without its owner) in the small line over a card's title; `gh.checks`, `gh.merged`, `gh.review` waits (as their default PR); a run started by a `gh` trigger gets it automatically |
 | `slack_thread` | the link to the Slack thread about this work, once there is one | the UI's "Slack thread" button on run cards, on a human step and in Finished today |
-| `title` | what the run works on, in words: the PR's title, or the task's before there is a PR | the UI, to tell runs apart. flowd fills it from the PR (through the `gh` plugin's `title`) when `pr` is set and re-reads it every 10 minutes, so a renamed PR renames the run; a run started by a `gh` trigger has it from the event. Before a PR, an agent sets it: `flow set title="…"` |
+| `title` | what the run works on, in words: the PR's title, or the task's before there is a PR | the UI and the run's name in the messenger, to tell runs apart. flowd fills it from the PR (through the `gh` plugin's `title`) when `pr` is set and re-reads it every 10 minutes, so a renamed PR renames the run; a run started by a `gh` trigger has it from the event. Before a PR, an agent sets it: `flow set title="…"` |
 
 Agents set `pr` the moment the work has a PR (`flow set pr=<url>`), and `slack_thread` the moment
 a Slack thread about it appears, whether or not the step asks; the `flow` skill tells them so, and
@@ -80,6 +80,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
+| `label` | string | the process name | What a person calls it, in their language (`Frontend errors, daily`). The UI shows it for the process, and a run's name is built from it: `<title> · <label>`, or `<label> · DD.MM HH:MM` (when the run was created) for a run without a title. A messenger's conversation for the run carries that name. |
 | `description` | string | required | One line, shown in the UI. |
 | `cwd` | string | required | Working directory of spawned agents. `~` is expanded. |
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
