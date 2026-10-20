@@ -149,7 +149,7 @@ topics), each run can have a conversation with the person, opened by its first m
   an HTML file arrives as a link that opens in the browser ([`flow publish`](cli.md#flow-publish)). Only what it sends goes
   there, never its terminal output.
 - **flowd writes** when the run comes to need the person (a human step, a `flow wait --human`, a
-  run stopped for the person: `<run> waits for you: <what>`), opening the conversation if needed;
+  run stopped for the person: `<run> waits for you: <what>`, and the PR link on the next line when the run has one), opening the conversation if needed;
   when a run that has one ends (`<run> is done`, `<run> was stopped: <reason>`), then closes it; and,
   when a step asks for it, when an entry is done. Each is switched and worded per step, entry and
   process: [Messages to the person](processes.md#messages-to-the-person). A run with nothing to say
@@ -158,10 +158,12 @@ topics), each run can have a conversation with the person, opened by its first m
   is on and is typed into its session like a step line — once its turn has ended and nobody types
   in the terminal — as `<name> wrote in the run's <messenger> conversation (<run>):`, the text, and a
   line saying that an answer goes with `flow say` (the person reads the messenger, not the terminal)
-  and that a go-ahead needs none. flowd never pushes for an answer: an approval ends the talk. When
-  the run's current entry has no agent (an `sh`, a wait, a human step, a paused or
-  stopped run), flowd answers that in the conversation and drops the message; a human step is closed
-  from the UI or `flow done --human`, not by a message. A message to an ended run is answered
+  and that a go-ahead needs none. flowd never pushes for an answer: an approval ends the talk. The
+  person may write at any time: when the current entry has no agent (an `sh`, a wait, a human
+  step, a paused or stopped run), the message goes to the agent whose step started last, else to any
+  agent the run has, with a line saying the run is not at its step, so it answers and does not close
+  anything; a human step is closed from the UI or `flow done --human`, not by a message. Only a run
+  with no agent yet (queued, or nothing spawned) answers `<run> has no agent yet` and drops it. A message to an ended run is answered
   `<run> has ended`.
 - **Nested runs** use their root's conversation: a tracker run with a PR run inside is one piece
   of work for one agent, so one conversation; a message reaches the agent of the run on top.

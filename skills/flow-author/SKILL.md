@@ -146,9 +146,9 @@ a topic in one Telegram group, opened by the run's first message. A nested run u
   Write that into the prompt where it matters — a report, a decision, a result — not every step.
   An `.html` file arrives as a link when flowd serves reports (`FLOWS_REPORTS_URL`), else as a file.
 - **The person's replies** in the topic are typed into the agent of the run's current step once its
-  turn ends (`<name> (telegram): …`). With no agent on the step (an `sh`, a wait, a human step) the bot
-  answers that and drops the message. So a step that waits for a decision keeps its agent on it:
-  `flow wait --human`, not a separate human step, when the answer should reach the agent.
+  turn ends. With no agent on the step (an `sh`, a wait, a human step) they go to the agent that
+  worked last, told the run is not at its step: it answers but cannot close the person's step. So a
+  step that waits for a decision the agent should act on keeps its agent on it: `flow wait --human`.
 - `flow say` fails with `no chat is set up` without a messenger: a prompt that relies on it should
   say what to do then (ask in the terminal).
 - One bot per flowd: a second host needs its own bot (the same group is fine).

@@ -182,7 +182,7 @@ conversation three things. Each can be turned off and worded with a template:
 
 | Message | When | Switch | Default |
 |---|---|---|---|
-| waits | the run comes to need the person: its current entry is a human step, an agent's `flow wait --human`, a bare `inner`, or the run stopped for the person | `notify.waits` of the step file or the entry | on — `<run.id> waits for you: <note>` |
+| waits | the run comes to need the person: its current entry is a human step, an agent's `flow wait --human`, a bare `inner`, or the run stopped for the person | `notify.waits` of the step file or the entry | on — `<run.id> waits for you: <note>`, then `vars.pr` on its own line when set |
 | done | an entry's status turns `done` (not `skipped` or `failed`) | `notify.done` of the step file or the entry | off — `<run.id>: <step.id> done[: <note>]` |
 | end | a root run ends, if it has a conversation; the conversation is closed after it either way | `notify.end` of the process | on — `<run.id> is done`, `<run.id> was stopped[: <reason>]` |
 

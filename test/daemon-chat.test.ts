@@ -89,6 +89,17 @@ async function finishB(t: Awaited<ReturnType<typeof startFlowd>>) {
   await settle(t.f);
 }
 
+test("the default waits notice carries the run's PR link", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...HUMAN, ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("h", { pm: "S1" }, { vars: { pr: "https://github.com/o/r/pull/7" } }));
+  await settle(t.f);
+  await finishB(t);
+  assert.equal(chatLog().at(-1), "post T1 h#1 waits for you: c\nhttps://github.com/o/r/pull/7");
+  await t.f.close();
+});
+
 test("a run that comes to need the person says so, opening its conversation; once, not again while it waits", async () => {
   resetChat();
   const t = await startFlowd(makeHome({ ...STEP_FILES, ...HUMAN, ...CHAT_ON }));
@@ -173,17 +184,34 @@ test("a message in a root's conversation goes to the nested run's agent", async 
   await t.f.close();
 });
 
-test("with no agent on a step, or an ended run, the message is answered and not typed", async () => {
+test("at the person's step the agent that worked last gets the message, told not to close the step", async () => {
   resetChat();
   const t = await startFlowd(makeHome({ ...STEP_FILES, ...HUMAN, ...CHAT_ON }));
   t.agterm.addSession("S1");
   await t.f.submit(start("h", { pm: "S1" }));
   await settle(t.f);
   await finishB(t);
+  await tell(t, "T1", "the PR link?");
+  const typed = t.agterm.typed().at(-1)!;
+  assert.ok(typed.startsWith("type S1 Ann wrote in the run's fakechat conversation (h#1):\nthe PR link?"), typed);
+  assert.match(typed, /The run is at c, not a step of yours: answer, and do not run flow done or flow failed for it\.$/);
+  await t.f.close();
+});
+
+test("before any agent has worked, the run's agent gets the message; with none, or an ended run, it is answered", async () => {
+  resetChat();
+  const t = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n  - {step: b, role: pm}\n", "", "h"), ...CHAT_ON }));
+  t.agterm.addSession("S1");
+  await t.f.submit(start("h", { pm: "S1" }));
+  await t.f.submit(start("h", {}));
+  await settle(t.f);
+  await t.f.say({ run: "h#1", text: "hi" });
+  await t.f.say({ run: "h#2", text: "hi" });
   await tell(t, "T1", "hello?");
-  assert.equal(chatLog().at(-1), "post T1 no agent is on a step now: h#1 is at c (human). Write again when one is");
-  assert.deepEqual(t.f.store.pendingOutbox(), []);
-  await t.f.submit({ type: "entry.report", data: { run: "h#1", entry: "c", outcome: "done", by: "human" }, source: "cli" });
+  assert.ok(t.agterm.typed().at(-1)!.includes("\nhello?\n"));
+  await tell(t, "T2", "anyone?");
+  assert.equal(chatLog().at(-1), "post T2 h#2 has no agent yet: it is queued. Write again once one has started");
+  await t.f.submit({ type: "run.stop", run: "h#1", data: {}, source: "ui" });
   await settle(t.f);
   await tell(t, "T1", "and now?");
   assert.equal(chatLog().at(-1), "post T1 h#1 has ended");

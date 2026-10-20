@@ -854,16 +854,32 @@ export class Flowd {
     for (let c = this.childOf(top); c; c = this.childOf(top)) top = c;
     const cur = this.currentEntry(top);
     const st = cur ? top.entries[cur.id] : undefined;
-    if (top.status !== "running" || cur?.kind !== "agent" || !cur.role || !top.roles[cur.role] || st?.status === "pending") {
-      const where = top.status !== "running" ? `${top.id} is ${top.status}` : `${top.id} is at ${cur?.id ?? "nothing"} (${cur?.kind ?? "no step"})`;
-      return reply(`no agent is on a step now: ${where}. Write again when one is`);
+    const onStep = top.status === "running" && cur?.kind === "agent" && cur.role && top.roles[cur.role] && st?.status !== "pending" ? cur.role : undefined;
+    // the person writes whenever they like: between steps (theirs, a wait) the agent that worked last answers,
+    // else any agent the run has
+    const role = onStep ?? this.lastAgent(top) ?? Object.keys(top.roles).find((r) => top.roles[r]);
+    if (!role) {
+      const where = top.status !== "running" ? `it is ${top.status}` : `it is at ${cur?.id ?? "nothing"} (${cur?.kind ?? "no step"})`;
+      return reply(`${top.id} has no agent yet: ${where}. Write again once one has started`);
     }
+    const off = onStep ? "" : `\n↳ The run is at ${cur?.id ?? "no step"}, not a step of yours: answer, and do not run flow done or flow failed for it.`;
     // the agent is told plainly where the person is, or it answers in a terminal nobody reads; not that it
     // must answer: a go-ahead needs none, and a forced "ok, going on" is noise
-    this.store.enqueue(top.id, cur.role,
-      `${m.from} wrote in the run's ${adapter} conversation (${top.id}):\n${m.text}\n↳ ${m.from} reads ${adapter}, not this terminal: when you answer, answer with \`flow say "…"\`. A go-ahead needs no answer — just carry on.`,
+    this.store.enqueue(top.id, role,
+      `${m.from} wrote in the run's ${adapter} conversation (${top.id}):\n${m.text}\n↳ ${m.from} reads ${adapter}, not this terminal: when you answer, answer with \`flow say "…"\`. A go-ahead needs no answer — just carry on.${off}`,
       null, this.now());
     void this.flush();
+  }
+
+  /** The role whose agent step started last in this iteration and whose session is still bound. */
+  private lastAgent(run: RunState): string | undefined {
+    let best: { role: string; at: number } | undefined;
+    for (const e of this.defs.processes[run.process]?.entries ?? []) {
+      const at = run.entries[e.id]?.startedAt;
+      if (e.kind !== "agent" || !e.role || !run.roles[e.role] || at === undefined || run.entries[e.id].status === "pending") continue;
+      if (!best || at >= best.at) best = { role: e.role, at };
+    }
+    return best?.role;
   }
 
   /** The open nested run standing on this run's current inner entry. */
@@ -1052,7 +1068,8 @@ export class Flowd {
       const n = cur ? this.notifyOf(cur) : {};
       if (n.waits !== false) {
         const note = this.waitsFor(run);
-        post(this.notice(n.waitsText, run, cur, note, `${run.id} waits for you: ${note}`));
+        // the person acts from the message (a phone): the PR is one tap away
+        post(this.notice(n.waitsText, run, cur, note, `${run.id} waits for you: ${note}${run.vars.pr ? `\n${run.vars.pr}` : ""}`));
       }
     }
     // ponytail: one chain for every run's notices, so a run's "done", "waits" and "end" keep their order; per run if it gets slow
