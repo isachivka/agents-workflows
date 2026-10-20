@@ -66,6 +66,9 @@ export const nudgeText = (run: RunState, entry: string) =>
 export const reminderText = (entry: string) =>
   `▶ flow: step ${entry} is not closed — \`flow done\`, \`flow failed --note "…"\`, or \`flow wait --note "…"\` if you are waiting on purpose`;
 
+/** Why a run stopped when its process went invalid or missing; a tick once it is back lets the run go on. */
+export const missingProcess = (name: string) => `process ${name} is invalid or missing`;
+
 /** YYYY-MM-DD in local time: the day a person would name */
 const localDate = (ms: number) => {
   const d = new Date(ms);
@@ -156,10 +159,12 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
 
   const p = ctx.process;
   if (!p) {
-    const reason = `process ${run.process} is invalid or missing`;
+    const reason = missingProcess(run.process);
     if (run.reason !== reason) halt(reason);
     return done();
   }
+  // the definition is back (fixed, or restored): a run it stopped goes on
+  if (run.status === "needs-human" && run.reason === missingProcess(run.process)) resume();
   for (const e of p.entries) run.entries[e.id] ??= blankEntry();
   for (const r of Object.keys(p.roles)) if (!(r in run.roles)) run.roles[r] = null;
   const byId = (id: string) => p.entries.find((e) => e.id === id);

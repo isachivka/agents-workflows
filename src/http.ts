@@ -70,7 +70,7 @@ function listProcesses(f: Flowd) {
   return fileNames(join(f.home, "processes"), ".yaml").map((name) => {
     const p = f.defs.processes[name];
     return {
-      name, label: p?.label ?? null, valid: Boolean(p), errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
+      name, label: p?.label ?? null, valid: Boolean(p) && !f.defs.invalid[`process:${name}`], errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
       repeat: p?.repeat ?? false, maxRuns: p?.maxRuns ?? 1, cwd: p?.cwd ?? "",
       triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
       path: defPath(f, "process", name), workspace: p?.workspace ?? name, terminal: p?.terminal ?? "agterm",
@@ -92,7 +92,7 @@ function listProcesses(f: Flowd) {
 function listSteps(f: Flowd) {
   const procs = Object.values(f.defs.processes);
   return fileNames(join(f.home, "steps"), ".md").map((id) => ({
-    id, valid: Boolean(f.defs.steps[id]), errors: f.defs.invalid[`step:${id}`] ?? [], summary: f.defs.steps[id]?.summary ?? "",
+    id, valid: Boolean(f.defs.steps[id]) && !f.defs.invalid[`step:${id}`], errors: f.defs.invalid[`step:${id}`] ?? [], summary: f.defs.steps[id]?.summary ?? "",
     usedBy: procs.filter((p) => p.entries.some((e) => e.step === id)).map((p) => p.name),
   }));
 }

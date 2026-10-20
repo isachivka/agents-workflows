@@ -57,7 +57,12 @@ export class FakeAgterm implements Terminal {
   async reloadHooks(): Promise<void> { this.calls.push("hooks reload"); }
   screens = new Map<string, string>();
   onPress: ((session: string, keys: string) => void) | undefined;
-  async text(session: string): Promise<string> { return this.screens.get(session) ?? ""; }
+  /** how many reads of a screen fail first, as agterm's for a session not drawn yet */
+  unrealized = 0;
+  async text(session: string): Promise<string> {
+    if (this.unrealized > 0) { this.unrealized--; throw new Error("session not realized"); }
+    return this.screens.get(session) ?? "";
+  }
   async press(session: string, keys: string): Promise<void> {
     this.calls.push(`press ${session} ${JSON.stringify(keys)}`);
     this.onPress?.(session, keys);

@@ -127,7 +127,8 @@ From the installed copy of this skill, the repo is
 - A step whose agent talks to another (peer chat) ends each turn waiting for the answer with
   `flow wait --note "…"`; the answer arrives as a new turn.
 - Edits reach running runs at their next step. Removing the entry a run stands on stops that run
-  for the user.
+  for the user. An edit with an error is not taken: open runs keep the last good version, new starts
+  are refused until `flow check` passes. Quote a YAML value with a colon in it (`label: "A: b"`).
 
 ## Talking to the person
 

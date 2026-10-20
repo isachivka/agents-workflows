@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, previouses, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
@@ -137,6 +137,38 @@ test("a definition edit that removes the current entry stops the run at the next
   writeFileSync(join(home, "processes/p.yaml"), "description: [");
   f.reloadDefs();
   assert.match((await f.submit(start("p"))).error!, /no valid process p: yaml/);
+  await f.close();
+});
+
+test("an edit that breaks a process or a step is not taken: open runs go on with the last good one, starts are refused", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const { f } = await startFlowd(home);
+  await f.submit(start("p"));
+  await settle(f);
+  writeFileSync(join(home, "processes/p.yaml"), "label: Errors: daily\n");
+  writeFileSync(join(home, "steps/c.md"), "no frontmatter");
+  f.reloadDefs();
+  await f.tickNow();
+  assert.deepEqual([f.store.getRun("p#1")!.status, f.defs.processes.p.entries.length, f.defs.steps.c.summary], ["running", 2, "c"]);
+  assert.ok(f.defs.invalid["process:p"] && f.defs.invalid["step:c"]);
+  assert.match((await f.submit(start("p"))).error!, /no valid process p: yaml/);
+  await f.close();
+});
+
+test("a run stopped because its process was invalid or missing goes on once it is back", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const { f } = await startFlowd(home);
+  await f.submit(start("p"));
+  await settle(f);
+  const good = readFileSync(join(home, "processes/p.yaml"), "utf8");
+  rmSync(join(home, "processes/p.yaml"));
+  f.reloadDefs();
+  await f.tickNow();
+  assert.equal(f.store.getRun("p#1")!.reason, "process p is invalid or missing");
+  writeFileSync(join(home, "processes/p.yaml"), good);
+  f.reloadDefs();
+  await f.tickNow();
+  assert.deepEqual([f.store.getRun("p#1")!.status, f.store.getRun("p#1")!.reason], ["running", undefined]);
   await f.close();
 });
 
@@ -623,6 +655,20 @@ test("when Yes cannot be selected, the run stops with the reason and resumes on 
   await f.submit(status("S1", "active"));
   run = f.store.getRun("p#1")!;
   assert.deepEqual([run.status, run.startBlocked], ["running", undefined]);
+  await f.close();
+});
+
+test("a session not realized yet is read again, and its trust dialog answered", async () => {
+  const home = makeHome({ ...STEP_FILES, ...TWO });
+  const agterm = new FakeAgterm();
+  agterm.unrealized = 3;
+  agterm.screens.set("S1", DIALOG(true));
+  agterm.onPress = (s, k) => { if (k === "\r") agterm.screens.set(s, "claude is up"); };
+  const { f } = await startFlowd(home, { agterm, claudeConfig: claudeConfig(home, ["/elsewhere"]), trustPollMs: 1 });
+  await f.submit(start("p"));
+  await settle(f);
+  assert.deepEqual(pressed(agterm), ['press S1 "\\r"']);
+  assert.equal(f.store.getRun("p#1")!.status, "running");
   await f.close();
 });
 

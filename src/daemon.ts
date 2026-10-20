@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Cron } from "croner";
 import { loadDefs, type DefCtx } from "./defs.ts";
-import { formatDuration, matches, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
+import { formatDuration, matches, missingProcess, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
@@ -287,6 +287,10 @@ export class Flowd {
   reloadDefs(): void {
     const before = this.defs;
     this.defs = loadDefs(this.home, this.plugins.eventTypes(), this.plugins.actionNames());
+    // an edit that does not parse or validate is not taken (a typo, a save halfway): open runs go on with
+    // the last good version; new starts are refused with the edit's errors
+    for (const [name, p] of Object.entries(before.processes)) if (!this.defs.processes[name] && this.defs.invalid[`process:${name}`]) this.defs.processes[name] = p;
+    for (const [id, s] of Object.entries(before.steps)) if (!this.defs.steps[id] && this.defs.invalid[`step:${id}`]) this.defs.steps[id] = s;
     // an edited prompt is translated ahead once the edits settle (the UI editor saves often)
     if (this.loaded && stepBodies(before) !== stepBodies(this.defs)) this.scheduleWarm(this.o.pretranslateDelayMs ?? 60_000);
     // A waiting entry whose wait_for was edited gets its watch armed again from the new definition.
@@ -686,10 +690,9 @@ export class Flowd {
   private async startRun(name: string, bind: Record<string, string>, trigger?: string, ev?: FlowEvent, vars: Record<string, string> = {},
     opts: { inner?: string[]; parent?: { run: string; entry: string } } = {}): Promise<Result> {
     const p = this.defs.processes[name];
-    if (!p) {
-      const why = this.defs.invalid[`process:${name}`];
-      return { error: `no valid process ${name}${why ? `: ${why.join("; ")}` : ""}` };
-    }
+    const why = this.defs.invalid[`process:${name}`];
+    // an invalid edit's last good version serves the runs it has, not new ones
+    if (!p || why) return { error: `no valid process ${name}${why ? `: ${why.join("; ")}` : ""}` };
     const chainError = this.chainError(name, opts.inner ?? []);
     if (chainError) return { error: chainError };
     let parent = opts.parent;
@@ -777,10 +780,8 @@ export class Flowd {
       if (!this.defs.processes[host]?.entries.some((e) => e.kind === "inner")) return `${host} has no inner step, so ${next} has nowhere to go`;
       if (next === "none") return i === chain.length - 1 ? undefined : "none must be the last of --inner";
       const p = this.defs.processes[next];
-      if (!p) {
-        const why = this.defs.invalid[`process:${next}`];
-        return `no valid process ${next}${why ? `: ${why.join("; ")}` : ""}`;
-      }
+      const why = this.defs.invalid[`process:${next}`];
+      if (!p || why) return `no valid process ${next}${why ? `: ${why.join("; ")}` : ""}`;
       if (p.repeat) return `${next} repeats (repeat: true), so it never ends and cannot run nested`;
       host = next;
     }
@@ -1115,7 +1116,7 @@ export class Flowd {
     await this.checkUnannounced();
     return this.enqueue(async () => {
       for (const run of this.store.openRuns()) {
-        if (run.status !== "running") continue;
+        if (run.status !== "running" && !(run.status === "needs-human" && run.reason === missingProcess(run.process))) continue;
         const res = step(run, { kind: "tick" }, this.ctxFor(run));
         if (res.error) continue;
         if (res.actions.length || JSON.stringify(res.run) !== JSON.stringify(run)) {
@@ -1275,9 +1276,17 @@ export class Flowd {
     };
     try {
       let skipped = false;
+      let unread: unknown; // the last read that failed: a session just made is not realized for a moment
       for (let i = 0; i < 30; i++) {
         if (i) await pause();
-        const screen = await read();
+        let screen: string;
+        try {
+          screen = await read();
+          unread = undefined;
+        } catch (e) {
+          unread = e;
+          continue;
+        }
         if (!skipped && isUpdate(screen)) {
           await this.termOf(session).press(session, "\x1b");
           this.log(`skipped Codex's update screen in ${session}`);
@@ -1288,6 +1297,7 @@ export class Flowd {
         // done once nothing more can come: the update screen is Codex's, and comes first
         if (!trust && (skipped || agent !== "codex")) return;
       }
+      if (unread) throw unread;
       // no dialog: the start watchdog covers any other hang
     } catch (e) {
       if (trust) await stop(`answer it (${msg(e)})`);

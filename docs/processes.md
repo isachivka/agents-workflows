@@ -328,6 +328,8 @@ An event type is known when a loaded plugin declares it (`gh.checks`), when it i
 - Edits apply to open runs from their next entry. An entry that is waiting picks up an edited
   `wait_for` at once. If the entry a run stands on was removed, the run goes `needs-human` with
   `entry X no longer exists`.
+- An edit with an error (a typo, a save halfway) is not taken: open runs go on with the last good
+  version of the process or step, new starts are refused with the errors until it is fixed.
 - A role added by an edit can be used by open runs.
 - The UI's process form re-serialises the YAML and loses comments. Its YAML tab saves the text
   as written. A save based on an older copy of the file is refused (`the file changed on disk`).

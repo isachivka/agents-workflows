@@ -128,8 +128,10 @@ background review, the user reading a PR) but did not say so.
 
 - Check: `flow check <name>` prints every problem, one per line. The messages are explained in
   [processes.md](processes.md#validation).
-- An invalid process cannot start, and its open runs stop within seconds (`needs-human`,
-  `process X is invalid or missing`). Fix the file; then use the run page's overrides to go on.
+- An invalid process cannot start. An edit that broke a process or a step that was valid is not
+  taken: its open runs go on with the last good version until the file is fixed. A process missing
+  since flowd started, or a deleted file, stops its open runs (`needs-human`, `process X is invalid
+  or missing`); they go on by themselves once the file is back and valid.
 
 ## `flow start` says a session is busy or already bound
 
