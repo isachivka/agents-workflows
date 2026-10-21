@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EMPTY_POLLS, checksOutcome, countedItems, parseReviewAnswer, pollOnce, pollRepo, reviewOutcome, makeGhPlugin, type Exec } from "../plugins/gh.ts";
+import { EMPTY_POLLS, MISSING_POLLS, checksOutcome, countedItems, parseReviewAnswer, pollOnce, pollRepo, reviewOutcome, makeGhPlugin, type Exec } from "../plugins/gh.ts";
 import type { PluginCtx, PluginEvent } from "../src/plugins.ts";
 
 const fake = (answers: Record<string, { code?: number; stdout?: string; stderr?: string }>): Exec & { calls: string[][]; cwds: (string | undefined)[] } => {
@@ -436,4 +436,24 @@ test("pollOnce review: a merged or closed PR ends the wait at once", async () =>
   assert.deepEqual(await pollOnce("review", "7", v("MERGED")), { emit: { outcome: "done", data: { state: "MERGED", merged: true, reviews: 0, comments: 0 } } });
   assert.deepEqual(await pollOnce("review", "7", v("CLOSED"), "0/0"), { emit: { outcome: "failed", data: { state: "CLOSED", merged: false, reviews: 0, comments: 0 } } });
   assert.deepEqual(await pollOnce("review", "7", v("OPEN")), { baseline: "0/0" });
+});
+
+test("pollOnce checks: a required check of the base's rulesets that never reported is pending, then failed", async () => {
+  const rules = JSON.stringify([{ type: "deletion" }, { type: "required_status_checks", parameters: { required_status_checks: [{ context: "lint" }, { context: "sonar" }] } }]);
+  const answers = {
+    "pr checks": { stdout: JSON.stringify([{ name: "lint", bucket: "pass" }]) },
+    "pr view": { stdout: JSON.stringify({ baseRefName: "main", url: "https://github.com/o/r/pull/7" }) },
+    "api repos/o/r/rules/branches/main": { stdout: rules },
+  };
+  const ex = fake(answers);
+  assert.deepEqual(await pollOnce("checks", "7", ex), { baseline: "m1" });
+  assert.deepEqual(ex.calls.at(-1), ["api", "repos/o/r/rules/branches/main"]);
+  assert.deepEqual(await pollOnce("checks", "7", ex, `m${MISSING_POLLS - 1}`),
+    { emit: { outcome: "failed", data: { failed: ["sonar (required, never reported)"], links: [""] } } });
+  // once it reports, the outcome is the checks' own
+  const all = fake({ ...answers, "pr checks": { stdout: JSON.stringify([{ name: "lint", bucket: "pass" }, { name: "sonar", bucket: "pass" }]) } });
+  assert.deepEqual(await pollOnce("checks", "7", all, "m3"), { emit: { outcome: "done", data: { failed: [], links: [] } } });
+  // no access to the rules: as before
+  const denied = fake({ ...answers, "api repos/o/r/rules/branches/main": { code: 1, stderr: "HTTP 403" } });
+  assert.deepEqual(await pollOnce("checks", "7", denied), { emit: { outcome: "done", data: { failed: [], links: [] } } });
 });

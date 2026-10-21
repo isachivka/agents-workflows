@@ -29,6 +29,28 @@ function json(out: { code: number; stdout: string; stderr: string }, what: strin
 
 /** Polls in a row with no checks at all before a PR counts as having none (a fresh PR has not registered them yet). */
 export const EMPTY_POLLS = 5;
+/** Polls in a row with the other checks settled but a required one never reported, before that counts as failed. */
+export const MISSING_POLLS = 45;
+
+/**
+ * The base branch's rulesets' required checks that have not reported on the PR. `gh pr checks --required`
+ * lists only checks that ran: one a skipped job never starts (SonarQube behind a failed setup) is
+ * missing from it, and the PR cannot merge. No access to the rules: none missing, as before.
+ */
+async function missingRequired(pr: string, names: string[], exec: Exec, cwd?: string): Promise<string[]> {
+  try {
+    const v = JSON.parse((await exec(["pr", "view", pr, "--json", "baseRefName,url"], cwd)).stdout) as { baseRefName: string; url: string };
+    const repo = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(v.url)?.[1];
+    if (!repo) return [];
+    const out = await exec(["api", `repos/${repo}/rules/branches/${encodeURIComponent(v.baseRefName)}`], cwd);
+    if (out.code !== 0) return [];
+    const rules = JSON.parse(out.stdout) as { type: string; parameters?: { required_status_checks?: { context: string }[] } }[];
+    const want = rules.flatMap((r) => (r.type === "required_status_checks" ? r.parameters?.required_status_checks ?? [] : []).map((c) => c.context));
+    return [...new Set(want)].filter((c) => !names.includes(c));
+  } catch {
+    return [];
+  }
+}
 
 export async function pollOnce(kind: "checks" | "merged" | "review", pr: string, exec: Exec, baseline?: string, cwd?: string):
   Promise<{ emit?: { outcome?: "done" | "failed"; data: Dict }; baseline?: string }> {
@@ -42,7 +64,16 @@ export async function pollOnce(kind: "checks" | "merged" | "review", pr: string,
       if (empty < EMPTY_POLLS) return { baseline: String(empty) };
     }
     const result = checksOutcome(rows);
-    return result ? { emit: result } : { baseline: "0" }; // checks exist: empty polls must start over
+    if (!result) return { baseline: "0" }; // checks exist: empty polls must start over
+    const missing = rows.length ? await missingRequired(pr, rows.map((r) => r.name), exec, cwd) : [];
+    if (missing.length) {
+      // baseline "m<n>": the polls in a row a required check has been missing
+      const n = Number(/^m(\d+)$/.exec(baseline ?? "")?.[1] ?? 0) + 1;
+      if (n < MISSING_POLLS) return { baseline: `m${n}` };
+      const failed = [...(result.data.failed as string[]), ...missing.map((c) => `${c} (required, never reported)`)];
+      return { emit: { outcome: "failed", data: { failed, links: [...(result.data.links as string[]), ...missing.map(() => "")] } } };
+    }
+    return { emit: result };
   }
   if (kind === "merged") {
     const { state } = json(await exec(["pr", "view", pr, "--json", "state"], cwd), "pr view") as { state: string };
