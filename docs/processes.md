@@ -67,6 +67,8 @@ Names every process and agent uses the same way, so the UI and plugins can rely 
 |---|---|---|
 | `pr` | the URL of the run's pull request (GitHub) or merge request | the UI's "Open the PR" button on every run card and the run page, and the repository name (without its owner) in the small line over a card's title; `gh.checks`, `gh.merged`, `gh.review` waits (as their default PR); a run started by a `gh` trigger gets it automatically |
 | `slack_thread` | the link to the Slack thread about this work, once there is one | the UI's "Slack thread" button on run cards, on a human step and in Finished today |
+| `issue` | the key of the run's issue in a tracker (`AB-123`), for steps' commands | the UI's issue button and the run's details, linked to `issue_url` |
+| `issue_url` | the link to that issue's page | the UI: the issue button on run cards and the run page, and `issue` in the details links there. Without it the UI takes the first variable holding a tracker-issue link (`…/browse/AB-123`) |
 | `title` | what the run works on, in words: the PR's title, or the task's before there is a PR | the UI and the run's name in the messenger, to tell runs apart. flowd fills it from the PR (through the `gh` plugin's `title`) when `pr` is set and re-reads it every 10 minutes, so a renamed PR renames the run; a run started by a `gh` trigger has it from the event. Before a PR, an agent sets it: `flow set title="…"` |
 
 Agents set `pr` the moment the work has a PR (`flow set pr=<url>`), and `slack_thread` the moment
@@ -562,6 +564,11 @@ under "Recently finished" the UI offers **Restore session**, which opens it agai
 `claude --resume` (`codex resume` for a Codex agent) in a new session. When the workspace is shared
 — `max_runs` above 1, or a `workspace:` other processes use too — close only your own session
 instead: `agtermctl session close --target "$AGTERM_SESSION_ID"`.
+
+A process that may run nested must not close the agent it borrowed: the run around it goes on in
+that session, and its next step finds the session closed (`role dev session closed`). Have the step
+check first: `flow ls --all | grep -q "^{{run.id}} .*↳"` succeeds for a nested run — with `--all`,
+since after `flow done` the run is no longer in plain `flow ls`.
 
 With `terminal: zmx` there is no window to close, and a finished agent keeps running headless until
 it exits. The last command ends it: its session inherits `ZMX_DIR` and `FLOW_SESSION`, so

@@ -13,6 +13,15 @@ export const repoName = (vars) => {
   return m ? m[1] : null;
 };
 
+/** An issue's page in a tracker (Jira: …/browse/KEY-12). src/cli.ts has the same rule. */
+export const isIssueUrl = (v) => /^https?:\/\/\S+\/browse\/[A-Z][A-Z0-9]*-\d+/.test(String(v));
+
+/** The run's issue page: the standard `issue_url` var, else the first var holding an issue link. */
+export const issueUrl = (vars) => {
+  if (vars && vars.issue_url && /^https?:\/\//.test(vars.issue_url)) return vars.issue_url;
+  return Object.values(vars || {}).find(isIssueUrl) || null;
+};
+
 /** A Slack thread link. src/cli.ts has the same rule. */
 export const isSlackUrl = (v) => /^https:\/\/[\w-]+\.slack\.com\/archives\//.test(String(v));
 

@@ -23,3 +23,9 @@ test("slackUrl: the slack_thread var first, else a Slack-thread-shaped var", () 
   assert.equal(P.slackUrl({ thread: "https://acme.slack.com/archives/C1/p2?thread_ts=1.2" }), "https://acme.slack.com/archives/C1/p2?thread_ts=1.2");
   assert.equal(P.slackUrl({ pr: "https://github.com/o/r/pull/1" }), null);
 });
+
+test("issueUrl: the issue_url var first, else a tracker-issue-shaped var; nothing else", () => {
+  assert.equal(P.issueUrl({ issue: "AB-1", issue_url: "https://acme.example.net/browse/AB-1" }), "https://acme.example.net/browse/AB-1");
+  assert.equal(P.issueUrl({ ticket: "https://acme.example.net/browse/AB-12?focus=1" }), "https://acme.example.net/browse/AB-12?focus=1");
+  assert.equal(P.issueUrl({ issue: "AB-1", pr: "https://github.com/o/r/pull/1" }), null);
+});

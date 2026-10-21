@@ -10,6 +10,8 @@ class CliError extends Error {}
 /** a GitHub pull request or a GitLab merge request URL; ui/pr.js has the same rule */
 const PR_URL = /^https?:\/\/\S+\/(pull|merge_requests)\/\d+/;
 const SLACK_URL = /^https:\/\/[\w-]+\.slack\.com\/archives\//;
+/** an issue's page in a tracker (Jira: …/browse/KEY-12); ui/pr.js has the same rule */
+const ISSUE_URL = /^https?:\/\/\S+\/browse\/([A-Z][A-Z0-9]*-\d+)/;
 
 const HELP = `flow — drive flows from an agent session or a terminal
 
@@ -207,6 +209,8 @@ export async function main(argv: string[]): Promise<number> {
         for (const [k, v] of Object.entries(vars)) {
           if (k !== "pr" && PR_URL.test(v)) process.stderr.write(`flow: hint: ${k} looks like a pull request — the standard name is pr (flow set pr=${v})\n`);
           if (k !== "slack_thread" && SLACK_URL.test(v)) process.stderr.write(`flow: hint: ${k} looks like a Slack thread — the standard name is slack_thread (flow set slack_thread=${v})\n`);
+          const key = k === "issue_url" ? null : ISSUE_URL.exec(v)?.[1];
+          if (key) process.stderr.write(`flow: hint: ${k} looks like an issue's page — the standard names are issue for its key and issue_url for the link (flow set issue=${key} issue_url=${v})\n`);
         }
         out("ok");
         return 0;
