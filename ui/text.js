@@ -36,6 +36,8 @@ const EN = {
   "now.lead.more.one": "One more works on its own — no need to look.", "now.lead.more.other": "{n} more work on their own — no need to look.",
   "now.lead.working.one": "One run works on its own — nothing needs you.", "now.lead.working.other": "{n} runs work on their own — nothing needs you.",
   "now.start": "Start a process…", "now.waiting": "Waiting for you", "now.working": "Working on their own",
+  "filter.button": "Processes", "filter.all": "all", "filter.some": "{n} hidden", "filter.showAll": "Show all",
+  "filter.hidden.one": "One run hidden", "filter.hidden.other": "{n} runs hidden", "filter.hiddenWait": "{n} of them wait for you", "filter.show": "show",
   "now.finished": "Finished today", "now.recent": "Finished lately", "now.older": "Show older", "now.noneToday": "Nothing finished today.", "now.empty": "Nothing has run yet.",
   "now.waitedFor": "waiting {d}", "now.stepOf": "Step {i} of {n}",
   "act.details": "Details", "act.terminal": "Agent terminal", "act.openTerminalOf": "Open {role}'s terminal",
@@ -135,6 +137,9 @@ const RU = {
   "now.lead.working.one": "{n} запуск работает сам — ты сейчас не нужен.", "now.lead.working.few": "{n} запуска работают сами — ты сейчас не нужен.",
   "now.lead.working.many": "{n} запусков работают сами — ты сейчас не нужен.", "now.lead.working.other": "{n} запуска работают сами — ты сейчас не нужен.",
   "now.start": "Запустить процесс…", "now.waiting": "Ждут тебя", "now.working": "Работают сами",
+  "filter.button": "Процессы", "filter.all": "все", "filter.some": "скрыто {n}", "filter.showAll": "Показать все",
+  "filter.hidden.one": "Скрыт {n} запуск", "filter.hidden.few": "Скрыто {n} запуска", "filter.hidden.many": "Скрыто {n} запусков", "filter.hidden.other": "Скрыто {n} запуска",
+  "filter.hiddenWait": "из них {n} ждут тебя", "filter.show": "показать",
   "now.finished": "Сегодня закончились", "now.recent": "Недавно закончились", "now.older": "Показать раньше", "now.noneToday": "Сегодня ничего не закончилось.",
   "now.empty": "Пока ничего не запускалось.", "now.waitedFor": "ждёт {d}", "now.stepOf": "Шаг {i} из {n}",
   "act.details": "Подробнее", "act.terminal": "Терминал агента", "act.openTerminalOf": "Открыть терминал {role}",
@@ -391,6 +396,12 @@ export function stacks(runs) {
     return { top, under };
   });
 }
+
+/** The process of a run id: `pr-loop#4` → "pr-loop". */
+export const processOf = (id) => id.slice(0, id.lastIndexOf("#") < 0 ? id.length : id.lastIndexOf("#"));
+
+/** A stack stays on the home screen unless every run in it is of a process the person hid. */
+export const pileShown = (pile, hidden) => [pile.top, ...pile.under].some((r) => !hidden.has(r.process));
 
 /** "then: <the step after the current one>", for the tab of a run under a nested one. */
 export function thenPhrase(r) {

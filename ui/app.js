@@ -3,10 +3,16 @@ import { api, useData, useNow, useRoute, go, attempt, focus, isUrl, enc, clean, 
 import { issueUrl, prUrl, repoName, slackUrl } from "./pr.js";
 import { t, tn, setLang, getLang, defaultLang, LANGS, describeRun, situation, currentEntry, entryPhrase, eventPhrase,
   eventSentence, entryBranch, progress, waitingSince, processFacts, roundsEnded, runTitle, duration, ago, clock, moment, runLabel, holdPhrase,
-  stacks, thenPhrase, handedBack, entryBadges, entryFacts, roleLine, entryWho } from "./text.js";
+  stacks, thenPhrase, handedBack, entryBadges, entryFacts, roleLine, entryWho, pileShown, processOf } from "./text.js";
 import { ProcessEditor, Steps, StepEditor } from "./editors.js";
 
 const LANG_KEY = "flows.lang";
+const HIDDEN_KEY = "flows.hiddenProcesses";
+/** The processes the person took off the home screen, kept in this browser only. */
+function savedHidden() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]")); } catch { return new Set(); }
+}
+
 function savedLang() {
   try { return localStorage.getItem(LANG_KEY) || defaultLang(navigator.language); } catch { return defaultLang(navigator.language); }
 }
@@ -46,19 +52,24 @@ function useRounds(runs, since) {
 }
 
 
-function Now() {
+function Now({ hidden, onHidden }) {
   const { data, error } = useData("/api/runs?all=1");
   const { data: sessions } = useData("/api/sessions", false);
   const now = useNow();
   const [older, setOlder] = useState(false);
+  const filter = useRef(null);
   const dayStart = new Date(now).setHours(0, 0, 0, 0);
-  const rounds = useRounds(data, dayStart);
+  const allRounds = useRounds(data, dayStart);
   if (!data) return html`<${Loading} error=${error} />`;
   // a run working inside another on the same agent stands for both: one card, the other a tab
-  const piles = stacks(data.filter(isOpen));
+  const allPiles = stacks(data.filter(isOpen));
+  const piles = allPiles.filter((x) => pileShown(x, hidden));
+  const off = allPiles.filter((x) => !pileShown(x, hidden));
+  const offWaiting = off.filter((x) => x.top.needsYou).length;
+  const rounds = allRounds.filter((round) => !hidden.has(processOf(round.run)));
   const waiting = piles.filter((x) => x.top.needsYou).sort((a, b) => waitingSince(a.top) - waitingSince(b.top));
   const working = piles.filter((x) => !x.top.needsYou);
-  const finished = data.filter((r) => !isOpen(r));
+  const finished = data.filter((r) => !isOpen(r) && !hidden.has(r.process));
   const today = finished.filter((r) => r.updated >= dayStart);
   // a repeating run's finished rounds sit among the finished runs, newest first
   const rows = [...(older ? finished.slice(0, 50) : today).map((r) => ({ at: r.updated, r })), ...rounds.map((round) => ({ at: round.at, round }))]
@@ -68,8 +79,10 @@ function Now() {
     : working.length ? tn("now.lead.working", working.length) : t("now.lead.calm");
   return html`
     <section class="head">
-      <div><h1>${t("now.title")}</h1><p class="lead">${data.length ? lead : t("now.empty")}</p></div>
-      <a class="btn" href="#/processes">${t("now.start")}</a>
+      <div><h1>${t("now.title")}</h1><p class="lead">${data.length ? lead : t("now.empty")}</p>
+        ${off.length > 0 && html`<p class=${`small ${offWaiting ? "you-text" : "muted"}`}>${tn("filter.hidden", off.length)}${offWaiting ? ` · ${t("filter.hiddenWait", { n: offWaiting })}` : ""}${" · "}<button class="link" onClick=${() => { if (filter.current) filter.current.open = true; }}>${t("filter.show")}</button></p>`}</div>
+      <div class="actions"><${ProcessFilter} hidden=${hidden} onHidden=${onHidden} det=${filter} />
+        <a class="btn" href="#/processes">${t("now.start")}</a></div>
     </section>
     ${waiting.length > 0 && html`<section>
       <h2><${Icon} name="you" />${t("now.waiting")} · ${waiting.length}</h2>
@@ -87,6 +100,19 @@ function Now() {
         : html`<${RoundRow} round=${x.round} now=${now} key=${`${x.round.run}/${x.round.iteration}`} />`))}</div>`}
       ${!older && finished.length > today.length && html`<button class="btn quiet" onClick=${() => setOlder(true)}>${t("now.older")}</button>`}
     </section>`}`;
+}
+
+/** Checkboxes, one per process: an unchecked one's runs leave the home screen. */
+function ProcessFilter({ hidden, onHidden, det }) {
+  const { data } = useData("/api/processes", false);
+  const flip = (name) => { const next = new Set(hidden); if (next.has(name)) next.delete(name); else next.add(name); onHidden(next); };
+  return html`<details class="filter" ref=${det}>
+    <summary class="btn">${t("filter.button")} · ${hidden.size ? t("filter.some", { n: hidden.size }) : t("filter.all")}</summary>
+    <div class="box filter-list">
+      ${(data || []).map((p) => html`<label class="check" key=${p.name}><input type="checkbox" checked=${!hidden.has(p.name)} onChange=${() => flip(p.name)} />
+        <span>${p.label || p.name}${p.label && html` <span class="muted small mono">${p.name}</span>`}</span></label>`)}
+      ${hidden.size > 0 && html`<button class="btn quiet" onClick=${() => onHidden(new Set())}>${t("filter.showAll")}</button>`}
+    </div></details>`;
 }
 
 function WaitingCard({ r, now }) {
@@ -751,8 +777,14 @@ function pageTitle(page, arg, runs) {
 function App() {
   const [page, arg, sub, rest] = useRoute();
   const [lang, setLangState] = useState(getLang());
+  const [hidden, setHidden] = useState(savedHidden);
   const { data: openRuns } = useData("/api/runs");
-  const waiting = (openRuns || []).filter((r) => r.needsYou).length;
+  // the tab's count and the favicon follow the home screen: a hidden process's runs are not counted
+  const waiting = (openRuns || []).filter((r) => r.needsYou && !hidden.has(r.process)).length;
+  const onHidden = (set) => {
+    try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set])); } catch { /* private window: the choice lasts this visit */ }
+    setHidden(set);
+  };
   const tab = TAB[page] || "now";
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -774,7 +806,7 @@ function App() {
         aria-current=${tab === k ? "page" : undefined}>${t(`nav.${k}`)}${k === "now" && waiting > 0 ? html`<span class="count">${waiting}</span>` : ""}</a>`)}</nav>
       <${LangSwitch} lang=${lang} onLang=${onLang} />
     </div></header>
-    <main class="wrap page"><${Page} arg=${arg} sub=${sub} rest=${rest} lang=${lang} onLang=${onLang} key=${`${page}/${arg || ""}/${sub === "step" ? "" : sub || ""}`} /></main>`;
+    <main class="wrap page"><${Page} arg=${arg} sub=${sub} rest=${rest} lang=${lang} onLang=${onLang} hidden=${hidden} onHidden=${onHidden} key=${`${page}/${arg || ""}/${sub === "step" ? "" : sub || ""}`} /></main>`;
 }
 
 render(html`<${App} />`, document.getElementById("app"));

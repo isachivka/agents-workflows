@@ -265,3 +265,12 @@ test("role lines and the panel's who line", () => {
   assert.equal(T.roleLine(ROLES[1]), "агент Codex · в правой половине рядом с dev · работает в /w");
   T.setLang("en");
 });
+
+test("pileShown and processOf: a stack leaves the home screen only when all its runs' processes are hidden", () => {
+  const top = { id: "pr#2", process: "pr" }, under = { id: "tracker#1", process: "tracker" };
+  assert.equal(T.pileShown({ top, under: [under] }, new Set(["tracker"])), true);
+  assert.equal(T.pileShown({ top, under: [under] }, new Set(["tracker", "pr"])), false);
+  assert.equal(T.pileShown({ top, under: [] }, new Set()), true);
+  assert.equal(T.processOf("reels-make#12"), "reels-make");
+  assert.equal(T.processOf("odd"), "odd");
+});

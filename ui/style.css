@@ -300,3 +300,16 @@ a.pstep.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--acce
   .meta .when { margin-left: 0; }
   .grid2 { grid-template-columns: 1fr; }
 }
+
+/* the home screen's process filter */
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.filter { position: relative; }
+.filter > summary { list-style: none; cursor: pointer; }
+.filter > summary::-webkit-details-marker { display: none; }
+.filter-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 3; min-width: 280px; max-width: min(420px, calc(100vw - 32px));
+  max-height: 60vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 6px; border-radius: 6px; cursor: pointer; }
+.check:hover { background: var(--chip); }
+.check input { width: 18px; height: 18px; margin: 0; }
+button.link { border: 0; background: none; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; }
+.you-text { color: var(--you-text); }

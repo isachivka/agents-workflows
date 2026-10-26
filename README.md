@@ -26,7 +26,8 @@ watch and take over at any time.
 - **A web UI** that names what each run works on (its PR or task title, and the repository), links
   its PR and Slack thread, says what waits for you
   and what each run is doing, which round a repeating run is on and what finished today, in
-  English or Russian; close human steps, retry, skip or step in by hand; read each process as a
+  English or Russian; hide whole processes from that page (a filter kept in the browser, with a line
+  saying how many runs it hides and whether any waits for you); close human steps, retry, skip or step in by hand; read each process as a
   story, with each step explained in a side panel (what it waits for, what it holds, its limits,
   where its files are) and its prompt translated into Russian by a local Codex model; edit
   processes and steps; jump to an agent's terminal in one click.
