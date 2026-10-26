@@ -15,6 +15,8 @@ export interface SpawnOpts {
   /** the agent's first prompt; empty: none (a resumed conversation) */
   prompt: string;
   workspace: string; name: string;
+  /** the agterm window, by name, to spawn into instead of the frontmost one */
+  window?: string;
   /** labels on the session (zmx) */
   labels?: Record<string, string>;
 }
@@ -85,10 +87,32 @@ export function realAgterm(
   opener = process.env.FLOWS_OPEN || "open",
   pollMs = 200,
 ): Agterm {
+  const windows = async (): Promise<{ id: string; name: string; open: boolean }[]> =>
+    JSON.parse(await run(bin, ["window", "list", "--json"]))?.result?.windows ?? [];
+  // one window per name, even when several spawns ask for it at once
+  const making = new Map<string, Promise<string>>();
+  const windowFor = (name: string): Promise<string> => {
+    let p = making.get(name);
+    if (!p) {
+      p = (async () => {
+        const all = await windows();
+        const open = all.find((w) => w.name === name && w.open);
+        if (open) return open.id;
+        // a closed window's sessions went with it: a fresh one, minimized, never raised over the person's
+        for (const w of all.filter((x) => x.name === name)) await run(bin, ["window", "delete", w.id]);
+        const id = JSON.parse(await run(bin, ["window", "new", name, "--minimized", "--json"]))?.result?.id;
+        if (typeof id !== "string") throw new Error(`agtermctl window new: no id for window ${name}`);
+        return id;
+      })().finally(() => making.delete(name));
+      making.set(name, p);
+    }
+    return p;
+  };
   const a: Agterm = {
     async spawn(o) {
+      const win = o.window ? ["--window", await windowFor(o.window)] : [];
       // a login shell, so claude is on PATH
-      const out = await run(bin, ["session", "new", "--cwd", o.cwd, "--command", `/bin/zsh -lc ${shq(agentLine(o.spawn, o.prompt))}`, "--workspace-name", o.workspace,
+      const out = await run(bin, ["session", "new", ...win, "--cwd", o.cwd, "--command", `/bin/zsh -lc ${shq(agentLine(o.spawn, o.prompt))}`, "--workspace-name", o.workspace,
         "--create-workspace", "--no-select", "--name", o.name, "--json"]);
       const id = JSON.parse(out)?.result?.id;
       if (typeof id !== "string") throw new Error(`agtermctl session new: no id in ${out.slice(0, 200)}`);
@@ -163,9 +187,18 @@ export function realAgterm(
       return column;
     },
     async tree() {
-      const out = JSON.parse(await run(bin, ["tree", "--json"]));
+      // `tree` shows one window: with several open, each one's (sessions by id work across windows)
+      let open: string[] = [];
+      try {
+        open = (await windows()).filter((w) => w.open).map((w) => w.id);
+      } catch {
+        // an agterm without window list: the frontmost window's tree
+      }
+      const outs = open.length > 1
+        ? await Promise.all(open.map(async (id) => JSON.parse(await run(bin, ["tree", "--json", "--window", id]))))
+        : [JSON.parse(await run(bin, ["tree", "--json"]))];
       const sessions: SessionInfo[] = [];
-      for (const ws of out?.result?.tree?.workspaces ?? []) {
+      for (const ws of outs.flatMap((out) => out?.result?.tree?.workspaces ?? [])) {
         for (const s of ws.sessions ?? []) {
           const surface = (kind: string) => (s.surfaces ?? []).find((x: { kind?: string }) => x.kind === kind)?.id;
           // the status belongs to the pane that set it (agterm's statusPane)

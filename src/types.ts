@@ -55,6 +55,8 @@ export interface Process {
   maxRuns: number;
   /** the agterm workspace its roles spawn into (default: the process name) */
   workspace?: string;
+  /** the agterm window (by name) its roles spawn into; made, minimized, when there is none (default: the frontmost) */
+  window?: string;
   /** where its roles' agents run: agterm, or headless zmx sessions */
   terminal: "agterm" | "zmx";
   triggers: Trigger[];

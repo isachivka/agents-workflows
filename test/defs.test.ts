@@ -188,13 +188,14 @@ test("hold is a name", () => {
 });
 
 test("workspace and label on the process and name on a role", () => {
-  const p = parseProcess("p", "description: d\ncwd: /tmp\nlabel: \" Daily errors \"\nworkspace: Log sync\nroles: {pm: {spawn: c, name: \"sync {{run.date}}\"}}\nsteps:\n  - {step: pick, role: pm}\n", ctx);
+  const p = parseProcess("p", "description: d\ncwd: /tmp\nlabel: \" Daily errors \"\nworkspace: Log sync\nwindow: Factory\nroles: {pm: {spawn: c, name: \"sync {{run.date}}\"}}\nsteps:\n  - {step: pick, role: pm}\n", ctx);
   assert.equal(p.workspace, "Log sync");
   assert.equal(p.label, "Daily errors");
+  assert.equal(p.window, "Factory");
   assert.equal(parseProcess("p", "description: d\ncwd: /tmp\nsteps:\n  - {step: pick, role: pm}\nroles: {pm: {spawn: c}}\n", ctx).label, undefined);
   assert.equal(p.roles.pm.name, "sync {{run.date}}");
-  assert.deepEqual(errorsOf(() => parseProcess("p", "description: d\ncwd: /tmp\nlabel: 3\nworkspace: \"\"\nroles: {pm: {spawn: c, name: 3}}\nsteps:\n  - {step: pick, role: pm}\n", ctx)),
-    ["label must be a few words", "workspace must be a name", "role pm: name must be a string"]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", "description: d\ncwd: /tmp\nlabel: 3\nworkspace: \"\"\nwindow: 4\nroles: {pm: {spawn: c, name: 3}}\nsteps:\n  - {step: pick, role: pm}\n", ctx)),
+    ["label must be a few words", "workspace must be a name", "window must be a name", "role pm: name must be a string"]);
 });
 
 test("terminal: agterm by default, zmx on request, nothing else", () => {

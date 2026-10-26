@@ -19,6 +19,8 @@ if [ -n "$FAKE_FAIL" ]; then echo boom >&2; exit 3; fi
 case " $* " in *" --pane right "*) [ "$1 $2" = "session type" ] && [ -z "$FAKE_STUCK" ] && tail -c 200 '${log}' | grep -q 'zsh -lc' && touch '${dir}/started' ;; esac
 shell='"splitForegroundShell":"zsh",'; [ -f '${dir}/started' ] && shell=''
 case "$1 $2" in
+  "window list") printf '%s' "$FAKE_WINDOWS" ;;
+  "window new") echo '{"ok":true,"result":{"id":"W-NEW"}}' ;;
   "session text") echo '➜ ~' ;;
   "session new") echo '{"ok":true,"result":{"id":"S-NEW"}}' ;;
   "surface cursor") echo '{"ok":true,"result":{"id":"surface:S1:left","cursor":{"column":7}}}' ;;
@@ -46,6 +48,39 @@ test("type sends the text, then Enter on its own, both on stdin; focus selects a
   await a.focus("S1");
   const T = "[session][type][--stdin][--target][S1]";
   assert.equal(f.calls(), `${T}<it's \`x\` $HOME>\n${T}<\n>\n${T}</clear>\n${T}<\n>\n[session][select][--target][S1]\n[-a][agterm]\n`);
+});
+
+test("a spawn with a window goes into the open window of that name, else a new minimized one (a closed one is deleted)", async () => {
+  const f = fakeAgtermctl();
+  const list = (ws: unknown[]) => JSON.stringify({ ok: true, result: { windows: ws } });
+  process.env.FAKE_WINDOWS = list([{ id: "W1", name: "window 1", open: true }, { id: "WOLD", name: "Reels", open: false }]);
+  try {
+    const a = realAgterm(f.bin);
+    // two spawns at once make one window
+    await Promise.all([1, 2].map((i) => a.spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "Reels", window: "Reels", name: `reel ${i}` })));
+    const calls = f.calls().trim().split("\n");
+    assert.deepEqual(calls.slice(0, 3), ["[window][list][--json]", "[window][delete][WOLD]", "[window][new][Reels][--minimized][--json]"]);
+    assert.equal(calls.filter((c) => c.startsWith("[window]")).length, 3);
+    assert.ok(calls.slice(3).every((c) => c.startsWith("[session][new][--window][W-NEW][--cwd][/w]")), calls.join("\n"));
+    process.env.FAKE_WINDOWS = list([{ id: "W1", name: "window 1", open: true }, { id: "W2", name: "Reels", open: true }]);
+    const g = fakeAgtermctl();
+    await realAgterm(g.bin).spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "Reels", window: "Reels", name: "reel 3" });
+    assert.deepEqual(g.calls().trim().split("\n").map((c) => c.slice(0, 39)), ["[window][list][--json]", "[session][new][--window][W2][--cwd][/w]"]);
+  } finally {
+    delete process.env.FAKE_WINDOWS;
+  }
+});
+
+test("with several open windows, tree reads each one's", async () => {
+  const f = fakeAgtermctl();
+  process.env.FAKE_WINDOWS = JSON.stringify({ ok: true, result: { windows: [{ id: "W1", open: true }, { id: "W2", open: true }, { id: "W3", open: false }] } });
+  try {
+    const sessions = await realAgterm(f.bin).tree();
+    assert.equal(sessions.filter((s) => s.id === "S1").length, 2); // the fake answers the same tree for each
+    assert.deepEqual(f.calls().trim().split("\n"), ["[window][list][--json]", "[tree][--json][--window][W1]", "[tree][--json][--window][W2]"]);
+  } finally {
+    delete process.env.FAKE_WINDOWS;
+  }
 });
 
 test("tree flattens workspaces into sessions", async () => {
