@@ -297,6 +297,21 @@ test("an entry's done is posted only when asked, with its note; an entry's notif
   await t.f.close();
 });
 
+test("notify: false on a process: flowd posts nothing and opens no conversation; an agent's flow say still does", async () => {
+  const t = await startProc(proc("  - {step: plan, role: pm, notify: {done: true}}\n  - {step: c, role: human}\n", "notify: false\n", "q"), "q");
+  await turn(t, reportNote("S1", "three items"));
+  await t.f.submit({ type: "entry.report", data: { run: "q#1", entry: "c", outcome: "done", by: "human" }, source: "cli" });
+  await settle(t.f);
+  assert.equal(t.f.store.getRun("q#1")!.status, "done");
+  assert.deepEqual(chatLog(), []);
+  await t.f.close();
+  const said = await startProc(proc("  - {step: b, role: pm}\n", "notify: false\n", "q"), "q");
+  await said.f.say({ session: "S1", text: "hi" });
+  await turn(said, done("S1"));
+  assert.deepEqual(chatLog(), ["open q#1 ", "post T1 hi", "close T1 done"]);
+  await said.f.close();
+});
+
 test("the run's end can be turned off (the conversation still closes) and worded; a broken text falls back and is logged", async () => {
   const off = await startProc(proc("  - {step: b, role: pm}\n", "notify: {end: false}\n", "e"), "e");
   await off.f.say({ session: "S1", text: "hi" });

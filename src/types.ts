@@ -8,8 +8,8 @@ export type EntryKind = "agent" | "human" | "action" | "wait" | "delay" | "inner
 
 /** What a run says in its conversation about an entry: `notify:` in a step file or a process entry */
 export interface Notify { waits?: boolean; waitsText?: string; done?: boolean; doneText?: string }
-/** What a run says about its own end: `notify:` of a process */
-export interface ProcessNotify { end?: boolean; doneText?: string; stoppedText?: string }
+/** What a run says about its own end: `notify:` of a process; `notify: false` (off) silences all of flowd's notices */
+export interface ProcessNotify { off?: boolean; end?: boolean; doneText?: string; stoppedText?: string }
 
 export interface Entry {
   id: string;

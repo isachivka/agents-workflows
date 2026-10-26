@@ -1031,8 +1031,9 @@ export class Flowd {
     if (!a || "error" in a) return;
     const open = (r: RunState | null) => r !== null && !TERMINAL.includes(r.status);
     const entries = this.defs.processes[run.process]?.entries ?? [];
+    const off = this.defs.processes[run.process]?.notify?.off === true;
     const says: (() => Promise<unknown>)[] = [];
-    const post = (text: string) => says.push(async () => a.chat.post(await this.chatFor(this.rootOf(run), a), { text }, a.ctx));
+    const post = (text: string) => { if (!off) says.push(async () => a.chat.post(await this.chatFor(this.rootOf(run), a), { text }, a.ctx)); };
 
     // entries that turned done in this commit (a new iteration starts them all over: nothing turned done)
     if (before && before.iteration === run.iteration) {
@@ -1059,7 +1060,7 @@ export class Flowd {
           ? this.notice(n.doneText, run, undefined, "", `${run.id} is done`)
           : this.notice(n.stoppedText, run, undefined, run.reason ?? "", `${run.id} was stopped${run.reason ? `: ${run.reason}` : ""}`);
         says.push(async () => {
-          if (n.end !== false) await a.chat.post(had.address, { text }, a.ctx);
+          if (n.end !== false && !n.off) await a.chat.post(had.address, { text }, a.ctx);
           await a.chat.close(had.address, { outcome: run.status as "done" | "stopped" }, a.ctx);
         });
       }

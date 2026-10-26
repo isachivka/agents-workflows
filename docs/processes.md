@@ -88,7 +88,7 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `workspace` | string | the process name | The agterm workspace its roles spawn into, free text (`Log sync`). Several processes may share one. |
 | `terminal` | `agterm` or `zmx` | `agterm` | Where its roles' agents run: agterm sessions, or headless zmx sessions flowd runs itself (named `flows-<process>-<n>-<role>-<k>`; the terminal button attaches one in agterm; see [Sessions and roles](concepts.md#sessions-and-roles)). Only new spawns follow an edit. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
-| `notify` | mapping | | What the run's conversation is told when the run ends: `{end, done_text, stopped_text}`. See [Messages to the person](#messages-to-the-person). |
+| `notify` | mapping or `false` | | What the run's conversation is told when the run ends: `{end, done_text, stopped_text}`; `false` silences all of flowd's notices for its runs. See [Messages to the person](#messages-to-the-person). |
 | `max_runs` | integer ≥ 1 | `1` | Runs working at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |
 | `roles` | mapping | none | Agent roles, see below. |
@@ -187,6 +187,10 @@ conversation three things. Each can be turned off and worded with a template:
 | waits | the run comes to need the person: its current entry is a human step, an agent's `flow wait --human`, a bare `inner`, or the run stopped for the person | `notify.waits` of the step file or the entry | on — `<run.id> waits for you: <note>`, then `vars.pr` on its own line when set |
 | done | an entry's status turns `done` (not `skipped` or `failed`) | `notify.done` of the step file or the entry | off — `<run.id>: <step.id> done[: <note>]` |
 | end | a root run ends, if it has a conversation; the conversation is closed after it either way | `notify.end` of the process | on — `<run.id> is done`, `<run.id> was stopped[: <reason>]` |
+
+`notify: false` on a process turns all three off for its runs: flowd opens no conversation for them
+(a factory of many small runs). An agent's `flow say` still posts, and a conversation it opened is
+closed at the run's end.
 
 ```yaml
 # steps/plan.md

@@ -48,7 +48,9 @@ const camel = (k: string) => k.replace(/_(\w)/g, (_m, c: string) => c.toUpperCas
 /** `notify:` of a step or an entry (`process: false`), or of a process; errors name where a misplaced key belongs. */
 function parseNotify(raw: unknown, at: string, err: (m: string) => void, process = false): Dict | undefined {
   if (raw === undefined) return undefined;
-  if (!isObj(raw)) { err(`${at}notify must be a mapping`); return undefined; }
+  // a process's `notify: false`: flowd posts nothing of its own for its runs
+  if (process && typeof raw === "boolean") return raw ? {} : { off: true };
+  if (!isObj(raw)) { err(`${at}notify must be a mapping${process ? ", or false" : ""}`); return undefined; }
   const keys = process ? PROCESS_NOTIFY : NOTIFY;
   const out: Dict = {};
   for (const [k, v] of Object.entries(raw)) {

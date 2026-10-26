@@ -246,6 +246,8 @@ test("notify parses on a step, an entry and a process; wrong keys, types and pla
   assert.deepEqual(p.notify, { end: false, stoppedText: "{{run.id}} stopped" });
   assert.equal(p.entries[0].notify, undefined);
   assert.deepEqual(p.entries[1].notify, { done: true, doneText: "applied" });
+  assert.deepEqual(parseProcess("p", "description: d\ncwd: /tmp\nnotify: false\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: pick, role: pm}\n", ctx).notify, { off: true });
+  assert.deepEqual(errorsOf(() => parseStep("x", "---\nsummary: s\nnotify: false\n---\nDo.\n")), ["notify must be a mapping"]);
 
   assert.deepEqual(errorsOf(() => parseStep("x", "---\nsummary: s\nnotify: {waits: yes please, end: true, loud: 1, done_text: \"\"}\n---\nDo.\n")), [
     "notify.waits must be true or false",
