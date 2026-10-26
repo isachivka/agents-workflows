@@ -90,7 +90,8 @@ run has no `pr`, the UI falls back to the first variable holding a PR-shaped URL
 | `terminal` | `agterm` or `zmx` | `agterm` | Where its roles' agents run: agterm sessions, or headless zmx sessions flowd runs itself (named `flows-<process>-<n>-<role>-<k>`; the terminal button attaches one in agterm; see [Sessions and roles](concepts.md#sessions-and-roles)). Only new spawns follow an edit. |
 | `repeat` | boolean | `false` | Start a new iteration after the last entry instead of finishing. |
 | `notify` | mapping or `false` | | What the run's conversation is told when the run ends: `{end, done_text, stopped_text}`; `false` silences all of flowd's notices for its runs. See [Messages to the person](#messages-to-the-person). |
-| `max_runs` | integer ≥ 1 | `1` | Runs working at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
+| `max_runs` | integer ≥ 1 | `1`; none with `max_working` | Runs open at once. A start by hand or by an event beyond it is `queued` and starts by itself, oldest first, when one of them ends; a cron start is skipped. |
+| `max_working` | integer ≥ 1 | | Runs *working* at once: a run parked — on a wait (`wait_for`, a pause, a nested run), queued for a `hold`, at a human step, after `flow wait --human`, paused or stopped for the person — does not count, so a queued run starts as soon as one parks. A parked run that wakes goes on even over the limit. For a factory whose runs wait long on a person (a review): `max_working: 4` keeps four agents busy however many runs wait. With `max_runs` too, both apply. |
 | `triggers` | list | none | Automatic starts, see below. Manual starts always work, and `flow start <name> --var k=v` gives them vars before the first step. |
 | `roles` | mapping | none | Agent roles, see below. |
 | `steps` | list | required | The entries, in order. Must not be empty. |

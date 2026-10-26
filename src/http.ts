@@ -71,7 +71,7 @@ function listProcesses(f: Flowd) {
     const p = f.defs.processes[name];
     return {
       name, label: p?.label ?? null, valid: Boolean(p) && !f.defs.invalid[`process:${name}`], errors: f.defs.invalid[`process:${name}`] ?? [], description: p?.description ?? "",
-      repeat: p?.repeat ?? false, maxRuns: p?.maxRuns ?? 1, cwd: p?.cwd ?? "",
+      repeat: p?.repeat ?? false, maxRuns: p ? (Number.isFinite(p.maxRuns) ? p.maxRuns : null) : 1, maxWorking: p?.maxWorking ?? null, cwd: p?.cwd ?? "",
       triggers: p?.triggers ?? [], roles: p ? Object.keys(p.roles) : [],
       path: defPath(f, "process", name), workspace: p?.workspace ?? name, terminal: p?.terminal ?? "agterm",
       roleDefs: p ? Object.entries(p.roles).map(([n, r]) => ({ name: n, agent: agentOf(r.spawn), beside: r.beside ?? null, cwd: r.cwd ?? null })) : [],

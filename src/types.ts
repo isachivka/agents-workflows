@@ -52,7 +52,10 @@ export interface Process {
   description: string;
   cwd: string;
   repeat: boolean;
+  /** open runs at once; Infinity when only max_working limits */
   maxRuns: number;
+  /** working runs at once: a run parked (waiting on an event, a hold, a delay, the person) does not count */
+  maxWorking?: number;
   /** the agterm workspace its roles spawn into (default: the process name) */
   workspace?: string;
   /** the agterm window (by name) its roles spawn into; made, minimized, when there is none (default: the frontmost) */

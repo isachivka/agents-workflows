@@ -918,6 +918,32 @@ test("a start over max_runs queues; it starts when a run ends, and the rest hear
   await f.close();
 });
 
+test("max_working counts only working runs: one parked on a wait lets the next queued run start", async () => {
+  const W = proc("  - {step: b, role: pm}\n  - {id: review, wait_for: signal.review}\n  - {step: c, role: pm}\n", "max_working: 2\n", "w");
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...W }));
+  agterm.addSession("S1", "S2", "S3", "S4");
+  for (const s of ["S1", "S2", "S3", "S4"]) await f.submit(start("w", { pm: s }));
+  await settle(f);
+  const status = () => ["w#1", "w#2", "w#3", "w#4"].map((id) => f.store.getRun(id)!.status);
+  assert.deepEqual(status(), ["running", "running", "queued", "queued"]);
+  assert.deepEqual(f.runSummary(f.store.getRun("w#4")!).queue, { position: 2, open: 2, max: 2 });
+  // w#1 finishes b and parks on its review: w#3 starts, w#4 still waits
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await f.submit({ type: "entry.report", data: { session: "S1", outcome: "done" }, source: "cli" });
+  await settle(f);
+  assert.equal(f.store.getRun("w#1")!.current, "review");
+  assert.deepEqual(status(), ["running", "running", "running", "queued"]);
+  // a run woken over the cap goes on: working runs may exceed it until they park
+  await f.submit({ type: "signal.review", run: "w#1", data: {}, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("w#1")!.current, "c");
+  assert.equal(f.store.getRun("w#4")!.status, "queued");
+  // a schedule over the cap does not queue
+  await f.submit({ type: "run.start", data: { process: "w", trigger: "cron" }, source: "cron" });
+  assert.equal(f.store.getRun("w#5"), null);
+  await f.close();
+});
+
 // --- zmx as a second terminal ---
 
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");

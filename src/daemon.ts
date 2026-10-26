@@ -15,7 +15,7 @@ import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
 import { Reports } from "./reports.ts";
 import { TERMINAL } from "./types.ts";
-import type { Defs, Dict, Entry, FlowEvent, Input, Notify, OnFail, RunState, SessionStatus, StepResult } from "./types.ts";
+import type { Defs, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
 
 export interface FlowdOptions {
   home: string;
@@ -730,13 +730,12 @@ export class Flowd {
       vars = { ...parentRun.vars, ...vars };
     }
     const runs = this.store.openRuns().filter((r) => r.process === name);
-    const open = runs.filter((r) => r.status !== "queued").length;
-    const full = open >= p.maxRuns;
+    const { full, open, max } = this.capacity(p, runs);
     // a schedule fires again; a start by hand or by an event is work that must not be lost. A start
     // that flow.trigger.skipped itself caused is refused without another one: that would feed itself
     if (full && (trigger === "cron" || trigger === "flow.trigger.skipped")) {
       if (trigger === "cron") void this.submit({ type: "flow.trigger.skipped", data: { process: name, trigger }, source: "flow" });
-      return { error: `${name} already has ${open} open run(s) (max_runs ${p.maxRuns})` };
+      return { error: `${name} already has ${open} ${p.maxWorking === undefined ? "open" : "working"} run(s) (${p.maxWorking === undefined ? "max_runs" : "max_working"} ${max})` };
     }
     const n = this.store.nextRunNumber(name);
     const run = newRun(`${name}#${n}`, p, bind);
@@ -749,11 +748,11 @@ export class Flowd {
     }
     const event = ev ? { type: ev.type, outcome: ev.outcome, data: ev.data, source: ev.source } : undefined;
     if (full) {
-      const position = runs.length - open + 1;
+      const position = runs.filter((r) => r.status === "queued").length + 1;
       Object.assign(run, { status: "queued", vars: { ...vars }, queuedEvent: event, queuePos: position });
       this.store.createRun(run, n, this.now());
       this.changed("runs");
-      return { run: run.id, queued: { position, open, max: p.maxRuns } };
+      return { run: run.id, queued: { position, open, max } };
     }
     this.store.createRun(run, n, this.now());
     return this.apply(run.id, { kind: "start", vars, event });
@@ -960,16 +959,17 @@ export class Flowd {
       for (const name of new Set(open.filter((r) => r.status === "queued").map((r) => r.process))) {
         const p = this.defs.processes[name];
         if (!p) continue;
-        let active = open.filter((r) => r.process === name && r.status !== "queued").length;
         let position = 0;
         for (const r of open.filter((x) => x.process === name && x.status === "queued")) {
-          if (active < p.maxRuns) {
+          // read again each time: a run just started counts as working (it may park at once)
+          const cap = this.capacity(p, this.store.openRuns().filter((x) => x.process === name));
+          if (!cap.full) {
             const started = await this.apply(r.id, { kind: "start", event: r.queuedEvent });
-            if (!started.error) { active++; this.changed("runs"); }
+            if (!started.error) this.changed("runs");
             continue;
           }
           position++;
-          if (r.queuePos !== position) await this.apply(r.id, { kind: "queued", position, open: active, max: p.maxRuns });
+          if (r.queuePos !== position) await this.apply(r.id, { kind: "queued", position, open: cap.open, max: cap.max });
         }
       }
     } finally {
@@ -1526,11 +1526,32 @@ export class Flowd {
 
   private queueOf(run: RunState): { position: number; open: number; max: number } {
     const runs = this.store.openRuns().filter((r) => r.process === run.process);
-    return {
-      position: runs.filter((r) => r.status === "queued").findIndex((r) => r.id === run.id) + 1,
-      open: runs.filter((r) => r.status !== "queued").length,
-      max: this.defs.processes[run.process]?.maxRuns ?? 0,
-    };
+    const p = this.defs.processes[run.process];
+    const cap = p ? this.capacity(p, runs) : { open: runs.filter((r) => r.status !== "queued").length, max: 0 };
+    return { position: runs.filter((r) => r.status === "queued").findIndex((r) => r.id === run.id) + 1, open: cap.open, max: cap.max };
+  }
+
+  /**
+   * Whether a process can start another run: its open runs against max_runs and, with max_working, its
+   * working ones against that. `open` and `max` are those of the limit people set (working with max_working).
+   */
+  private capacity(p: Process, runs: RunState[]): { full: boolean; open: number; max: number } {
+    const open = runs.filter((r) => r.status !== "queued");
+    if (p.maxWorking === undefined) return { full: open.length >= p.maxRuns, open: open.length, max: p.maxRuns };
+    const working = open.filter((r) => !this.parked(r)).length;
+    return { full: open.length >= p.maxRuns || working >= p.maxWorking, open: working, max: p.maxWorking };
+  }
+
+  /**
+   * A run nobody works on now: it waits on an event, a hold, a pause entry, a nested run, the person (a
+   * human step, flow wait --human, stopped for them, paused). An agent's plain flow wait still counts:
+   * its job runs.
+   */
+  private parked(run: RunState): boolean {
+    if (run.status !== "running") return true;
+    const cur = this.currentEntry(run);
+    const s = cur ? run.entries[cur.id] : undefined;
+    return !cur || cur.kind === "human" || cur.kind === "inner" || s?.status === "waiting" || s?.wait?.human === true;
   }
 
   /** What a person calls the run: see runName. */

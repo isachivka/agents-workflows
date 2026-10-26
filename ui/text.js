@@ -68,6 +68,7 @@ const EN = {
   "branch.retry": "If it fails → it tries again", "branch.end": "If it fails → nothing to do, it ends here", "branch.after": "Then → “{step}”",
   "proc.all": "All processes", "proc.repeat": "Repeats in rounds", "proc.oneRun": "One run at a time",
   "proc.maxRuns.one": "Up to {n} run at once", "proc.maxRuns.other": "Up to {n} runs at once",
+  "proc.maxWorking.one": "Up to {n} run working at once (waiting ones do not count)", "proc.maxWorking.other": "Up to {n} runs working at once (waiting ones do not count)",
   "proc.manual": "Started by hand", "proc.trigger": "Starts by itself on {what}", "proc.cron": "Starts on schedule {cron}",
   "proc.cwd": "Works in {cwd}", "proc.openRuns": "Running now", "proc.who": "Who takes part", "proc.agent": "agent",
   "proc.youDo": "does the human steps", "proc.how": "How it goes", "proc.again": "Then it starts again with a new round.",
@@ -171,6 +172,8 @@ const RU = {
   "proc.all": "Все процессы", "proc.repeat": "Повторяется по кругу", "proc.oneRun": "Один запуск за раз",
   "proc.maxRuns.one": "До {n} запуска одновременно", "proc.maxRuns.few": "До {n} запусков одновременно",
   "proc.maxRuns.many": "До {n} запусков одновременно", "proc.maxRuns.other": "До {n} запуска одновременно",
+  "proc.maxWorking.one": "В работе до {n} запуска (ждущие не в счёт)", "proc.maxWorking.few": "В работе до {n} запусков (ждущие не в счёт)",
+  "proc.maxWorking.many": "В работе до {n} запусков (ждущие не в счёт)", "proc.maxWorking.other": "В работе до {n} запуска (ждущие не в счёт)",
   "proc.manual": "Запускаешь ты вручную", "proc.trigger": "Запускается сам: {what}", "proc.cron": "Запускается по расписанию {cron}",
   "proc.cwd": "Работает в {cwd}", "proc.openRuns": "Сейчас идут", "proc.who": "Кто участвует", "proc.agent": "агент",
   "proc.youDo": "делаешь шаги человека", "proc.how": "Как он идёт", "proc.again": "Потом всё начинается заново — новый круг.",
@@ -462,7 +465,8 @@ export function eventSentence(e, plan) {
 export function processFacts(p) {
   const out = [];
   if (p.repeat) out.push(t("proc.repeat"));
-  out.push(p.maxRuns > 1 ? tn("proc.maxRuns", p.maxRuns) : t("proc.oneRun"));
+  if (p.maxWorking) out.push(tn("proc.maxWorking", p.maxWorking));
+  if (p.maxRuns !== null || !p.maxWorking) out.push(p.maxRuns > 1 ? tn("proc.maxRuns", p.maxRuns) : t("proc.oneRun"));
   out.push(p.triggers.length
     ? p.triggers.map((x) => (x.cron ? t("proc.cron", { cron: x.cron }) : t("proc.trigger", { what: eventPhrase(x.on) }))).join(" · ")
     : t("proc.manual"));

@@ -56,6 +56,7 @@ From the installed copy of this skill, the repo is
 | put a process's sessions in one named workspace, name them by date | `workspace: Log sync` on the process (free text, may be shared); `name: "sync {{run.date}}"` on a role (default `{{run.id}} {{role}}`) |
 | two agents side by side in one agterm session (Claude left, Codex right) | `roles: {lead: {spawn: claude …}, peer: {spawn: codex …, beside: lead}}`; `peer` runs in `lead`'s split pane. A step can have them talk: `skills: [bos:peer-chat]` on the lead's step |
 | a Codex agent instead of Claude | `spawn: codex --dangerously-bypass-approvals-and-sandbox` on the role; it gets `$flow` and the step's skills as `$name`, its trust question answered. No `do: compact` for it, and it needs `terminal: agterm` |
+| cap how many runs work at once, not how many wait (a factory waiting on reviews) | `max_working: 4` on the process: a run parked on a wait, a hold or the person does not count; `max_runs` alone counts every open run |
 | keep a process's agents out of the window the person works in | `window: Reels` on the process: its roles spawn into the agterm window of that name, made minimized when there is none |
 | no messenger notices for a process (many small runs) | `notify: false` on the process: no "waits for you", no "done"; an agent's `flow say` still posts |
 | a name a person reads (the UI, the Telegram topic) | `label: Frontend errors, daily` on the process; a run is then called `<title> · <label>`, or `<label> · 20.10 06:00` without a title |

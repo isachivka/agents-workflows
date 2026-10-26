@@ -187,6 +187,16 @@ test("hold is a name", () => {
     ["steps[1]: hold must be a name: lowercase letters, digits, dashes"]);
 });
 
+test("max_working: alone it lifts the max_runs default; both may be set; a bad one is an error", () => {
+  const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
+  const only = parseProcess("p", `max_working: 4\n${base}`, ctx);
+  assert.deepEqual([only.maxWorking, only.maxRuns], [4, Infinity]);
+  const both = parseProcess("p", `max_working: 4\nmax_runs: 50\n${base}`, ctx);
+  assert.deepEqual([both.maxWorking, both.maxRuns], [4, 50]);
+  assert.deepEqual([parseProcess("p", base, ctx).maxWorking, parseProcess("p", base, ctx).maxRuns], [undefined, 1]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", `max_working: 0\n${base}`, ctx)), ["max_working must be an integer >= 1"]);
+});
+
 test("workspace and label on the process and name on a role", () => {
   const p = parseProcess("p", "description: d\ncwd: /tmp\nlabel: \" Daily errors \"\nworkspace: Log sync\nwindow: Factory\nroles: {pm: {spawn: c, name: \"sync {{run.date}}\"}}\nsteps:\n  - {step: pick, role: pm}\n", ctx);
   assert.equal(p.workspace, "Log sync");
