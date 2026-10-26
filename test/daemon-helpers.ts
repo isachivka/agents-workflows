@@ -36,6 +36,7 @@ export class FakeAgterm implements Terminal {
     this.calls.push(`type ${session} ${text}`);
   }
   async focus(session: string): Promise<void> { this.calls.push(`focus ${session}`); }
+  async close(session: string): Promise<void> { this.calls.push(`close ${session}`); this.sessions = this.sessions.filter((s) => s.id !== session); }
   async tree(): Promise<SessionInfo[]> { this.trees++; return this.sessions; }
   /** caret column per surface; a missing surface reads as an empty input box */
   columns = new Map<string, number>();

@@ -944,6 +944,74 @@ test("max_working counts only working runs: one parked on a wait lets the next q
   await f.close();
 });
 
+const HIB = (extra: string, name: string) => proc("  - {step: b, role: pm}\n  - {id: review, wait_for: signal.review}\n  - {step: c, role: pm}\n", extra, name);
+async function parkedOnReview(name: string, extra: string) {
+  const home = makeHome({ ...STEP_FILES, ...HIB(extra, name) });
+  const t = await startFlowd(home);
+  t.agterm.addSession("S1");
+  await t.f.submit(start(name, { pm: "S1" }));
+  await settle(t.f);
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await t.f.submit({ type: "entry.report", data: { session: "S1", outcome: "done" }, source: "cli" });
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  await settle(t.f);
+  const projects = join(home, "claude", "projects", "-tmp");
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(join(projects, "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
+    message: { content: `▶ flow: step b · ${name}#1 it.1 — run \`flow show\` for the instructions` } }) + "\n");
+  return t;
+}
+
+test("hibernate: a parked run's idle agent is closed and resumed into its conversation by its next line", async () => {
+  const { f, agterm, clock } = await parkedOnReview("h", "hibernate: 30m\n");
+  assert.equal(f.store.getRun("h#1")!.current, "review");
+  clock.t += 29 * 60_000;
+  await f.tickNow();
+  await settle(f);
+  assert.equal(f.store.getRun("h#1")!.roles.pm, "S1", "not yet");
+  clock.t += 2 * 60_000;
+  await f.tickNow();
+  await settle(f);
+  let run = f.store.getRun("h#1")!;
+  assert.deepEqual([run.status, run.roles.pm, run.asleep?.pm?.conversation, run.asleep?.pm?.cwd], ["running", null, "c1", "/tmp/w"]);
+  assert.ok(agterm.calls.includes("close S1"), agterm.calls.join("\n"));
+  assert.deepEqual(f.runSummary(run).asleep, ["pm"]);
+  // the session's close is not taken for "role session closed"
+  await f.submit({ type: "agterm.closed", data: { session: "S1" }, source: "agterm" });
+  assert.equal(f.store.getRun("h#1")!.status, "running");
+  // the review comes: the next step's line resumes the conversation
+  await f.submit({ type: "signal.review", data: {}, source: "test" });
+  await settle(f);
+  const spawn = agterm.calls.find((c) => c.startsWith("spawn") && c.includes("--resume"));
+  assert.ok(spawn?.includes("| /tmp/w | claude --resume 'c1' '▶ flow: step c · h#1 it.1"), agterm.calls.join("\n"));
+  run = f.store.getRun("h#1")!;
+  assert.equal(run.asleep, undefined);
+  assert.ok(run.roles.pm, "bound to the new session");
+  await f.close();
+});
+
+test("hibernate is strictly opt-in: without the key a run parked for days keeps its agent", async () => {
+  const { f, agterm, clock } = await parkedOnReview("k", "");
+  clock.t += 3 * 86_400_000;
+  await f.tickNow();
+  await settle(f);
+  const run = f.store.getRun("k#1")!;
+  assert.deepEqual([run.roles.pm, run.asleep], ["S1", undefined]);
+  assert.ok(!agterm.calls.some((c) => c.startsWith("close")));
+  await f.close();
+});
+
+test("hibernate leaves an agent that is mid-turn awake", async () => {
+  const { f, agterm, clock } = await parkedOnReview("m", "hibernate: 30m\n");
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  clock.t += 60 * 60_000;
+  await f.tickNow();
+  await settle(f);
+  assert.equal(f.store.getRun("m#1")!.roles.pm, "S1");
+  assert.ok(!agterm.calls.some((c) => c.startsWith("close")));
+  await f.close();
+});
+
 // --- zmx as a second terminal ---
 
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");

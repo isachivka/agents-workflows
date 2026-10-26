@@ -56,6 +56,8 @@ export interface Process {
   maxRuns: number;
   /** working runs at once: a run parked (waiting on an event, a hold, a delay, the person) does not count */
   maxWorking?: number;
+  /** `hibernate:` — a run parked this long has its idle agents closed, their conversations resumed on the next line */
+  hibernateMs?: number;
   /** the agterm workspace its roles spawn into (default: the process name) */
   workspace?: string;
   /** the agterm window (by name) its roles spawn into; made, minimized, when there is none (default: the frontmost) */
@@ -152,7 +154,11 @@ export interface RunState {
   inner?: string[];
   /** a nested run: the run and inner entry it works for, and the vars it was started with */
   parent?: { run: string; entry: string; vars: Record<string, string> };
+  /** roles put to sleep (`hibernate`): the conversation the next line to the role resumes */
+  asleep?: Record<string, Asleep>;
 }
+
+export interface Asleep { agent: "claude" | "codex"; conversation: string; cwd: string; since: number }
 
 export type SessionStatus = "active" | "completed" | "idle" | "blocked" | "closed";
 
@@ -176,6 +182,7 @@ export type Input =
   | { kind: "stop" }
   | { kind: "bind"; role: string; session: string | null; by: "spawn" | "human" }
   | { kind: "respawn"; role: string }
+  | { kind: "sleep"; role: string; session: string; asleep: Asleep }
   | { kind: "halt"; reason: string }
   | { kind: "start-blocked"; entry: string; reason: string }
   | { kind: "delivered"; entry: string }

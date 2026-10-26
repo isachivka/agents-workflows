@@ -187,6 +187,13 @@ test("hold is a name", () => {
     ["steps[1]: hold must be a name: lowercase letters, digits, dashes"]);
 });
 
+test("hibernate takes a duration; a bad one is an error", () => {
+  const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
+  assert.equal(parseProcess("p", `hibernate: 30m\n${base}`, ctx).hibernateMs, 1_800_000);
+  assert.equal(parseProcess("p", base, ctx).hibernateMs, undefined);
+  assert.deepEqual(errorsOf(() => parseProcess("p", `hibernate: soon\n${base}`, ctx)), ['hibernate: bad duration "soon" (use 30s, 10m, 2h, 1d)']);
+});
+
 test("max_working: alone it lifts the max_runs default; both may be set; a bad one is an error", () => {
   const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
   const only = parseProcess("p", `max_working: 4\n${base}`, ctx);

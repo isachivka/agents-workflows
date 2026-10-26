@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { shq } from "./agterm.ts";
 
 /** Which kind of agent a role's spawn command runs: how it is told about skills. */
 export const agentOf = (spawn: string): "claude" | "codex" | "other" => {
@@ -25,5 +26,9 @@ export const lineSkills = (names: string[], agent: "claude" | "codex" | "other")
  * hooks) run in a shared background server that keeps the environment of whichever session started
  * it, so `flow` in a Codex agent saw another session's `AGTERM_SESSION_ID` (seen live).
  */
+/** The spawn that reopens an agent's conversation: Claude's `--resume <id>`, Codex's `resume <id>`. */
+export const resumeSpawn = (spawn: string, agent: "claude" | "codex", id: string): string =>
+  agent === "claude" ? `${spawn} --resume ${shq(id)}` : `${agentSpawn(spawn)} resume ${shq(id)}`;
+
 export const agentSpawn = (spawn: string): string =>
   agentOf(spawn) === "codex" && !/(^|\s)--no-daemon(\s|$)/.test(spawn) ? spawn.replace(/^(\s*\S+)/, "$1 --no-daemon") : spawn;

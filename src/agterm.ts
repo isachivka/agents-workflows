@@ -38,6 +38,8 @@ export interface Terminal {
   userInput(session: string): Promise<boolean>;
   /** starts the agent in the split pane of `beside` (a session id) and returns `<beside>:right`; agterm only */
   spawnBeside?(o: SpawnOpts, beside: string): Promise<string>;
+  /** closes the session and what runs in it (hibernate) */
+  close?(session: string): Promise<void>;
 }
 
 export interface Agterm extends Terminal {
@@ -160,6 +162,9 @@ export function realAgterm(
     },
     async reloadHooks() {
       await run(bin, ["hooks", "reload"]);
+    },
+    async close(session) {
+      await run(bin, ["session", "close", "--target", paneOf(session).id]);
     },
     async focus(session) {
       const { id, pane } = paneOf(session);

@@ -569,7 +569,19 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     case "bind": {
       if (!(input.role in run.roles)) return fail(`${p.name} has no role ${input.role}`);
       run.roles[input.role] = input.session;
+      // a session for a sleeping role: it is awake again
+      if (input.session && run.asleep?.[input.role]) {
+        delete run.asleep[input.role];
+        if (!Object.keys(run.asleep).length) delete run.asleep;
+      }
       if (input.by === "human") recover(input.role);
+      return done();
+    }
+    case "sleep": {
+      // the session the daemon checked is still the role's: else something rebound it meanwhile
+      if (run.roles[input.role] !== input.session) return fail(`${input.role} of ${run.id} is no longer in ${input.session}`);
+      run.roles[input.role] = null;
+      run.asleep = { ...run.asleep, [input.role]: input.asleep };
       return done();
     }
     case "respawn": {

@@ -484,6 +484,12 @@ function Agents({ r, post, setErr, live }) {
     ${roles.map(([role, sid]) => {
       const status = sid ? r.sessions[sid] || "unknown" : null;
       const lent = cur && cur.kind === "inner" && cur.child && cur.role === role;
+      // hibernate closed it: the next line to it, or Wake, resumes its conversation
+      if ((r.asleep || []).includes(role)) {
+        const wake = attempt(() => api("POST", `/api/runs/${enc(r.id)}/roles/${enc(role)}/restore`, {}), setErr);
+        return html`<div class="agent" key=${role}><div class="agent-row"><b class="who grow">${role}</b>
+          <${Pill} tone="calm">${t("agent.asleep")}<//><button class="btn quiet" title=${t("why.wake")} onClick=${wake}>${t("act.wake")}</button></div></div>`;
+      }
       return html`<div class="agent" key=${role}>
         <div class="agent-row"><b class="who grow">${role}</b>
           ${lent ? html`<${Pill} tone="work">${t("agent.busyWith", { run: runLabel(cur.child) })}<//>` : sid ? html`<${Pill} tone=${status === "active" ? "work" : status === "blocked" ? "you" : "calm"}>${t(`sess.${status}`)}<//>`

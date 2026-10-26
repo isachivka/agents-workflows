@@ -8,7 +8,7 @@ import { formatDuration, matches, missingProcess, newRun, ordinal, renderData, r
 import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
-import { agentOf, agentSpawn, lineSkills } from "./skills.ts";
+import { agentOf, agentSpawn, lineSkills, resumeSpawn } from "./skills.ts";
 import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, type ChatMessage, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
@@ -74,7 +74,9 @@ export interface PlanItem {
 
 export interface RunSummary {
   /** what a person calls it (runName), and its process (`label:`, else the name) */
-  id: string; name: string; label: string; process: string; iteration: number; status: string; reason: string | null;
+  id: string; name: string; label: string; process: string;
+  /** roles put to sleep by hibernate: the next line to one resumes its conversation */
+  asleep: string[]; iteration: number; status: string; reason: string | null;
   current: string | null; currentStatus: string | null; currentKind: string | null; waitingOn: string | null;
   roles: Record<string, string | null>; vars: Record<string, string>; needsYou: boolean;
   agentWait: { note: string; human: boolean; since: number } | null;
@@ -149,6 +151,8 @@ export class Flowd {
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
   private spawning = new Set<string>();
+  /** hibernate: `<run>\0<role>\0<session>` being put to sleep, or with no conversation to resume */
+  private sleeping = new Set<string>();
   private flushRun: Promise<void> | undefined;
   private timers: ReturnType<typeof setInterval>[] = [];
   private crons: Cron[] = [];
@@ -617,6 +621,17 @@ export class Flowd {
       }
       case "role.respawn":
         return this.apply(run, { kind: "respawn", role: String(d.role ?? "") });
+      case "role.sleep": {
+        // checked again here, in the event chain: the run may have woken since the tick looked
+        const r = this.store.getRun(run);
+        const role = String(d.role ?? ""), session = String(d.session ?? "");
+        const status = this.store.sessionStatus(session);
+        if (!r || !this.parked(r) || (status !== "completed" && status !== "idle") || this.store.pendingOutbox().some((x) => x.run_id === run && x.role === role)) {
+          return { error: `${run} ${role} is busy again` };
+        }
+        const agent = d.agent === "codex" ? "codex" : "claude";
+        return this.apply(run, { kind: "sleep", role, session, asleep: { agent, conversation: String(d.conversation ?? ""), cwd: String(d.cwd ?? ""), since: this.now() } });
+      }
       case "role.failed":
       case "run.halt":
         return this.apply(run, { kind: "halt", reason: String(d.reason ?? "role failed") });
@@ -853,10 +868,12 @@ export class Flowd {
     for (let c = this.childOf(top); c; c = this.childOf(top)) top = c;
     const cur = this.currentEntry(top);
     const st = cur ? top.entries[cur.id] : undefined;
-    const onStep = top.status === "running" && cur?.kind === "agent" && cur.role && top.roles[cur.role] && st?.status !== "pending" ? cur.role : undefined;
+    // a sleeping agent counts: the message wakes it into its conversation (hibernate)
+    const has = (r: string) => Boolean(top.roles[r] || top.asleep?.[r]);
+    const onStep = top.status === "running" && cur?.kind === "agent" && cur.role && has(cur.role) && st?.status !== "pending" ? cur.role : undefined;
     // the person writes whenever they like: between steps (theirs, a wait) the agent that worked last answers,
     // else any agent the run has
-    const role = onStep ?? this.lastAgent(top) ?? Object.keys(top.roles).find((r) => top.roles[r]);
+    const role = onStep ?? this.lastAgent(top) ?? Object.keys(top.roles).find(has);
     if (!role) {
       const where = top.status !== "running" ? `it is ${top.status}` : `it is at ${cur?.id ?? "nothing"} (${cur?.kind ?? "no step"})`;
       return reply(`${top.id} has no agent yet: ${where}. Write again once one has started`);
@@ -875,7 +892,7 @@ export class Flowd {
     let best: { role: string; at: number } | undefined;
     for (const e of this.defs.processes[run.process]?.entries ?? []) {
       const at = run.entries[e.id]?.startedAt;
-      if (e.kind !== "agent" || !e.role || !run.roles[e.role] || at === undefined || run.entries[e.id].status === "pending") continue;
+      if (e.kind !== "agent" || !e.role || !(run.roles[e.role] || run.asleep?.[e.role]) || at === undefined || run.entries[e.id].status === "pending") continue;
       if (!best || at >= best.at) best = { role: e.role, at };
     }
     return best?.role;
@@ -1132,6 +1149,7 @@ export class Flowd {
 
   async tickNow(): Promise<void> {
     await this.checkUnannounced();
+    this.hibernate();
     return this.enqueue(async () => {
       for (const run of this.store.openRuns()) {
         if (run.status !== "running" && !(run.status === "needs-human" && run.reason === missingProcess(run.process))) continue;
@@ -1218,9 +1236,13 @@ export class Flowd {
       // broke): take that session rather than start the agent twice
       const opened = row.attempts > 0 && !role.beside ? await this.unboundSession(terminal, workspace, name) : undefined;
       attempts = this.store.bumpOutbox(row.id); // counted before spawning, so a crash right after is known
+      // a sleeping role (hibernate) wakes into its own conversation, where it left off
+      const asleep = run.asleep?.[row.role];
+      const spawn = asleep ? resumeSpawn(role.spawn, asleep.agent, asleep.conversation) : agentSpawn(role.spawn);
       const session = opened ?? (role.beside
         ? await this.spawnBeside(run, row.role, role.beside, { cwd, spawn: agentSpawn(role.spawn), prompt: this.lineFor(run, row), workspace, window, name })
-        : await terminal.spawn({ cwd, spawn: agentSpawn(role.spawn), prompt: this.lineFor(run, row), workspace, window, name, labels }));
+        : await terminal.spawn({ cwd: asleep?.cwd || cwd, spawn, prompt: this.lineFor(run, row), workspace, window, name, labels }));
+      if (asleep) this.log(`${run.id} ${row.role}: woke ${asleep.agent} conversation ${asleep.conversation} in ${session}`);
       this.store.markSent(row.id, this.now());
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
@@ -1565,7 +1587,7 @@ export class Flowd {
     const s = cur ? run.entries[cur.id] : undefined;
     const times = this.store.runTimes(run.id);
     return {
-      id: run.id, name: this.nameOf(run), label: p?.label ?? run.process, process: run.process, iteration: run.iteration, status: run.status, reason: run.reason ?? null,
+      id: run.id, name: this.nameOf(run), label: p?.label ?? run.process, process: run.process, asleep: Object.keys(run.asleep ?? {}), iteration: run.iteration, status: run.status, reason: run.reason ?? null,
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
       waitingOn: s?.status === "waiting" && !s.queued ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,
@@ -1594,6 +1616,60 @@ export class Flowd {
    * Brings back a role's Claude conversation once its session is gone (the run's last step closed
    * it): a new agterm session where it ran, `<spawn> --resume <id>`. The run itself does not change.
    */
+  /** The role's Claude or Codex conversation on disk, found by the run's step lines in it. */
+  private async conversationOf(run: RunState, role: string, agent: "claude" | "codex"): Promise<{ id: string; cwd: string } | null> {
+    const p = this.defs.processes[run.process];
+    const entries = (p?.entries ?? []).filter((e) => e.role === role).map((e) => e.id);
+    const root = agent === "claude" ? join(this.claudeDir(), "projects") : join(this.codexDir(), "sessions");
+    const since = (this.store.runTimes(run.id)?.created ?? 0) - 60_000;
+    return (agent === "claude" ? findClaudeSession : findCodexSession)(root, run.id, entries, since);
+  }
+
+  /** When the run's current entry began to wait: what hibernate measures. */
+  private parkedSince(run: RunState): number {
+    const cur = this.currentEntry(run);
+    const s = cur ? run.entries[cur.id] : undefined;
+    return s?.queued?.since ?? (s?.wait?.human ? s.wait.since : undefined) ?? s?.startedAt ?? this.store.runTimes(run.id)?.updated ?? this.now();
+  }
+
+  /**
+   * `hibernate:` processes only. A run parked longer than its process allows has each idle Claude or
+   * Codex agent put to sleep: its conversation recorded in the run, the role unbound, the session
+   * closed. The next line to the role resumes it (spawnFor). Never a nested run, one with a run inside,
+   * a zmx process or one with split-pane roles.
+   */
+  private hibernate(): void {
+    const now = this.now();
+    for (const run of this.store.openRuns()) {
+      const p = this.defs.processes[run.process];
+      if (!p?.hibernateMs || p.terminal === "zmx" || run.parent || run.status === "queued") continue;
+      if (Object.values(p.roles).some((r) => r.beside) || this.childOf(run) || !this.parked(run)) continue;
+      if (this.parkedSince(run) + p.hibernateMs > now) continue;
+      for (const [role, session] of Object.entries(run.roles)) {
+        const agent = session && p.roles[role] ? agentOf(p.roles[role].spawn) : "other";
+        if (!session || agent === "other" || !["completed", "idle"].includes(this.store.sessionStatus(session) ?? "")) continue;
+        const key = `${run.id}\u0000${role}\u0000${session}`;
+        if (this.sleeping.has(key)) continue; // under way, or no conversation was found for this session
+        this.sleeping.add(key);
+        this.background(this.sleepRole(run, role, session, agent, key));
+      }
+    }
+  }
+
+  private async sleepRole(run: RunState, role: string, session: string, agent: "claude" | "codex", key: string): Promise<void> {
+    const found = await this.conversationOf(run, role, agent);
+    if (!found) { this.log(`${run.id} ${role}: no ${agent} conversation found to resume later; it stays awake`); return; }
+    const r = await this.submit({ type: "role.sleep", run: run.id, data: { role, session, agent, conversation: found.id, cwd: found.cwd }, source: "flowd" });
+    this.sleeping.delete(key);
+    if (r.error) return;
+    try {
+      await this.agterm.close?.(session);
+      this.log(`${run.id} ${role}: asleep (conversation ${found.id}), closed ${session}`);
+    } catch (e) {
+      this.log(`${run.id} ${role}: asleep, but closing ${session} failed: ${msg(e)}`);
+    }
+  }
+
   async restoreSession(runId: string, role: string): Promise<{ session: string } | { error: string }> {
     const run = this.store.getRun(runId);
     if (!run) return { error: `no run ${runId}` };
@@ -1607,13 +1683,13 @@ export class Flowd {
       await this.agterm.focus(open);
       return { session: open };
     }
-    const entries = p.entries.filter((e) => e.role === role).map((e) => e.id);
-    const root = agent === "claude" ? join(this.claudeDir(), "projects") : join(this.codexDir(), "sessions");
-    const since = (this.store.runTimes(run.id)?.created ?? 0) - 60_000;
-    const found = await (agent === "claude" ? findClaudeSession : findCodexSession)(root, run.id, entries, since);
-    if (!found) return { error: `no conversation of ${run.id} ${role} in ${root}: ${agent === "claude" ? "Claude" : "Codex"} keeps none, or it was deleted` };
-    const name = `${renderTemplate(r.name ?? "{{run.id}} {{role}}", { ...renderData(run), role })} (restored)`;
-    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: agent === "claude" ? `${r.spawn} --resume ${shq(found.id)}` : `${agentSpawn(r.spawn)} resume ${shq(found.id)}`, prompt: "", workspace: p.workspace ?? run.process, window: p.window, name });
+    const asleep = run.asleep?.[role];
+    const found = asleep ? { id: asleep.conversation, cwd: asleep.cwd } : await this.conversationOf(run, role, agent);
+    if (!found) return { error: `no conversation of ${run.id} ${role}: ${agent === "claude" ? "Claude" : "Codex"} keeps none, or it was deleted` };
+    const name = `${renderTemplate(r.name ?? "{{run.id}} {{role}}", { ...renderData(run), role })}${asleep ? "" : " (restored)"}`;
+    const session = await this.agterm.spawn({ cwd: found.cwd, spawn: resumeSpawn(r.spawn, agent, found.id), prompt: "", workspace: p.workspace ?? run.process, window: p.window, name });
+    // a sleeping role of an open run is awake again in it
+    if (asleep && !TERMINAL.includes(run.status)) await this.submit({ type: "role.bind", run: run.id, data: { role, session, by: "spawn" }, source: "flowd" });
     await this.agterm.focus(session);
     this.log(`${run.id} ${role}: reopened ${agent} session ${found.id} in ${session}`);
     return { session };
