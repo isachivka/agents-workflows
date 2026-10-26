@@ -1012,6 +1012,20 @@ test("hibernate leaves an agent that is mid-turn awake", async () => {
   await f.close();
 });
 
+test("an agent that reports active before its session is bound has started: no false start alarm", async () => {
+  const { f, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  // the fake spawns S1; the new agent's first status arrives before flowd binds it
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await f.submit({ type: "run.start", data: { process: "p" }, source: "test" });
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.roles.pm, "S1");
+  clock.t += 5 * 60_000;
+  await f.tickNow();
+  await settle(f);
+  assert.deepEqual([f.store.getRun("p#1")!.status, f.store.getRun("p#1")!.entries.b.sawActive], ["running", true]);
+  await f.close();
+});
+
 // --- zmx as a second terminal ---
 
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");

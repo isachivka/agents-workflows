@@ -1247,6 +1247,9 @@ export class Flowd {
       this.lastTyped.set(session, this.now() + (this.o.spawnGraceMs ?? 15_000));
       await this.submit({ type: "role.bind", run: run.id, data: { role: row.role, session, by: "spawn" }, source: "flowd" });
       if (row.entry_id) await this.submit({ type: "entry.delivered", run: run.id, entry: row.entry_id, data: {}, source: "flowd" });
+      // an agent that starts on its prompt can report active before the session is the role's: that
+      // status went to no run, and stays active for the whole turn — hand it on, or the start watch fires
+      if (this.store.sessionStatus(session) === "active") await this.submit({ type: "agterm.status", data: { session, status: "active" }, source: "flowd" });
       // an agent may stop on a screen before it reads the first line (Claude's and Codex's folder
       // trust, Codex's update notice): answer it, beside delivery so other sessions are not held up
       // — whatever spawned it: a step's line, or a `do: type` (often empty, just to start the agent)
