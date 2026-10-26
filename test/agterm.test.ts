@@ -35,7 +35,8 @@ test("spawn passes every flag, runs the command in a login zsh and returns the n
   const f = fakeAgtermctl();
   const id = await realAgterm(f.bin).spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "pr-loop", name: "pr-loop#1 pm" });
   assert.equal(id, "S-NEW");
-  assert.equal(f.calls(), `[session][new][--cwd][/w][--command][/bin/zsh -lc 'claude '\\''x'\\'''][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n`);
+  // first: which open window holds the workspace (one window or none listed: the frontmost)
+  assert.equal(f.calls(), `[window][list][--json]\n[session][new][--cwd][/w][--command][/bin/zsh -lc 'claude '\\''x'\\'''][--workspace-name][pr-loop][--create-workspace][--no-select][--name][pr-loop#1 pm][--json]\n`);
 });
 
 // Live on 2026-10-04: a line typed together with its newline landed in Claude's composer
@@ -66,6 +67,21 @@ test("a spawn with a window goes into the open window of that name, else a new m
     const g = fakeAgtermctl();
     await realAgterm(g.bin).spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "Reels", window: "Reels", name: "reel 3" });
     assert.deepEqual(g.calls().trim().split("\n").map((c) => c.slice(0, 39)), ["[window][list][--json]", "[session][new][--window][W2][--cwd][/w]"]);
+  } finally {
+    delete process.env.FAKE_WINDOWS;
+  }
+});
+
+test("without a window, a spawn goes to the open window that holds its workspace, not the frontmost", async () => {
+  const f = fakeAgtermctl();
+  // the fake answers every window's tree with workspace W
+  process.env.FAKE_WINDOWS = JSON.stringify({ ok: true, result: { windows: [{ id: "REC", name: "reels", open: true }, { id: "W1", name: "window 1", open: true }] } });
+  try {
+    await realAgterm(f.bin).spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "W", name: "one" });
+    await realAgterm(f.bin).spawn({ cwd: "/w", spawn: "claude", prompt: "x", workspace: "Elsewhere", name: "two" });
+    const calls = f.calls().trim().split("\n");
+    assert.ok(calls.some((c) => c.startsWith("[session][new][--window][REC][--cwd]")), calls.join("\n"));
+    assert.ok(calls.some((c) => c.startsWith("[session][new][--cwd]") && c.includes("[two]")), calls.join("\n"));
   } finally {
     delete process.env.FAKE_WINDOWS;
   }

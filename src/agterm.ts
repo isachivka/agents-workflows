@@ -110,9 +110,26 @@ export function realAgterm(
     }
     return p;
   };
+  /**
+   * Without a window: the open window that already holds the workspace, so a spawn never lands in
+   * whatever window is in front at that moment (a throwaway one a recorder opened and will delete).
+   */
+  const windowWithWorkspace = async (workspace: string): Promise<string[]> => {
+    try {
+      const open = (await windows()).filter((w) => w.open);
+      if (open.length < 2) return [];
+      for (const w of open) {
+        const tree = JSON.parse(await run(bin, ["tree", "--json", "--window", w.id]));
+        if ((tree?.result?.tree?.workspaces ?? []).some((ws: { name?: string }) => ws.name === workspace)) return ["--window", w.id];
+      }
+    } catch {
+      // cannot tell: the frontmost window, as before
+    }
+    return [];
+  };
   const a: Agterm = {
     async spawn(o) {
-      const win = o.window ? ["--window", await windowFor(o.window)] : [];
+      const win = o.window ? ["--window", await windowFor(o.window)] : await windowWithWorkspace(o.workspace);
       // a login shell, so claude is on PATH
       const out = await run(bin, ["session", "new", ...win, "--cwd", o.cwd, "--command", `/bin/zsh -lc ${shq(agentLine(o.spawn, o.prompt))}`, "--workspace-name", o.workspace,
         "--create-workspace", "--no-select", "--name", o.name, "--json"]);
