@@ -54,7 +54,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/skip` | `{session? \| run?, note}` | `{run}`; skips the current step of `run`, or of the session's top run (`flow skip`) |
 | GET | `/api/runs/:id/entries/:entry/prompt` | | `{text}`, what `flow show` prints for that entry |
 | POST | `/api/runs/:id/roles/:role/rebind` | `{session}` | `{run}` |
-| POST | `/api/runs/:id/roles/:role/respawn` | | `{run}` |
+| POST | `/api/runs/:id/roles/:role/respawn` | | `{run}`; a new agent takes the role's step, and the agterm session it replaces is closed |
 | POST | `/api/runs/:id/roles/:role/restore` | | `{session}`; reopens the role's conversation in a new agterm session and focuses it: Claude with `<spawn> --resume <id>` (found in `~/.claude/projects`), Codex with `<spawn> resume <id>` (found in `~/.codex/sessions`), by the step lines flowd typed into it; an open session is just focused. The run does not change, except that a role asleep (`hibernate`) is bound to the new session: awake again. 409 when the role is not Claude or Codex in agterm, or no conversation is found |
 
 `RunSummary`: `{id, name, label, process, asleep, iteration, status, reason, current, currentStatus, currentKind,

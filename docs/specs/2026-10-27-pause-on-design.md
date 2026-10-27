@@ -44,3 +44,12 @@ and sleeps an idle agent at the next tick; an on event resumes only the runs it 
 line to the role whose step was under way, and starts queued runs; a run paused by the person stays
 paused; a process without `pause_on` never pauses; a paused step does not time out on resume. defs:
 `pause_on` needs `on`; a bad shape is an error. plugin: `reels.switch` emits at the first poll and on change.
+
+## Amendments (same day, from the first live use)
+
+- A restart forgot the paused process until the plugin's first poll; queued runs started in between.
+  flowd now takes it from its runs (`pausedBy`) right after loading the definitions.
+- A run paused while its new agent had not reported active yet kept working. An agent that goes active
+  in a run its switch paused is now stopped too, once per pause (its own stop turn is left alone).
+- Agents left behind: a `hibernate` process's run that ends closes its agents' sessions once their last
+  turn is over, and a respawn (any process) closes the session of the agent it replaces.

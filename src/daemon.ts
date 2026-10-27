@@ -155,6 +155,10 @@ export class Flowd {
   private spawning = new Set<string>();
   /** processes their `pause_on` switch has paused: their starts queue, their queue waits */
   private pausedProcesses = new Set<string>();
+  /** hibernate: sessions of runs that ended, closed once their agent's last turn is over */
+  private endedSessions = new Map<string, string>();
+  /** sessions told to stop by a switch: the turn the stop line starts is theirs to finish, not stopped again */
+  private stoppedSessions = new Set<string>();
   /** hibernate: `<run>\0<role>\0<session>` being put to sleep, or with no conversation to resume */
   private sleeping = new Set<string>();
   private flushRun: Promise<void> | undefined;
@@ -197,6 +201,9 @@ export class Flowd {
     mkdirSync(this.home, { recursive: true });
     await this.plugins.load();
     this.reloadDefs();
+    // a switch that was off stays off until its plugin says otherwise: no queued run slips out meanwhile
+    // (anything submitted from here on, the sessions' reconcile first, may start queued runs)
+    for (const run of this.store.openRuns()) if (run.pausedBy === "pause_on") this.pausedProcesses.add(run.process);
     await this.reconcileSessions();
     this.plugins.startAll();
     // runs resuming come first: the steps are translated ahead a while after start
@@ -385,7 +392,11 @@ export class Flowd {
   private async sessionTurn(session: string, status: SessionStatus): Promise<Result> {
     this.store.setSessionStatus(session, status, this.now());
     for (const r of this.store.openRuns()) {
-      if (Object.values(r.roles).includes(session)) await this.apply(r.id, { kind: "session", session, status });
+      if (!Object.values(r.roles).includes(session)) continue;
+      await this.apply(r.id, { kind: "session", session, status });
+      // an agent starting a turn in a run its switch paused (it was spawned just before, or reached by a
+      // line typed meanwhile) is stopped like the others
+      if (status === "active" && r.status === "paused" && r.pausedBy === "pause_on" && !this.stoppedSessions.has(session)) this.background(this.stopAgent(r.id, r.process, session));
     }
     if (status !== "active") void this.flush();
     return {};
@@ -624,8 +635,13 @@ export class Flowd {
         }
         return this.apply(run, { kind: "bind", role: String(d.role ?? ""), session, by });
       }
-      case "role.respawn":
-        return this.apply(run, { kind: "respawn", role: String(d.role ?? "") });
+      case "role.respawn": {
+        // the agent being replaced goes: left open, it works on beside the new one and cannot report
+        const old = this.store.getRun(run)?.roles[String(d.role ?? "")];
+        const res = await this.apply(run, { kind: "respawn", role: String(d.role ?? "") });
+        if (!res.error && old && !old.includes(":")) this.background(Promise.resolve(this.termOf(old).close?.(old)).catch((e) => this.log(`${run}: closing the replaced agent's ${old}: ${msg(e)}`)));
+        return res;
+      }
       case "role.sleep": {
         // checked again here, in the event chain: the run may have woken since the tick looked
         const r = this.store.getRun(run);
@@ -1037,6 +1053,12 @@ export class Flowd {
       if (res.run.status === "stopped") this.store.dropOutbox(runId);
     });
     if (TERMINAL.includes(res.run.status)) {
+      // a hibernating process does not keep agents of an ended run: they close once idle (hibernate())
+      const p = this.defs.processes[res.run.process];
+      if (before && !TERMINAL.includes(before.status) && p && p.terminal !== "zmx" && !res.run.parent
+        && (p.hibernateMs !== undefined || p.entries.some((e) => e.hibernateMs !== undefined))) {
+        for (const s of Object.values(res.run.roles)) if (s && !s.includes(":")) this.endedSessions.set(s, runId);
+      }
       if (res.run.parent) void this.submit({ type: "run.nested-end", run: runId, data: {}, source: "flowd" });
       for (const c of this.store.childrenOf(runId)) void this.submit({ type: "run.stop", run: c.id, data: {}, source: "flowd" });
     }
@@ -1649,21 +1671,29 @@ export class Flowd {
   private async pauseProcess(name: string): Promise<void> {
     if (!this.pausedProcesses.has(name)) this.log(`${name}: paused by its switch`);
     this.pausedProcesses.add(name);
-    for (const run of this.store.openRuns().filter((r) => r.process === name && r.status === "running")) {
-      if ((await this.apply(run.id, { kind: "pause", by: "pause_on" })).error) continue;
+    // runs it paused before (a restart, a repeated off) are gone over too: one of their agents may still work
+    for (const run of this.store.openRuns().filter((r) => r.process === name && (r.status === "running" || r.pausedBy === "pause_on"))) {
+      if (run.status === "running" && (await this.apply(run.id, { kind: "pause", by: "pause_on" })).error) continue;
       for (const session of new Set(Object.values(run.roles).filter((s): s is string => Boolean(s)))) {
         const status = this.store.sessionStatus(session);
-        if (status !== "active" && status !== "blocked") continue;
-        try {
-          const term = this.termOf(session);
-          await term.press(session, "\x1b");
-          await new Promise((r) => setTimeout(r, this.o.pauseKeyDelayMs ?? 1_000));
-          await term.type(session, `▶ flow: ${run.id} is paused: ${name}'s switch is off. Stop now: put back anything you changed in the person's setup, then end your turn. flowd tells you when to go on.`);
-          this.lastTyped.set(session, this.now());
-        } catch (e) {
-          this.log(`${run.id}: could not stop the agent in ${session}: ${msg(e)}`);
-        }
+        if (status === "active" || status === "blocked") await this.stopAgent(run.id, name, session);
       }
+    }
+  }
+
+  /** Esc ends the agent's turn and what it runs; then the line telling it to tidy up and end its turn. */
+  private async stopAgent(run: string, process: string, session: string): Promise<void> {
+    if (this.stoppedSessions.has(session)) return;
+    this.stoppedSessions.add(session);
+    try {
+      const term = this.termOf(session);
+      await term.press(session, "\x1b");
+      await new Promise((r) => setTimeout(r, this.o.pauseKeyDelayMs ?? 1_000));
+      await term.type(session, `▶ flow: ${run} is paused: ${process}'s switch is off. Stop now: put back anything you changed in the person's setup, then end your turn. flowd tells you when to go on.`);
+      this.lastTyped.set(session, this.now());
+      this.log(`${run}: stopped its agent in ${session} (switch off)`);
+    } catch (e) {
+      this.log(`${run}: could not stop the agent in ${session}: ${msg(e)}`);
     }
   }
 
@@ -1671,6 +1701,7 @@ export class Flowd {
   private async resumeProcess(name: string): Promise<void> {
     if (this.pausedProcesses.delete(name)) this.log(`${name}: resumed by its switch`);
     for (const run of this.store.openRuns().filter((r) => r.process === name && r.status === "paused" && r.pausedBy === "pause_on")) {
+      for (const s of Object.values(run.roles)) if (s) this.stoppedSessions.delete(s);
       if ((await this.apply(run.id, { kind: "resume" })).error) continue;
       const after = this.store.getRun(run.id);
       const cur = after ? this.currentEntry(after) : undefined;
@@ -1697,6 +1728,15 @@ export class Flowd {
    */
   private hibernate(): void {
     const now = this.now();
+    for (const [session, run] of this.endedSessions) {
+      const status = this.store.sessionStatus(session);
+      if (status === "active" || status === "blocked") continue; // its last turn (a final close, say) still runs
+      this.endedSessions.delete(session);
+      if (status === "closed" || status === undefined) continue;
+      this.background(Promise.resolve(this.agterm.close?.(session)).then(
+        () => this.log(`${run}: ended; closed its idle agent in ${session}`),
+        (e) => this.log(`${run}: ended; closing ${session} failed: ${msg(e)}`)));
+    }
     for (const run of this.store.openRuns()) {
       const p = this.defs.processes[run.process];
       // the entry it is parked on decides, else the process; neither: never (opt-in)

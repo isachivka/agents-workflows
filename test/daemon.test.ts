@@ -1019,6 +1019,51 @@ test("hibernate on an entry: 0s puts the agent to sleep at the first tick after 
   await t.f.close();
 });
 
+test("hibernate: a run that ends leaves no idle agent behind; a process without hibernate keeps it", async () => {
+  for (const [name, extra, closed] of [["x", "hibernate: 30m\n", true], ["y", "", false]] as const) {
+    const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", extra, name) }));
+    agterm.addSession("S1");
+    await f.submit(start(name, { pm: "S1" }));
+    await settle(f);
+    await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+    await f.submit({ type: "entry.report", data: { session: "S1", outcome: "done" }, source: "cli" });
+    assert.equal(f.store.getRun(`${name}#1`)!.status, "done");
+    await f.tickNow(); // its last turn still runs: kept
+    assert.ok(!agterm.calls.includes("close S1"));
+    await f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+    await f.tickNow();
+    await settle(f);
+    assert.equal(agterm.calls.includes("close S1"), closed, name);
+    await f.close();
+  }
+});
+
+test("pause_on: after a restart the switch's pause holds before its plugin reports, and an agent that starts in a paused run is stopped once", async () => {
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", "pause_on: {on: test.ping, where: {allowed: false}}\nmax_runs: 5\n", "q") });
+  const a = await startFlowd(home, { pauseKeyDelayMs: 0 });
+  a.agterm.addSession("S1");
+  await a.f.submit(start("q", { pm: "S1" }));
+  await settle(a.f);
+  ctxOf(subs().filter((w) => w.type === "test.ping").at(-1)).emit({ type: "test.ping", data: { allowed: false } });
+  await settle(a.f);
+  assert.equal(a.f.store.getRun("q#1")!.status, "paused");
+  // the agent had not reported active yet: it does now, and is stopped; its stop turn is not stopped again
+  await a.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await settle(a.f);
+  await a.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  await a.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await settle(a.f);
+  assert.equal(a.agterm.calls.filter((c) => c === 'press S1 "\\u001b"').length, 1, a.agterm.calls.join("\n"));
+  assert.equal((await a.f.submit(start("q", {}))).queued?.position, 1);
+  await a.f.close();
+  resetSubs();
+  // a new flowd on the same state: q#2 must not start before the plugin's first report
+  const b = await startFlowd(home, { pauseKeyDelayMs: 0 });
+  await settle(b.f);
+  assert.equal(b.f.store.getRun("q#2")!.status, "queued");
+  await b.f.close();
+});
+
 test("hibernate is strictly opt-in: without the key a run parked for days keeps its agent", async () => {
   const { f, agterm, clock } = await parkedOnReview("k", "");
   clock.t += 3 * 86_400_000;
@@ -1099,7 +1144,7 @@ test("pause_on: the switch off pauses the process's running runs, stops an agent
   await settle(f);
   await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" }); // w#1 mid-turn
   await f.submit({ type: "run.pause", run: "w#2", data: {}, source: "ui" }); // the person paused w#2 herself
-  const sub = subs().find((w) => w.type === "test.ping");
+  const sub = subs().filter((w) => w.type === "test.ping").at(-1);
   assert.ok(sub, "a standing subscription for pause_on");
   ctxOf(sub).emit({ type: "test.ping", data: { allowed: false } });
   await settle(f);
@@ -1130,7 +1175,7 @@ test("pause_on: an idle agent of a run its switch paused sleeps at the next tick
   writeFileSync(join(projects, "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
     message: { content: "▶ flow: step b · z#1 it.1 — run `flow show` for the instructions" } }) + "\n");
   await f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
-  ctxOf(subs().find((w) => w.type === "test.ping")).emit({ type: "test.ping", data: { allowed: false } });
+  ctxOf(subs().filter((w) => w.type === "test.ping").at(-1)).emit({ type: "test.ping", data: { allowed: false } });
   await settle(f);
   await f.tickNow();
   await settle(f);
@@ -1154,6 +1199,18 @@ test("a pause does not count toward a step's timeout", async () => {
   clock.t += 15 * 60_000;
   await f.tickNow();
   assert.notEqual(f.store.getRun("t#1")!.entries.b.status, "active");
+  await f.close();
+});
+
+test("a respawn closes the agent it replaces", async () => {
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  agterm.addSession("S9");
+  await f.submit(start("p", { pm: "S9" }));
+  await settle(f);
+  await f.submit({ type: "role.respawn", run: "p#1", data: { role: "pm" }, source: "ui" });
+  await settle(f);
+  assert.ok(agterm.calls.includes("close S9"), agterm.calls.join("\n"));
+  assert.ok(f.store.getRun("p#1")!.roles.pm && f.store.getRun("p#1")!.roles.pm !== "S9");
   await f.close();
 });
 
