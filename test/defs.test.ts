@@ -187,6 +187,13 @@ test("hold is a name", () => {
     ["steps[1]: hold must be a name: lowercase letters, digits, dashes"]);
 });
 
+test("pause_on takes {on, where}; a bad shape or an unknown type is an error", () => {
+  const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
+  assert.deepEqual(parseProcess("p", `pause_on: {on: signal.switch, where: {allowed: false}}\n${base}`, ctx).pauseOn, { on: "signal.switch", with: {}, where: { allowed: false } });
+  assert.deepEqual(errorsOf(() => parseProcess("p", `pause_on: true\n${base}`, ctx)), ["pause_on must be {on: <event type>, where: {...}}"]);
+  assert.deepEqual(errorsOf(() => parseProcess("p", `pause_on: {on: nope.x}\n${base}`, ctx)), ["pause_on: unknown event type nope.x"]);
+});
+
 test("respawn_lost is true or false", () => {
   const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
   assert.equal(parseProcess("p", `respawn_lost: true\n${base}`, ctx).respawnLost, true);

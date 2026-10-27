@@ -48,6 +48,8 @@ export interface FlowdOptions {
   pretranslateDelayMs?: number;
   /** how often the folder-trust dialog is looked for after a spawn (30 looks) */
   trustPollMs?: number;
+  /** pause_on: between Esc to an agent and the line telling it to stop */
+  pauseKeyDelayMs?: number;
   /** how often every open run's title is re-read from its PR (0: never on a timer) */
   titleMs?: number;
   /** agents' reports: where the copies live and the public base of their links (FLOWS_REPORTS_URL); none: not served */
@@ -151,6 +153,8 @@ export class Flowd {
   private listeners = new Set<(what: "runs" | "defs") => void>();
   private lastTyped = new Map<string, number>();
   private spawning = new Set<string>();
+  /** processes their `pause_on` switch has paused: their starts queue, their queue waits */
+  private pausedProcesses = new Set<string>();
   /** hibernate: `<run>\0<role>\0<session>` being put to sleep, or with no conversation to resume */
   private sleeping = new Set<string>();
   private flushRun: Promise<void> | undefined;
@@ -330,7 +334,8 @@ export class Flowd {
   private syncSubscriptions(): void {
     const wanted = new Map<string, Watch>();
     for (const p of Object.values(this.defs.processes)) {
-      for (const t of p.triggers) {
+      // a pause_on switch is a standing subscription too, served like a trigger's
+      for (const t of [...p.triggers, ...(p.pauseOn ? [p.pauseOn] : [])]) {
         if (!t.on || !this.plugins.loaded.has(t.on.split(".")[0])) continue; // flow.* and signal.* need no plugin
         const w: Watch = { type: t.on, with: t.with, cwd: expandHome(p.cwd), vars: {}, processes: [p.name] };
         const k = subscriptionKey(w);
@@ -649,6 +654,11 @@ export class Flowd {
       // cwd and with, and a matching where), and wakes no wait, since waits have their own watches.
       for (const name of this.plugins.subscription(e.subscription)?.processes ?? []) {
         const p = this.defs.processes[name];
+        const po = p?.pauseOn;
+        if (po && po.on === e.type && subscriptionKey({ type: po.on, cwd: expandHome(p!.cwd), with: po.with }) === e.subscription) {
+          if (matches(po.where, e.data)) await this.pauseProcess(name);
+          else await this.resumeProcess(name);
+        }
         for (const t of p?.triggers ?? []) {
           if (t.on !== e.type || !matches(t.where, e.data)) continue;
           if (subscriptionKey({ type: t.on, cwd: expandHome(p!.cwd), with: t.with }) !== e.subscription) continue;
@@ -745,7 +755,10 @@ export class Flowd {
       vars = { ...parentRun.vars, ...vars };
     }
     const runs = this.store.openRuns().filter((r) => r.process === name);
-    const { full, open, max } = this.capacity(p, runs);
+    const cap = this.capacity(p, runs);
+    const { open, max } = cap;
+    // a process its pause_on switch paused takes starts into its queue
+    const full = cap.full || this.pausedProcesses.has(name);
     // a schedule fires again; a start by hand or by an event is work that must not be lost. A start
     // that flow.trigger.skipped itself caused is refused without another one: that would feed itself
     if (full && (trigger === "cron" || trigger === "flow.trigger.skipped")) {
@@ -975,7 +988,7 @@ export class Flowd {
       const open = this.store.openRuns();
       for (const name of new Set(open.filter((r) => r.status === "queued").map((r) => r.process))) {
         const p = this.defs.processes[name];
-        if (!p) continue;
+        if (!p || this.pausedProcesses.has(name)) continue;
         let position = 0;
         for (const r of open.filter((x) => x.process === name && x.status === "queued")) {
           // read again each time: a run just started counts as working (it may park at once)
@@ -1628,6 +1641,47 @@ export class Flowd {
     return (agent === "claude" ? findClaudeSession : findCodexSession)(root, run.id, entries, since);
   }
 
+  /**
+   * `pause_on` turned off: every running run of the process pauses, marked as the switch's, and an agent
+   * mid-turn on one is stopped (Esc ends the turn and what it runs) and told to tidy up and end its turn.
+   * Typed now, not through the outbox, which holds a paused run's lines.
+   */
+  private async pauseProcess(name: string): Promise<void> {
+    if (!this.pausedProcesses.has(name)) this.log(`${name}: paused by its switch`);
+    this.pausedProcesses.add(name);
+    for (const run of this.store.openRuns().filter((r) => r.process === name && r.status === "running")) {
+      if ((await this.apply(run.id, { kind: "pause", by: "pause_on" })).error) continue;
+      for (const session of new Set(Object.values(run.roles).filter((s): s is string => Boolean(s)))) {
+        const status = this.store.sessionStatus(session);
+        if (status !== "active" && status !== "blocked") continue;
+        try {
+          const term = this.termOf(session);
+          await term.press(session, "\x1b");
+          await new Promise((r) => setTimeout(r, this.o.pauseKeyDelayMs ?? 1_000));
+          await term.type(session, `▶ flow: ${run.id} is paused: ${name}'s switch is off. Stop now: put back anything you changed in the person's setup, then end your turn. flowd tells you when to go on.`);
+          this.lastTyped.set(session, this.now());
+        } catch (e) {
+          this.log(`${run.id}: could not stop the agent in ${session}: ${msg(e)}`);
+        }
+      }
+    }
+  }
+
+  /** `pause_on` back on: the runs the switch paused go on; one stopped mid-step is told to carry on. */
+  private async resumeProcess(name: string): Promise<void> {
+    if (this.pausedProcesses.delete(name)) this.log(`${name}: resumed by its switch`);
+    for (const run of this.store.openRuns().filter((r) => r.process === name && r.status === "paused" && r.pausedBy === "pause_on")) {
+      if ((await this.apply(run.id, { kind: "resume" })).error) continue;
+      const after = this.store.getRun(run.id);
+      const cur = after ? this.currentEntry(after) : undefined;
+      if (after && cur?.kind === "agent" && cur.role && after.entries[cur.id]?.status === "active") {
+        this.store.enqueue(run.id, cur.role, `▶ flow: ${run.id} goes on: the switch is on again. Carry on with step ${cur.id} from where you stopped (\`flow show\` has the instructions).`, null, this.now());
+      }
+    }
+    await this.startQueued();
+    void this.flush();
+  }
+
   /** When the run's current entry began to wait: what hibernate measures. */
   private parkedSince(run: RunState): number {
     const cur = this.currentEntry(run);
@@ -1646,7 +1700,8 @@ export class Flowd {
     for (const run of this.store.openRuns()) {
       const p = this.defs.processes[run.process];
       // the entry it is parked on decides, else the process; neither: never (opt-in)
-      const ms = this.currentEntry(run)?.hibernateMs ?? p?.hibernateMs;
+      // a run its process's switch paused sleeps its idle agents at once, whatever hibernate says
+      const ms = run.status === "paused" && run.pausedBy === "pause_on" ? 0 : this.currentEntry(run)?.hibernateMs ?? p?.hibernateMs;
       if (!p || ms === undefined || p.terminal === "zmx" || run.parent || run.status === "queued") continue;
       if (Object.values(p.roles).some((r) => r.beside) || this.childOf(run) || !this.parked(run)) continue;
       if (this.parkedSince(run) + ms > now) continue;

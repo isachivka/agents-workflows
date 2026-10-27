@@ -62,6 +62,8 @@ export interface Process {
   hibernateMs?: number;
   /** `respawn_lost: true` — an agent lost early in its step, before it reported, is started again once */
   respawnLost?: boolean;
+  /** `pause_on:` — an event of this type that matches `where` pauses the process's runs; one that does not, resumes them */
+  pauseOn?: { on: string; with: Dict; where: Dict };
   /** the agterm workspace its roles spawn into (default: the process name) */
   workspace?: string;
   /** the agterm window (by name) its roles spawn into; made, minimized, when there is none (default: the frontmost) */
@@ -160,6 +162,9 @@ export interface RunState {
   inner?: string[];
   /** a nested run: the run and inner entry it works for, and the vars it was started with */
   parent?: { run: string; entry: string; vars: Record<string, string> };
+  /** when the run was paused, and by what: "pause_on" when its process's switch did it (only that resumes it) */
+  pausedAt?: number;
+  pausedBy?: string;
   /** roles put to sleep (`hibernate`): the conversation the next line to the role resumes */
   asleep?: Record<string, Asleep>;
 }
@@ -183,7 +188,7 @@ export type Input =
   | { kind: "ping" }
   | { kind: "child"; entry: string; child: string }
   | { kind: "set"; vars: Record<string, string> }
-  | { kind: "pause" }
+  | { kind: "pause"; by?: string }
   | { kind: "resume" }
   | { kind: "stop" }
   | { kind: "bind"; role: string; session: string | null; by: "spawn" | "human" }

@@ -1089,6 +1089,74 @@ test("without respawn_lost, or late in the step, a closed session stops the run 
   await f.close();
 });
 
+test("pause_on: the switch off pauses the process's running runs, stops an agent mid-turn and queues starts; on resumes only those", async () => {
+  const P = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "pause_on: {on: test.ping, where: {allowed: false}}\nmax_runs: 5\n", "w");
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...P }), { pauseKeyDelayMs: 0 });
+  agterm.addSession("S1", "S2", "S3");
+  await f.submit(start("w", { pm: "S1" }));
+  await f.submit(start("w", { pm: "S2" }));
+  await f.submit(start("p", { pm: "S3" }));
+  await settle(f);
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" }); // w#1 mid-turn
+  await f.submit({ type: "run.pause", run: "w#2", data: {}, source: "ui" }); // the person paused w#2 herself
+  const sub = subs().find((w) => w.type === "test.ping");
+  assert.ok(sub, "a standing subscription for pause_on");
+  ctxOf(sub).emit({ type: "test.ping", data: { allowed: false } });
+  await settle(f);
+  assert.deepEqual([f.store.getRun("w#1")!.status, f.store.getRun("w#1")!.pausedBy, f.store.getRun("p#1")!.status], ["paused", "pause_on", "running"]);
+  assert.ok(agterm.calls.includes('press S1 "\\u001b"'), agterm.calls.join("\n"));
+  assert.ok(agterm.typed().some((c) => c.startsWith("type S1 ▶ flow: w#1 is paused: w's switch is off.")), agterm.typed().join("\n"));
+  // a start while paused waits in line
+  assert.equal((await f.submit(start("w", {}))).queued?.position, 1);
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" }); // it stopped as told
+  clock.t += 3 * 3_600_000; // a long pause: the step must not time out for it
+  ctxOf(sub).emit({ type: "test.ping", data: { allowed: true } });
+  await settle(f);
+  assert.deepEqual(["w#1", "w#2", "w#3"].map((id) => f.store.getRun(id)!.status), ["running", "paused", "running"]);
+  clock.t += 20_000;
+  await settle(f);
+  assert.ok(agterm.typed().some((c) => c.startsWith("type S1 ▶ flow: w#1 goes on: the switch is on again. Carry on with step b")), agterm.typed().join("\n"));
+  await f.close();
+});
+
+test("pause_on: an idle agent of a run its switch paused sleeps at the next tick, without hibernate on the process", async () => {
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", "pause_on: {on: test.ping, where: {allowed: false}}\n", "z") });
+  const { f, agterm } = await startFlowd(home, { pauseKeyDelayMs: 0 });
+  agterm.addSession("S1");
+  await f.submit(start("z", { pm: "S1" }));
+  await settle(f);
+  const projects = join(home, "claude", "projects", "-tmp");
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(join(projects, "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
+    message: { content: "▶ flow: step b · z#1 it.1 — run `flow show` for the instructions" } }) + "\n");
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  ctxOf(subs().find((w) => w.type === "test.ping")).emit({ type: "test.ping", data: { allowed: false } });
+  await settle(f);
+  await f.tickNow();
+  await settle(f);
+  assert.deepEqual([f.store.getRun("z#1")!.status, f.store.getRun("z#1")!.roles.pm, f.store.getRun("z#1")!.asleep?.pm?.conversation], ["paused", null, "c1"]);
+  await f.close();
+});
+
+test("a pause does not count toward a step's timeout", async () => {
+  const P = proc("  - {step: b, role: pm, timeout: 1h}\n", "", "t");
+  const { f, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...P }));
+  await f.submit({ type: "run.start", data: { process: "t" }, source: "test" });
+  await settle(f);
+  await f.submit({ type: "agterm.status", data: { session: f.store.getRun("t#1")!.roles.pm!, status: "active" }, source: "agterm" });
+  clock.t += 30 * 60_000;
+  await f.submit({ type: "run.pause", run: "t#1", data: {}, source: "ui" });
+  clock.t += 5 * 3_600_000;
+  await f.submit({ type: "run.resume", run: "t#1", data: {}, source: "ui" });
+  clock.t += 20 * 60_000;
+  await f.tickNow();
+  assert.equal(f.store.getRun("t#1")!.entries.b.status, "active");
+  clock.t += 15 * 60_000;
+  await f.tickNow();
+  assert.notEqual(f.store.getRun("t#1")!.entries.b.status, "active");
+  await f.close();
+});
+
 // --- zmx as a second terminal ---
 
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");

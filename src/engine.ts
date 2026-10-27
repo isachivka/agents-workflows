@@ -140,11 +140,26 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     case "pause":
       if (run.status !== "running") return fail(`only a running run can be paused (this one is ${run.status})`);
       run.status = "paused";
+      run.pausedAt = now;
+      if (input.by) run.pausedBy = input.by;
       return done();
-    case "resume":
+    case "resume": {
       if (run.status !== "paused") return fail(`run ${run.id} is not paused`);
       run.status = "running";
+      // time paused does not count: the current entry's clocks move on by it (timeouts, start watch, reminders);
+      // a pause entry (`wait: 24h`) is wall time and keeps its own
+      const kind = ctx.process?.entries.find((e) => e.id === run.current)?.kind;
+      const s = run.current && kind !== "delay" ? run.entries[run.current] : undefined;
+      const gap = run.pausedAt === undefined ? 0 : Math.max(0, now - run.pausedAt);
+      if (s && gap) {
+        if (s.startedAt !== undefined) s.startedAt += gap;
+        if (s.startBy !== undefined) s.startBy += gap;
+        if (s.remindAt !== undefined) s.remindAt += gap;
+      }
+      delete run.pausedAt;
+      delete run.pausedBy;
       return done();
+    }
     case "set":
       Object.assign(run.vars, input.vars);
       return done();

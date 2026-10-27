@@ -107,7 +107,7 @@ export function splitStep(text: string): { summary: string; body: string; skills
   return { summary, body: m[2].trim(), skills };
 }
 
-export const PROCESS_KEYS = new Set(["label", "description", "cwd", "workspace", "window", "terminal", "repeat", "max_runs", "max_working", "hibernate", "respawn_lost", "triggers", "roles", "steps", "notify"]);
+export const PROCESS_KEYS = new Set(["label", "description", "cwd", "workspace", "window", "terminal", "repeat", "max_runs", "max_working", "hibernate", "respawn_lost", "pause_on", "triggers", "roles", "steps", "notify"]);
 export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner", "notify", "hibernate"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
@@ -141,6 +141,14 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
     }
   }
   if (raw.respawn_lost !== undefined && typeof raw.respawn_lost !== "boolean") err("respawn_lost must be true or false");
+  let pauseOn: Process["pauseOn"];
+  if (raw.pause_on !== undefined) {
+    const po = raw.pause_on;
+    if (!isObj(po) || typeof po.on !== "string" || !po.on) err("pause_on must be {on: <event type>, where: {...}}");
+    else if (!knownEvent(po.on, ctx)) err(`pause_on: unknown event type ${po.on}`);
+    else if ((po.with !== undefined && !isObj(po.with)) || (po.where !== undefined && !isObj(po.where))) err("pause_on: with and where must be mappings");
+    else pauseOn = { on: po.on, with: isObj(po.with) ? po.with : {}, where: isObj(po.where) ? po.where : {} };
+  }
   const maxWorking = raw.max_working;
   if (maxWorking !== undefined && (!Number.isInteger(maxWorking) || (maxWorking as number) < 1)) err("max_working must be an integer >= 1");
   // max_working alone limits only working runs: then the open ones are not capped
@@ -348,7 +356,8 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   return { name, ...(typeof raw.label === "string" ? { label: raw.label.trim() } : {}), description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number,
     ...(maxWorking !== undefined ? { maxWorking: maxWorking as number } : {}),
     ...(hibernateMs !== undefined ? { hibernateMs } : {}),
-    ...(raw.respawn_lost === true ? { respawnLost: true } : {}), ...(notify ? { notify } : {}),
+    ...(raw.respawn_lost === true ? { respawnLost: true } : {}),
+    ...(pauseOn ? { pauseOn } : {}), ...(notify ? { notify } : {}),
     workspace: typeof raw.workspace === "string" && raw.workspace.trim() ? raw.workspace.trim() : undefined,
     ...(typeof raw.window === "string" && raw.window.trim() ? { window: raw.window.trim() } : {}),
     terminal: terminal as Process["terminal"], triggers, roles, entries, source };
