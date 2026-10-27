@@ -222,6 +222,21 @@ Skips the current step of `RUN`, or, without one, of the top run of this session
 the next. The usual use: a run waits on its `inner` entry and nothing is to run there. Refused on
 an `inner` whose nested run is still open (stop that run first).
 
+### `flow reopen`
+
+```
+flow reopen RUN --at ENTRY [--note T]
+```
+
+Puts an ended run (`done`, `failed` or `stopped`) back to work at `ENTRY` and prints
+`RUN reopened at ENTRY`. Its vars and iteration are kept; `ENTRY` and every entry after it start over,
+and a wait there remembers what last woke it (it does not fire again on the same review). An agent
+whose session is still open stays bound; one whose session is gone sleeps with its conversation, as
+`hibernate` puts it, and the next line the run sends it opens `claude --resume <id>` with that line.
+Nothing is spawned or focused by the reopen itself. Refused on an open run (use goto there), a nested
+run, or an entry the process does not have. The run emits `flow.run.reopened`; a `max_runs` limit
+does not queue it. Use: the person changed their mind after approving.
+
 ### `flow signal`
 
 ```

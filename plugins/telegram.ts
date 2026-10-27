@@ -126,6 +126,10 @@ export default {
       const { chat, topic } = where(address);
       await call(api(ctx).closeForumTopic(chat, topic));
     },
+    async reopen(address, ctx) {
+      const { chat, topic } = where(address);
+      await call(api(ctx).reopenForumTopic(chat, topic));
+    },
   },
   login: {
     page(o, ctx) {

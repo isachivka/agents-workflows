@@ -15,7 +15,7 @@ import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
 import { Reports } from "./reports.ts";
 import { TERMINAL } from "./types.ts";
-import type { Defs, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
+import type { Asleep, Defs, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
 
 export interface FlowdOptions {
   home: string;
@@ -611,6 +611,8 @@ export class Flowd {
       }
       case "entry.goto":
         return this.apply(run, { kind: "goto", entry });
+      case "run.reopen":
+        return this.reopen(run, String(d.entry ?? ""), str(d.note));
       case "entry.retry":
         return this.apply(run, { kind: "retry", entry });
       case "run.pause":
@@ -1775,6 +1777,44 @@ export class Flowd {
     } catch (e) {
       this.log(`${run.id} ${role}: asleep, but closing ${session} failed: ${msg(e)}`);
     }
+  }
+
+  /**
+   * An ended run back to work at an entry. Its agents come back as hibernate brings them back: a session
+   * still open stays bound; otherwise the role sleeps with its conversation and the next line the run
+   * sends it wakes it with --resume. Nothing is spawned or focused here.
+   */
+  private async reopen(runId: string, entry: string, note?: string): Promise<Result> {
+    const run = this.store.getRun(runId);
+    if (!run) return { error: `no run ${runId}` };
+    if (!TERMINAL.includes(run.status)) return { error: `run ${runId} is ${run.status}, not ended: move it with goto` };
+    const p = this.defs.processes[run.process];
+    if (!p) return { error: `run ${runId} cannot be reopened: process ${run.process} is invalid or missing` };
+    if (!run.parent && !p.entries.some((e) => e.id === entry)) return { error: `no entry ${entry} in ${p.name}` };
+    const live = new Set((await this.sessions().catch(() => [])).map((x) => x.id));
+    const keep: string[] = [];
+    const asleep: Record<string, Asleep> = {};
+    if (!run.parent) {
+      for (const [role, session] of Object.entries(run.roles)) {
+        const agent = p.roles[role] && p.terminal !== "zmx" ? agentOf(p.roles[role].spawn) : "other";
+        if (session && live.has(session) && !this.store.runBySession(session)) { keep.push(role); continue; }
+        if (agent === "other" || run.asleep?.[role]) continue;
+        const found = await this.conversationOf(run, role, agent);
+        if (found) asleep[role] = { agent, conversation: found.id, cwd: found.cwd, since: this.now() };
+        else this.log(`${runId} ${role}: reopened with no ${agent} conversation found; its next line starts a fresh agent`);
+      }
+    }
+    const r = await this.apply(runId, { kind: "reopen", entry, note, keep, asleep });
+    if (r.error) return r;
+    for (const role of keep) this.endedSessions.delete(run.roles[role]!);
+    this.log(`${runId}: reopened at ${entry}${keep.length ? `; kept ${keep.join(", ")}` : ""}${Object.keys(asleep).length ? `; asleep ${Object.keys(asleep).join(", ")}` : ""}`);
+    const a = this.plugins.chat();
+    const had = this.store.chatOf(runId);
+    if (a && !("error" in a) && a.chat.reopen && had?.adapter === a.name) {
+      this.background(Promise.resolve(a.chat.reopen(had.address, a.ctx)).catch((e) => this.plugins.fault(a.name, e)));
+    }
+    if (this.pausedProcesses.has(run.process)) await this.pauseProcess(run.process);
+    return r;
   }
 
   async restoreSession(runId: string, role: string): Promise<{ session: string } | { error: string }> {

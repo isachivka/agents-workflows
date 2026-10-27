@@ -1638,3 +1638,80 @@ test("the host agent a beside role brings up first gets its trust question answe
   assert.deepEqual(pressed(agterm).filter((c) => c.startsWith("press S1 ")), ['press S1 "\\u001b[B"', 'press S1 "\\r"']);
   await f.close();
 });
+
+/** b, a review wait, c: approved and done, the agent's terminal closed, its conversation on disk */
+async function endedAfterReview(name: string, closeSession = true) {
+  const home = makeHome({ ...STEP_FILES, ...HIB("", name) });
+  const t = await startFlowd(home);
+  t.agterm.addSession("S1");
+  await t.f.submit(start(name, { pm: "S1" }));
+  await settle(t.f);
+  for (const _ of ["b", "c"]) {
+    await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+    await t.f.submit({ type: "entry.report", data: { session: "S1", outcome: "done" }, source: "cli" });
+    await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+    await settle(t.f);
+    if (t.f.store.getRun(`${name}#1`)!.current === "review") {
+      await t.f.submit({ type: "signal.review", data: { id: 7 }, source: "test" });
+      await settle(t.f);
+      t.clock.t += 60_000;
+      await settle(t.f);
+    }
+  }
+  assert.equal(t.f.store.getRun(`${name}#1`)!.status, "done");
+  if (closeSession) {
+    await t.agterm.close("S1");
+    await t.f.submit({ type: "agterm.closed", data: { session: "S1" }, source: "agterm" });
+  }
+  const projects = join(home, "claude", "projects", "-tmp");
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(join(projects, "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
+    message: { content: `▶ flow: step b · ${name}#1 it.1 — run \`flow show\` for the instructions` } }) + "\n");
+  t.agterm.calls.length = 0;
+  return t;
+}
+
+test("reopen: an ended run goes back to its wait with its vars; the agent sleeps with its conversation and the wait's event wakes it", async () => {
+  const { f, agterm } = await endedAfterReview("ro");
+  assert.equal((await f.submit({ type: "run.reopen", run: "ro#1", data: { entry: "review", note: "back to review" }, source: "test" })).error, undefined);
+  await settle(f);
+  let run = f.store.getRun("ro#1")!;
+  assert.deepEqual([run.status, run.current, run.entries.review.status, run.entries.c.status, run.roles.pm, run.asleep?.pm?.conversation],
+    ["running", "review", "waiting", "pending", null, "c1"]);
+  assert.equal(run.entries.b.status, "done", "entries before it are left as they were");
+  assert.deepEqual(agterm.calls.filter((c) => c.startsWith("spawn") || c.startsWith("focus")), [], "nothing spawned or focused");
+  assert.ok(f.store.openRuns().some((r) => r.id === "ro#1"));
+  await f.submit({ type: "signal.review", data: { id: 8 }, source: "test" });
+  await settle(f);
+  const spawn = agterm.calls.find((c) => c.startsWith("spawn"));
+  assert.ok(spawn?.includes("claude --resume 'c1' '▶ flow: step c · ro#1 it.1"), agterm.calls.join("\n"));
+  run = f.store.getRun("ro#1")!;
+  assert.equal(run.asleep, undefined);
+  assert.ok(run.roles.pm);
+  await f.close();
+});
+
+test("reopen: an agent whose terminal is still open stays bound and is not closed as an ended run's agent", async () => {
+  const { f, agterm, clock } = await endedAfterReview("rk", false);
+  assert.equal((await f.submit({ type: "run.reopen", run: "rk#1", data: { entry: "c" }, source: "test" })).error, undefined);
+  await settle(f);
+  clock.t += 60_000;
+  await settle(f);
+  const run = f.store.getRun("rk#1")!;
+  assert.deepEqual([run.status, run.current, run.roles.pm, run.asleep], ["running", "c", "S1", undefined]);
+  assert.ok(agterm.calls.some((c) => c.startsWith("type S1") && c.includes("step c · rk#1")), agterm.calls.join("\n"));
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  await f.tickNow();
+  await settle(f);
+  assert.ok(!agterm.calls.includes("close S1"));
+  await f.close();
+});
+
+test("reopen is refused for an open run and an unknown entry; goto on an ended run points to it", async () => {
+  const { f } = await endedAfterReview("rr");
+  assert.match((await f.submit({ type: "entry.goto", run: "rr#1", entry: "review", data: {}, source: "test" })).error ?? "", /flow reopen rr#1 --at review/);
+  assert.match((await f.submit({ type: "run.reopen", run: "rr#1", data: { entry: "nope" }, source: "test" })).error ?? "", /no entry nope/);
+  assert.equal((await f.submit({ type: "run.reopen", run: "rr#1", data: { entry: "review" }, source: "test" })).error, undefined);
+  assert.match((await f.submit({ type: "run.reopen", run: "rr#1", data: { entry: "review" }, source: "test" })).error ?? "", /not ended: move it with goto/);
+  await f.close();
+});

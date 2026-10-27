@@ -251,7 +251,9 @@ From `src/engine.ts`:
   files. A repeating iteration that finishes without waiting for anything (for example only a
   `clear` on a role with no session) stops the run instead of looping.
 - **Human overrides**: mark the current entry done or failed (UI, or `flow done|failed --human`),
-  skip it (a skip needs a reason), retry it, or go to any entry (UI or HTTP API).
+  skip it (a skip needs a reason), retry it, or go to any entry (UI or HTTP API). An ended run
+  comes back with `flow reopen RUN --at ENTRY`: vars kept, that entry on starts over, its agents
+  resume their own conversations when the run next sends them a line ([cli](cli.md#flow-reopen)).
 - **Nested runs.** See the next section.
 - **Back on track by talking to the agent.** An agent step that failed and stopped the run stays
   the agent's: tell the agent in its session how to go on, and once it is done its own

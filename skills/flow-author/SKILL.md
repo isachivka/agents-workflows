@@ -40,6 +40,7 @@ From the installed copy of this skill, the repo is
 | a fresh context before a step | `{do: clear, role: <role>}`; `compact` keeps a summary |
 | wait for CI, a merge, a signal | `{wait_for: gh.checks}` alone — the event's outcome closes it |
 | an agent reacts to an event | `{step: <id>, role: <role>, wait_for: gh.checks}`; the prompt reads `{{event.outcome}}`, `{{event.data.<key>}}` |
+| bring back a run that ended (the person changed their mind) | `flow reopen <run> --at <entry>` (an `sh` step can call it): vars kept, its agents resume their own conversations at the run's next line to them |
 | retry, or loop back on failure | `on_fail: retry` or `on_fail: {goto: <id>}`; `retries` caps failures per iteration (default 3) |
 | stop quietly when there is nothing to do | `on_fail: end` — the run is done (or the next iteration starts), nobody is asked |
 | skip work a run already did (a PR reviewed once) | in an `sh` step: `flow ls --all --process "$FLOW_PROCESS" --where pr="$u" >/dev/null && continue` — exit 1 means no such run; see the review-queue recipe in docs/processes.md |

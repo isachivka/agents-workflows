@@ -178,6 +178,8 @@ export type Input =
   | { kind: "report"; entry: string; outcome: Outcome; note?: string; evidence?: string; by: "agent" | "human" | "system" }
   | { kind: "skip"; entry: string; note: string }
   | { kind: "goto"; entry: string }
+  /** an ended run back to work at entry: roles not in `keep` are unbound, those in `asleep` sleep with their conversation */
+  | { kind: "reopen"; entry: string; note?: string; keep: string[]; asleep: Record<string, Asleep> }
   | { kind: "retry"; entry: string }
   | { kind: "event"; event: FlowEvent }
   | { kind: "session"; session: string; status: SessionStatus }

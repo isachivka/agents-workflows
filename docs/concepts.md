@@ -240,6 +240,7 @@ The core emits these (`src/defs.ts` `CORE_EVENTS`, `src/engine.ts`). Every one c
 | `flow.iteration.done` | `iteration` |
 | `flow.run.done` | `iteration` |
 | `flow.run.needs-human` | `reason` |
+| `flow.run.reopened` | `entry`, `note` |
 | `flow.trigger.skipped` | `process`, `trigger` |
 
 A process can wait on them (`wait_for: {on: flow.run.done, where: {process: build}}`) or be

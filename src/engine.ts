@@ -107,7 +107,10 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export interface StepCtx { process?: Process; defs: Defs; now: number; holders?: Record<string, string> }
 
 export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
-  if (TERMINAL.includes(prev.status)) return { run: prev, actions: [], error: `run ${prev.id} is ${prev.status}` };
+  if (TERMINAL.includes(prev.status) && input.kind !== "reopen") {
+    const hint = input.kind === "goto" ? `; to bring it back at ${input.entry}, reopen it (flow reopen ${prev.id} --at ${input.entry})` : "";
+    return { run: prev, actions: [], error: `run ${prev.id} is ${prev.status}${hint}` };
+  }
   const run: RunState = structuredClone(prev);
   const actions: Action[] = [];
   const { defs, now } = ctx;
@@ -176,6 +179,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
 
   const p = ctx.process;
   if (!p) {
+    if (input.kind === "reopen") return fail(`run ${run.id} cannot be reopened: ${missingProcess(run.process)}`);
     const reason = missingProcess(run.process);
     if (run.reason !== reason) halt(reason);
     return done();
@@ -369,13 +373,37 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
   if (openChild && (input.kind === "skip" || input.kind === "retry" || input.kind === "goto")) {
     return fail(`${curId} has a nested run ${openChild} open; stop it first`);
   }
-  if (curId && !cur && input.kind !== "goto" && input.kind !== "bind" && input.kind !== "respawn") {
+  if (curId && !cur && input.kind !== "goto" && input.kind !== "reopen" && input.kind !== "bind" && input.kind !== "respawn") {
     const reason = `entry ${curId} no longer exists`;
     if (run.reason !== reason) halt(reason);
     return done();
   }
 
   switch (input.kind) {
+    case "reopen": {
+      if (!TERMINAL.includes(prev.status)) return fail(`run ${run.id} is ${run.status}, not ended: move it with goto`);
+      if (run.parent) return fail(`run ${run.id} is nested in ${run.parent.run}: its parent decides what its end meant`);
+      if (!byId(input.entry)) return fail(`no entry ${input.entry} in ${p.name}`);
+      run.status = "running";
+      run.reason = undefined;
+      run.startBlocked = undefined;
+      run.pausedBy = undefined;
+      run.pausedAt = undefined;
+      for (const role of Object.keys(run.roles)) if (!input.keep.includes(role)) run.roles[role] = null;
+      run.asleep = { ...run.asleep, ...input.asleep };
+      for (const role of Object.keys(run.asleep)) if (run.roles[role]) delete run.asleep[role];
+      if (!Object.keys(run.asleep).length) delete run.asleep;
+      // the entry and all after it start over; a stopped run's current entry too (it may come before)
+      const ids = p.entries.map((x) => x.id);
+      for (const id of [...ids.slice(ids.indexOf(input.entry)), ...(cur ? [cur.id] : [])]) {
+        const old = st(id);
+        run.entries[id] = { ...blankEntry(), attempts: old.attempts, failures: old.failures, woke: old.woke };
+      }
+      run.current = null;
+      emit("flow.run.reopened", { entry: input.entry, note: input.note ?? "" });
+      enter(input.entry);
+      return done();
+    }
     case "start": {
       if (curId) return fail(`run ${run.id} already started`);
       if (run.status === "queued") {

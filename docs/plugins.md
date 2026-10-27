@@ -158,6 +158,7 @@ chat: {
   post(address, msg: { text: string; file?: string }, ctx): Promise<void>, // file: a local path
   close(address, end: { outcome: "done" | "stopped" }, ctx): Promise<void>,
   rename?(address, name, ctx): Promise<void>,                             // optional
+  reopen?(address, ctx): Promise<void>,                                    // optional: its run was reopened
 }
 ```
 
@@ -170,6 +171,8 @@ chat: {
 - **Names.** `name` is what a person calls the run ([`label`](processes.md)): `<title> · <label>`, or
   `<label> · DD.MM HH:MM` without a title. When a root run's title comes or changes while its
   conversation is open, flowd calls `rename` with the new name, if the adapter has it.
+- **Reopened runs.** An ended run's conversation is closed; when the run is reopened (`flow reopen`)
+  flowd calls `reopen` on its address, if the adapter has it (Telegram reopens the topic), and posts there again.
 - **Incoming.** The adapter calls `ctx.message({address, text, from})` for each message it accepts;
   it filters who may write (its config) and what (text only, say).
 - **Failures.** A throw from `open` or `post` fails the `flow say` that caused it, with the error;

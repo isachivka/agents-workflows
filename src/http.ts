@@ -258,6 +258,7 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
     }],
     ["POST", /^\/api\/runs\/([^/]+)\/(pause|resume|stop|ping)$/, ([id, verb]) => submit({ type: `run.${verb}`, run: id, data: {}, source: "ui" })],
     ["POST", /^\/api\/runs\/([^/]+)\/nest$/, ([id], b) => submit({ type: "run.nest", run: id, data: { process: String(b.process ?? ""), ui: true }, source: "ui" })],
+    ["POST", /^\/api\/runs\/([^/]+)\/reopen$/, ([id], b) => submit({ type: "run.reopen", run: id, data: { entry: String(b.entry ?? ""), note: b.note }, source: "ui" })],
     ["POST", /^\/api\/runs\/([^/]+)\/vars$/, ([id], b) => submit({ type: "run.set", run: id, data: { vars: b.vars ?? {} }, source: "ui" })],
     ["POST", /^\/api\/runs\/([^/]+)\/entries\/([^/]+)\/(done|failed|skip|retry|goto)$/, ([id, entry, verb], b) =>
       submit(verb === "done" || verb === "failed"

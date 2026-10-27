@@ -29,6 +29,7 @@ const answers: Record<string, unknown> = {
   sendMessage: { message_id: 1, date: 0, chat: { id: -100, type: "supergroup" } },
   sendDocument: { message_id: 2, date: 0, chat: { id: -100, type: "supergroup" } },
   closeForumTopic: true,
+  reopenForumTopic: true,
   editForumTopic: true,
 };
 const server = createServer((req, res) => {
@@ -100,6 +101,10 @@ test("a long text goes as several messages into the topic; a file as a document 
   calls.length = 0;
   await chat.close("-100/77", { outcome: "done" }, ctx);
   assert.deepEqual([calls[0].method, json(0).message_thread_id], ["closeForumTopic", 77]);
+
+  calls.length = 0;
+  await chat.reopen!("-100/77", ctx);
+  assert.deepEqual([calls[0].method, json(0).message_thread_id], ["reopenForumTopic", 77]);
 });
 
 test("parts cuts at a line break near the limit, else at the limit", () => {

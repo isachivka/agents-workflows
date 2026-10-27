@@ -272,3 +272,21 @@ test("flow start on a busy agent before its inner says the process will run insi
   assert.deepEqual([r.code, r.stdout], [0, "leaf will run inside outer#1 when it reaches inner\n"]);
   await s.close();
 });
+
+test("flow reopen puts an ended run back at an entry through the API; a refusal comes back", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const env = { FLOWD_URL: s.base };
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  await s.call("POST", "/api/runs/p%231/stop", {});
+  await settle(s.f);
+  const usage = await flow(["reopen", "p#1"], env);
+  assert.deepEqual([usage.code, usage.stderr], [1, "flow: usage: flow reopen RUN --at ENTRY [--note T]\n"]);
+  assert.equal((await flow(["reopen", "p#1", "--at", "c", "--note", "again"], env)).stdout, "p#1 reopened at c\n");
+  await settle(s.f);
+  assert.deepEqual([s.f.store.getRun("p#1")!.status, s.f.store.getRun("p#1")!.current], ["running", "c"]);
+  const again = await flow(["reopen", "p#1", "--at", "c"], env);
+  assert.equal(again.code, 1);
+  assert.match(again.stderr, /p#1 is running, not ended: move it with goto/);
+  await s.close();
+});

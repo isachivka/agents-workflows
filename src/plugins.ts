@@ -28,6 +28,8 @@ export interface ChatAdapter {
   rename?(address: string, name: string, ctx: PluginCtx): Promise<unknown> | unknown;
   post(address: string, msg: { text: string; file?: string }, ctx: PluginCtx): Promise<unknown> | unknown;
   close(address: string, end: { outcome: "done" | "stopped" }, ctx: PluginCtx): Promise<unknown> | unknown;
+  /** the run's ended conversation is in use again: its run was reopened */
+  reopen?(address: string, ctx: PluginCtx): Promise<unknown> | unknown;
 }
 export interface ActiveChat { name: string; chat: ChatAdapter; ctx: PluginCtx }
 /** A way to log in to the UI from outside: a page with the provider's button, and its callback's check. */

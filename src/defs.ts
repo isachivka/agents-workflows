@@ -8,7 +8,7 @@ import type { Defs, Dict, Entry, OnFail, Process, Role, StepDef, Trigger, WaitFo
 
 export const CORE_EVENTS = [
   "flow.step.done", "flow.step.failed", "flow.iteration.done",
-  "flow.run.done", "flow.run.needs-human", "flow.trigger.skipped",
+  "flow.run.done", "flow.run.needs-human", "flow.run.reopened", "flow.trigger.skipped",
 ];
 export const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 

@@ -51,6 +51,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/entries/:entry/done` · `/failed` | `{note?, evidence?}` | `{run}`; closes the entry as the human (`failed` needs a note) |
 | POST | `/api/runs/:id/entries/:entry/skip` | `{note}` | `{run}`; a skip needs a reason |
 | POST | `/api/runs/:id/entries/:entry/retry` · `/goto` | | `{run}` |
+| POST | `/api/runs/:id/reopen` | `{entry, note?}` | `{run}`; an ended run back to work at `entry`, its agents asleep with their conversations until the run next needs them (`flow reopen`). 409 on an open run (`goto` there; a `goto` on an ended run is refused and points here), a nested run, an unknown entry |
 | POST | `/api/skip` | `{session? \| run?, note}` | `{run}`; skips the current step of `run`, or of the session's top run (`flow skip`) |
 | GET | `/api/runs/:id/entries/:entry/prompt` | | `{text}`, what `flow show` prints for that entry |
 | POST | `/api/runs/:id/roles/:role/rebind` | `{session}` | `{run}` |

@@ -380,3 +380,24 @@ test("a title that comes or changes renames the open conversation once; a nested
   assert.deepEqual(chatLog(), ["open outer#1 Before", "post T1 hi", "rename T1 After · outer"]);
   await t.f.close();
 });
+
+test("a reopened run's closed conversation is reopened", async () => {
+  const { f, agterm, clock } = await running();
+  await f.say({ session: "S1", text: "hi" });
+  await f.submit(status("S1", "active"));
+  await f.submit(done("S1"));
+  await f.submit(status("S1", "completed"));
+  await settle(f);
+  clock.t += 60_000;
+  await settle(f);
+  await f.submit(status("S1", "active"));
+  await f.submit(done("S1"));
+  await settle(f);
+  assert.equal(f.store.getRun("p#1")!.status, "done");
+  assert.ok(chatLog().includes("close T1 done"), chatLog().join("\n"));
+  assert.ok(agterm.sessions.some((s) => s.id === "S1"));
+  assert.equal((await f.submit({ type: "run.reopen", run: "p#1", data: { entry: "c" }, source: "test" })).error, undefined);
+  await settle(f);
+  assert.equal(chatLog().at(-1), "reopen T1");
+  await f.close();
+});

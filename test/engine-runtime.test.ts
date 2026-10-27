@@ -566,3 +566,41 @@ test("a failed nested run takes the inner's on_fail; without a nested run inner 
   f.send(rep("inner", "failed", "system", "two#1 stopped"));
   assert.deepEqual([f.run.status, f.run.reason], ["needs-human", "inner failed: two#1 stopped"]);
 });
+
+test("reopen brings an ended run back at an entry: vars and iteration kept, that entry on starts over, a wait keeps its last wake", () => {
+  const s = new Sim(`
+description: d
+cwd: /tmp
+roles: {pm: {spawn: claude}}
+steps:
+  - {step: b, role: pm}
+  - {id: review, wait_for: signal.review}
+  - {step: c, role: pm}
+`, STEPS, { pm: "S1" });
+  s.send({ kind: "start" }).send({ kind: "set", vars: { reel: "2" } }).send(rep("b")).send(ev("signal.review", { id: 7 })).send(rep("c"));
+  assert.equal(s.run.status, "done");
+  assert.match(s.send({ kind: "goto", entry: "review" }).error!, /is done; to bring it back at review, reopen it \(flow reopen p#1 --at review\)/);
+  s.send({ kind: "reopen", entry: "review", note: "again", keep: [], asleep: { pm: { agent: "claude", conversation: "c1", cwd: "/w", since: 1 } } });
+  assert.equal(s.error, undefined);
+  assert.deepEqual([s.run.status, s.run.current, s.run.vars.reel, s.run.iteration, s.status("b"), s.status("review"), s.status("c")],
+    ["running", "review", "2", 1, "done", "waiting", "pending"]);
+  assert.deepEqual([s.run.roles.pm, s.run.asleep?.pm?.conversation], [null, "c1"]);
+  assert.deepEqual(s.run.entries.review.woke, { type: "signal.review", data: { id: 7 } });
+  assert.deepEqual(s.emitted(), ["flow.run.reopened"]);
+  assert.ok(s.kinds().includes("watch"));
+  assert.match(s.send({ kind: "reopen", entry: "review", keep: [], asleep: {} }).error!, /is running, not ended: move it with goto/);
+});
+
+test("reopen keeps a role it is told to keep, and refuses an unknown entry and a nested run", () => {
+  const s = new Sim(LINEAR, STEPS, { pm: "S1", ex: "S2" });
+  s.send({ kind: "start" }).send(rep("b")).send(rep("c"));
+  assert.equal(s.run.status, "done");
+  assert.match(s.send({ kind: "reopen", entry: "nope", keep: [], asleep: {} }).error!, /no entry nope/);
+  s.send({ kind: "reopen", entry: "c", keep: ["ex"], asleep: {} });
+  assert.deepEqual([s.run.current, s.run.roles.pm, s.run.roles.ex], ["c", null, "S2"]);
+  assert.deepEqual(s.delivered(), [nudge("ex", "c")]);
+  const n = new Sim(LINEAR, STEPS, { pm: "S1", ex: "S2" });
+  n.run.parent = { run: "outer#1", entry: "inner", vars: {} };
+  n.send({ kind: "start" }).send({ kind: "stop" });
+  assert.match(n.send({ kind: "reopen", entry: "b", keep: [], asleep: {} }).error!, /nested in outer#1/);
+});

@@ -28,6 +28,8 @@ const HELP = `flow — drive flows from an agent session or a terminal
                                          start a run; --var seeds its vars before the first step;
                                          --inner: the process for its inner step, then for that one's
   flow skip [RUN] --note T               skip the current step of RUN, or of this session's run
+  flow reopen RUN --at ENTRY [--note T]  put an ended run back to work at ENTRY; its agents resume their
+                                         conversations when the run next needs them
   flow ls [--all] [--process P] [--where k=v …]
                                          open runs (--all: finished ones too); filtered, exit 1 when none match
   flow check [name]                      validate FLOWS_HOME offline (all, or one process or step)
@@ -54,6 +56,7 @@ interface Args {
   vars: string[];
   inner: string[];
   file?: string;
+  at?: string;
 }
 
 export function parseArgs(argv: string[]): Args {
@@ -68,6 +71,7 @@ export function parseArgs(argv: string[]): Args {
     if (x === "--note") a.note = value();
     else if (x === "--evidence") a.evidence = value();
     else if (x === "--file") a.file = value();
+    else if (x === "--at") a.at = value();
     else if (x === "--run") a.run = value();
     else if (x === "--step") a.step = value();
     else if (x === "--outcome") a.outcome = value();
@@ -200,6 +204,12 @@ export async function main(argv: string[]): Promise<number> {
         if (!a.note) throw new CliError("flow skip needs --note saying why");
         await call("POST", "/api/skip", { session: a._[0] ? undefined : session, run: a._[0] ?? a.run, note: a.note });
         out("skipped");
+        return 0;
+      }
+      case "reopen": {
+        if (a._.length !== 1 || !a.at) throw new CliError("usage: flow reopen RUN --at ENTRY [--note T]");
+        await call("POST", `/api/runs/${encodeURIComponent(a._[0])}/reopen`, { entry: a.at, note: a.note });
+        out(`${a._[0]} reopened at ${a.at}`);
         return 0;
       }
       case "set": {

@@ -104,6 +104,7 @@ export default {
     async rename(address: string, name: string) { (g.__flowsChat ??= []).push("rename " + address + " " + name); },
     async post(address: string, m: any) { if (g.__flowsChatFail) throw new Error("no rights"); (g.__flowsChat ??= []).push("post " + address + " " + m.text + (m.file ? " +" + m.file : "")); },
     async close(address: string, end: any) { (g.__flowsChat ??= []).push("close " + address + " " + end.outcome); },
+    async reopen(address: string) { (g.__flowsChat ??= []).push("reopen " + address); },
   },
   start(ctx: any) { g.__flowsChatCtx = ctx; },
 };
