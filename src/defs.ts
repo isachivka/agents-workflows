@@ -108,7 +108,7 @@ export function splitStep(text: string): { summary: string; body: string; skills
 }
 
 export const PROCESS_KEYS = new Set(["label", "description", "cwd", "workspace", "window", "terminal", "repeat", "max_runs", "max_working", "hibernate", "respawn_lost", "triggers", "roles", "steps", "notify"]);
-export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner", "notify"]);
+export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner", "notify", "hibernate"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
 const knownEvent = (type: string, ctx: DefCtx) => ctx.eventTypes.has(type) || /^signal\.[a-z0-9.-]+$/.test(type);
@@ -132,7 +132,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   if (!cwd) err("cwd is required");
   const repeat = raw.repeat ?? false;
   if (typeof repeat !== "boolean") err("repeat must be true or false");
-  let hibernateMs: number | undefined;
+  let hibernateMs: number | undefined; // the process's; an entry may set its own
   if (raw.hibernate !== undefined) {
     try {
       hibernateMs = parseDuration(raw.hibernate);
@@ -295,6 +295,15 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       }
     }
 
+    let hibernateMs: number | undefined;
+    if (r.hibernate !== undefined) {
+      try {
+        hibernateMs = parseDuration(r.hibernate);
+      } catch (e) {
+        err(`${at}: hibernate: ${message(e)}`);
+      }
+    }
+
     const id = typeof r.id === "string" ? r.id : String(r.step ?? r.do ?? waitFor?.on ?? (r.wait !== undefined ? "wait" : r.sh !== undefined ? "sh" : r.inner !== undefined ? "inner" : `entry-${i + 1}`));
     entries.push({
       id, kind,
@@ -307,6 +316,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       sh, cwd: sh !== undefined && typeof r.cwd === "string" ? r.cwd : undefined,
       hold: typeof r.hold === "string" ? r.hold : undefined,
       ...(r.notify !== undefined ? { notify: parseNotify(r.notify, `${at}: `, err) } : {}),
+      ...(hibernateMs !== undefined ? { hibernateMs } : {}),
     });
   }
 

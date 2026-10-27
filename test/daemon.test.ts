@@ -990,6 +990,35 @@ test("hibernate: a parked run's idle agent is closed and resumed into its conver
   await f.close();
 });
 
+test("hibernate on an entry: 0s puts the agent to sleep at the first tick after its turn ends there; other entries keep the process's", async () => {
+  const name = "e";
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n  - {id: review, wait_for: signal.review, hibernate: 0s}\n  - {step: c, role: pm}\n", "", name) });
+  const t = await startFlowd(home);
+  t.agterm.addSession("S1");
+  await t.f.submit(start(name, { pm: "S1" }));
+  await settle(t.f);
+  const projects = join(home, "claude", "projects", "-tmp");
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(join(projects, "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
+    message: { content: "▶ flow: step b · e#1 it.1 — run `flow show` for the instructions" } }) + "\n");
+  // on b (no hibernate there, none on the process): never
+  t.clock.t += 86_400_000;
+  await t.f.tickNow();
+  await settle(t.f);
+  assert.equal(t.f.store.getRun("e#1")!.roles.pm, "S1");
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await t.f.submit({ type: "entry.report", data: { session: "S1", outcome: "done" }, source: "cli" });
+  await settle(t.f);
+  await t.f.tickNow(); // parked on review, but the turn has not ended: awake
+  await settle(t.f);
+  assert.equal(t.f.store.getRun("e#1")!.roles.pm, "S1");
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  await t.f.tickNow();
+  await settle(t.f);
+  assert.deepEqual([t.f.store.getRun("e#1")!.roles.pm, t.f.store.getRun("e#1")!.asleep?.pm?.conversation], [null, "c1"]);
+  await t.f.close();
+});
+
 test("hibernate is strictly opt-in: without the key a run parked for days keeps its agent", async () => {
   const { f, agterm, clock } = await parkedOnReview("k", "");
   clock.t += 3 * 86_400_000;

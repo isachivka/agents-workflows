@@ -35,6 +35,8 @@ export interface Entry {
   hold?: string;
   /** overrides the step file's notify, key by key */
   notify?: Notify;
+  /** `hibernate:` on the entry: how long a run parked here keeps its idle agents (over the process's) */
+  hibernateMs?: number;
 }
 
 /** name: the agterm session name, a template over run and role (default "{{run.id}} {{role}}") */

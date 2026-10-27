@@ -1645,9 +1645,11 @@ export class Flowd {
     const now = this.now();
     for (const run of this.store.openRuns()) {
       const p = this.defs.processes[run.process];
-      if (!p?.hibernateMs || p.terminal === "zmx" || run.parent || run.status === "queued") continue;
+      // the entry it is parked on decides, else the process; neither: never (opt-in)
+      const ms = this.currentEntry(run)?.hibernateMs ?? p?.hibernateMs;
+      if (!p || ms === undefined || p.terminal === "zmx" || run.parent || run.status === "queued") continue;
       if (Object.values(p.roles).some((r) => r.beside) || this.childOf(run) || !this.parked(run)) continue;
-      if (this.parkedSince(run) + p.hibernateMs > now) continue;
+      if (this.parkedSince(run) + ms > now) continue;
       for (const [role, session] of Object.entries(run.roles)) {
         const agent = session && p.roles[role] ? agentOf(p.roles[role].spawn) : "other";
         if (!session || agent === "other" || !["completed", "idle"].includes(this.store.sessionStatus(session) ?? "")) continue;
