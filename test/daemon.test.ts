@@ -1026,6 +1026,40 @@ test("an agent that reports active before its session is bound has started: no f
   await f.close();
 });
 
+test("respawn_lost: an agent whose session closes early in its step, before it reported, starts again once", async () => {
+  const P = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "respawn_lost: true\n", "r");
+  const { f, agterm, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...P }));
+  await f.submit({ type: "run.start", data: { process: "r" }, source: "test" });
+  await settle(f);
+  const first = f.store.getRun("r#1")!.roles.pm!;
+  clock.t += 60_000;
+  await f.submit({ type: "agterm.closed", data: { session: first }, source: "agterm" });
+  await settle(f);
+  let run = f.store.getRun("r#1")!;
+  assert.equal(run.status, "running");
+  assert.ok(run.roles.pm, "spawned again");
+  assert.equal(agterm.calls.filter((c) => c.startsWith("spawn")).length, 2);
+  // a second loss in the same step goes to the person
+  await f.submit({ type: "agterm.closed", data: { session: run.roles.pm! }, source: "agterm" });
+  run = f.store.getRun("r#1")!;
+  assert.deepEqual([run.status, run.reason], ["needs-human", "role pm session closed"]);
+  await f.close();
+});
+
+test("without respawn_lost, or late in the step, a closed session stops the run as before", async () => {
+  const { f, clock } = await startFlowd(makeHome({ ...STEP_FILES, ...TWO, ...proc("  - {step: b, role: pm}\n", "respawn_lost: true\n", "r") }));
+  await f.submit({ type: "run.start", data: { process: "p" }, source: "test" });
+  await settle(f);
+  await f.submit({ type: "agterm.closed", data: { session: f.store.getRun("p#1")!.roles.pm! }, source: "agterm" });
+  assert.equal(f.store.getRun("p#1")!.status, "needs-human");
+  await f.submit({ type: "run.start", data: { process: "r" }, source: "test" });
+  await settle(f);
+  clock.t += 11 * 60_000;
+  await f.submit({ type: "agterm.closed", data: { session: f.store.getRun("r#1")!.roles.pm! }, source: "agterm" });
+  assert.equal(f.store.getRun("r#1")!.status, "needs-human");
+  await f.close();
+});
+
 // --- zmx as a second terminal ---
 
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");

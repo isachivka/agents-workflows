@@ -107,7 +107,7 @@ export function splitStep(text: string): { summary: string; body: string; skills
   return { summary, body: m[2].trim(), skills };
 }
 
-export const PROCESS_KEYS = new Set(["label", "description", "cwd", "workspace", "window", "terminal", "repeat", "max_runs", "max_working", "hibernate", "triggers", "roles", "steps", "notify"]);
+export const PROCESS_KEYS = new Set(["label", "description", "cwd", "workspace", "window", "terminal", "repeat", "max_runs", "max_working", "hibernate", "respawn_lost", "triggers", "roles", "steps", "notify"]);
 export const ENTRY_KEYS = new Set(["id", "step", "role", "do", "text", "with", "wait_for", "wait", "sh", "cwd", "on_fail", "retries", "after", "detour", "timeout", "hold", "inner", "notify"]);
 const SESSION_ACTIONS = new Set(["clear", "compact", "type"]);
 
@@ -140,6 +140,7 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
       err(`hibernate: ${message(e)}`);
     }
   }
+  if (raw.respawn_lost !== undefined && typeof raw.respawn_lost !== "boolean") err("respawn_lost must be true or false");
   const maxWorking = raw.max_working;
   if (maxWorking !== undefined && (!Number.isInteger(maxWorking) || (maxWorking as number) < 1)) err("max_working must be an integer >= 1");
   // max_working alone limits only working runs: then the open ones are not capped
@@ -336,7 +337,8 @@ export function parseProcess(name: string, text: string, ctx: DefCtx, source = "
   if (errors.length) throw new DefError(errors);
   return { name, ...(typeof raw.label === "string" ? { label: raw.label.trim() } : {}), description, cwd, repeat: repeat as boolean, maxRuns: maxRuns as number,
     ...(maxWorking !== undefined ? { maxWorking: maxWorking as number } : {}),
-    ...(hibernateMs !== undefined ? { hibernateMs } : {}), ...(notify ? { notify } : {}),
+    ...(hibernateMs !== undefined ? { hibernateMs } : {}),
+    ...(raw.respawn_lost === true ? { respawnLost: true } : {}), ...(notify ? { notify } : {}),
     workspace: typeof raw.workspace === "string" && raw.workspace.trim() ? raw.workspace.trim() : undefined,
     ...(typeof raw.window === "string" && raw.window.trim() ? { window: raw.window.trim() } : {}),
     terminal: terminal as Process["terminal"], triggers, roles, entries, source };

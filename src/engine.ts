@@ -6,6 +6,8 @@ export const REMIND_AFTER_MS = 30_000;
 export const MAX_REMINDERS = 2;
 export const COMPACT_TIMEOUT_MS = 600_000;
 export const START_TIMEOUT_MS = 120_000;
+/** respawn_lost: how early in a step an agent's lost session counts as lost, not as its own end */
+export const LOST_EARLY_MS = 600_000;
 export const SHELL_TIMEOUT_MS = 1_800_000;
 
 const envName = (k: string) => k.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
@@ -178,7 +180,7 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
     const e = byId(id)!;
     const s = st(id);
     run.current = id;
-    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined, queued: undefined, child: undefined });
+    Object.assign(s, { status: "pending", startedAt: now, deliveredAt: undefined, sawActive: false, remindAt: undefined, reminded: 0, wait: undefined, startBy: undefined, queued: undefined, child: undefined, respawned: undefined });
     proceed(id);
   }
 
@@ -470,6 +472,14 @@ export function step(prev: RunState, input: Input, ctx: StepCtx): StepResult {
       const busy = cur && roles.includes(cur.role ?? "") && cur.kind !== "human" && st(cur.id).status === "active";
       if (input.status === "closed") {
         for (const r of roles) run.roles[r] = null;
+        const s = busy ? st(cur!.id) : undefined;
+        // respawn_lost: an agent gone within its step's first minutes, before it reported or waited,
+        // is started again once — a session something else closed, not a step that went wrong
+        if (s && p.respawnLost && !s.respawned && !s.wait && s.deliveredAt !== undefined && now - s.deliveredAt < LOST_EARLY_MS) {
+          s.respawned = true;
+          recover(cur!.role!);
+          return done();
+        }
         if (busy) halt(`role ${cur!.role} session closed`);
         return done();
       }

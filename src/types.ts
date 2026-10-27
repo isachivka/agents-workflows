@@ -58,6 +58,8 @@ export interface Process {
   maxWorking?: number;
   /** `hibernate:` — a run parked this long has its idle agents closed, their conversations resumed on the next line */
   hibernateMs?: number;
+  /** `respawn_lost: true` — an agent lost early in its step, before it reported, is started again once */
+  respawnLost?: boolean;
   /** the agterm workspace its roles spawn into (default: the process name) */
   workspace?: string;
   /** the agterm window (by name) its roles spawn into; made, minimized, when there is none (default: the frontmost) */
@@ -123,6 +125,8 @@ export interface EntryState {
   wait?: AgentWait;
   /** an inner entry: the nested run working in its role's agent */
   child?: string;
+  /** respawn_lost already started this step's agent again once */
+  respawned?: boolean;
 }
 
 /** Declared mid-turn it parks on that turn's end; the agent's next turn uses it up. */

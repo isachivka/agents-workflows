@@ -58,6 +58,7 @@ From the installed copy of this skill, the repo is
 | a Codex agent instead of Claude | `spawn: codex --dangerously-bypass-approvals-and-sandbox` on the role; it gets `$flow` and the step's skills as `$name`, its trust question answered. No `do: compact` for it, and it needs `terminal: agterm` |
 | cap how many runs work at once, not how many wait (a factory waiting on reviews) | `max_working: 4` on the process: a run parked on a wait, a hold or the person does not count; `max_runs` alone counts every open run |
 | close idle agents of runs that wait for hours (a factory), resume them when needed | `hibernate: 30m` on the process: a parked run's idle Claude/Codex is closed, and its next line resumes the same conversation in a new session |
+| a fresh agent sometimes loses its session to something else (a factory) | `respawn_lost: true` on the process: lost in the first 10 minutes of a step, before reporting, it is started again once |
 | keep a process's agents out of the window the person works in | `window: Reels` on the process: its roles spawn into the agterm window of that name, made minimized when there is none |
 | no messenger notices for a process (many small runs) | `notify: false` on the process: no "waits for you", no "done"; an agent's `flow say` still posts |
 | a name a person reads (the UI, the Telegram topic) | `label: Frontend errors, daily` on the process; a run is then called `<title> · <label>`, or `<label> · 20.10 06:00` without a title |

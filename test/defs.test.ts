@@ -187,6 +187,13 @@ test("hold is a name", () => {
     ["steps[1]: hold must be a name: lowercase letters, digits, dashes"]);
 });
 
+test("respawn_lost is true or false", () => {
+  const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
+  assert.equal(parseProcess("p", `respawn_lost: true\n${base}`, ctx).respawnLost, true);
+  assert.equal(parseProcess("p", base, ctx).respawnLost, undefined);
+  assert.deepEqual(errorsOf(() => parseProcess("p", `respawn_lost: yes please\n${base}`, ctx)), ["respawn_lost must be true or false"]);
+});
+
 test("hibernate takes a duration; a bad one is an error", () => {
   const base = "description: d\ncwd: /tmp\nroles: {pm: {spawn: c}}\nsteps:\n  - {step: pick, role: pm}\n";
   assert.equal(parseProcess("p", `hibernate: 30m\n${base}`, ctx).hibernateMs, 1_800_000);
