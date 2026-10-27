@@ -1214,6 +1214,19 @@ test("a respawn closes the agent it replaces", async () => {
   await f.close();
 });
 
+test("a /clear for a role whose session is gone is dropped: never a spawn with /clear as its prompt", async () => {
+  const P = proc("  - {id: fresh, do: clear, role: pm}\n  - {step: b, role: pm}\n", "repeat: true\n", "c");
+  const { f, agterm } = await startFlowd(makeHome({ ...STEP_FILES, ...P }));
+  agterm.addSession("S1");
+  await f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" }); // busy: the /clear waits
+  await f.submit(start("c", { pm: "S1" }));
+  await f.submit({ type: "agterm.closed", data: { session: "S1" }, source: "agterm" });
+  await settle(f);
+  assert.ok(!agterm.calls.some((c) => c.startsWith("spawn") && c.includes("'/clear'")), agterm.calls.join("\n"));
+  assert.ok(!f.store.pendingOutbox().some((r) => r.text === "/clear"), "dropped, not left to spawn later");
+  await f.close();
+});
+
 // --- zmx as a second terminal ---
 
 const ZMX = proc("  - {step: b, role: pm}\n  - {step: c, role: pm}\n", "terminal: zmx\n", "z");

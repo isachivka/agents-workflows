@@ -1213,6 +1213,9 @@ export class Flowd {
         this.store.markSent(row.id, this.now()); // stale: the step moved on before its line went out
         continue;
       }
+      // a /clear for an agent that is gone: a new one starts clean anyway, and spawned with "/clear" as its
+      // prompt it would be restored (agterm replays the command line) as a fresh, cleared agent
+      if (!run.roles[row.role] && !row.entry_id && row.text === "/clear") { this.store.markSent(row.id, this.now()); continue; }
       if (run.status === "paused" || run.status === "needs-human") continue; // held, never spawned for
       const session = run.roles[row.role];
       if (!session) { await this.spawnFor(run, row); continue; }
