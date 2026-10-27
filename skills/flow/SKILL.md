@@ -51,7 +51,9 @@ session and stops the run after the third silent turn end.
 When a messenger is set up, your run has a conversation with the user (a Telegram topic).
 `flow say "text" [--file /abs/report.html]` writes there. When the user must decide on something you
 wrote (a plan, a report), send it with `flow say --file`, say in one line what you need from them,
-then `flow wait --human --note "…"` and end your turn. With reports served, an HTML file arrives as
+then `flow wait --human --note "…"` and end your turn. Some processes keep out of the messenger:
+`flow say` then answers `… keeps out of telegram (notify: false): nothing was sent` — do not retry or
+look for another way; put what the user needs in your report note. With reports served, an HTML file arrives as
 a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
 
 Their message arrives in this session as `<name> wrote in the run's telegram conversation (<run>):`,

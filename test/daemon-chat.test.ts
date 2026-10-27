@@ -297,7 +297,7 @@ test("an entry's done is posted only when asked, with its note; an entry's notif
   await t.f.close();
 });
 
-test("notify: false on a process: flowd posts nothing and opens no conversation; an agent's flow say still does", async () => {
+test("notify: false on a process: nothing reaches the messenger, an agent's flow say included", async () => {
   const t = await startProc(proc("  - {step: plan, role: pm, notify: {done: true}}\n  - {step: c, role: human}\n", "notify: false\n", "q"), "q");
   await turn(t, reportNote("S1", "three items"));
   await t.f.submit({ type: "entry.report", data: { run: "q#1", entry: "c", outcome: "done", by: "human" }, source: "cli" });
@@ -306,9 +306,9 @@ test("notify: false on a process: flowd posts nothing and opens no conversation;
   assert.deepEqual(chatLog(), []);
   await t.f.close();
   const said = await startProc(proc("  - {step: b, role: pm}\n", "notify: false\n", "q"), "q");
-  await said.f.say({ session: "S1", text: "hi" });
+  assert.match((await said.f.say({ session: "S1", text: "hi" })).error ?? "", /q keeps out of fakechat \(notify: false\): nothing was sent/);
   await turn(said, done("S1"));
-  assert.deepEqual(chatLog(), ["open q#1 ", "post T1 hi", "close T1 done"]);
+  assert.deepEqual(chatLog(), []);
   await said.f.close();
 });
 

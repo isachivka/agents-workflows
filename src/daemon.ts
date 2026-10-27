@@ -947,6 +947,10 @@ export class Flowd {
     if ("error" in a) return a;
     const run = q.run ? this.store.getRun(q.run) : q.session ? this.store.runBySession(q.session)?.run : undefined;
     if (!run) return { error: q.run ? `no run ${q.run}` : q.session ? "no open run is bound to this session" : "no session: run this inside a flow session, or pass --run" };
+    // a process kept out of the messenger stays out: an agent's own message opens no conversation either
+    if (this.defs.processes[this.rootOf(run).process]?.notify?.off) {
+      return { error: `${this.rootOf(run).process} keeps out of ${a.name} (notify: false): nothing was sent. Put what the person needs in your step's report note instead` };
+    }
     if (q.file && !existsSync(q.file)) return { error: `no file ${q.file}` };
     let m: { text: string; file?: string } = { text: q.text, ...(q.file ? { file: q.file } : {}) };
     if (q.file && this.reports && /\.html?$/i.test(q.file)) {

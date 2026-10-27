@@ -195,8 +195,8 @@ conversation three things. Each can be turned off and worded with a template:
 | end | a root run ends, if it has a conversation; the conversation is closed after it either way | `notify.end` of the process | on — `<run.id> is done`, `<run.id> was stopped[: <reason>]` |
 
 `notify: false` on a process turns all three off for its runs: flowd opens no conversation for them
-(a factory of many small runs). An agent's `flow say` still posts, and a conversation it opened is
-closed at the run's end.
+(a factory of many small runs). An agent's `flow say` is refused too (`<process> keeps out of
+<messenger> (notify: false): nothing was sent`): the process stays out of the messenger entirely.
 
 ```yaml
 # steps/plan.md
