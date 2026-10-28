@@ -1732,3 +1732,66 @@ test("a definition linked in from another directory is reloaded when it changes 
   assert.equal(desc(), "two");
   await f.close();
 });
+
+function conversationOn(home: string, name: string) {
+  const projects = join(home, "claude", "projects", "-tmp");
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(join(projects, "c1.jsonl"), JSON.stringify({ type: "user", sessionId: "c1", cwd: "/tmp/w", timestamp: new Date().toISOString(),
+    message: { content: `▶ flow: step b · ${name}#1 it.1 — run \`flow show\` for the instructions` } }) + "\n");
+}
+
+test("hibernate never closes an agent waiting for the person: flow wait --human, a run that needs the person, a switch's pause", async () => {
+  // flow wait --human on a 0s process: awake; once it goes on and parks on an event wait, it sleeps
+  const home = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n  - {id: review, wait_for: signal.review}\n", "hibernate: 0s\n", "hw") });
+  const t = await startFlowd(home);
+  t.agterm.addSession("S1");
+  await t.f.submit(start("hw", { pm: "S1" }));
+  await settle(t.f);
+  conversationOn(home, "hw");
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await t.f.submit({ type: "entry.wait", data: { session: "S1", note: "two questions for you", human: true }, source: "cli" });
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  for (let i = 0; i < 2; i++) { t.clock.t += 3_600_000; await t.f.tickNow(); await settle(t.f); }
+  assert.deepEqual([t.f.store.getRun("hw#1")!.roles.pm, t.agterm.calls.includes("close S1")], ["S1", false]);
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await t.f.submit({ type: "entry.report", data: { session: "S1", outcome: "done" }, source: "cli" });
+  await t.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  await t.f.tickNow();
+  await settle(t.f);
+  assert.deepEqual([t.f.store.getRun("hw#1")!.current, t.f.store.getRun("hw#1")!.asleep?.pm?.conversation], ["review", "c1"]);
+  await t.f.close();
+
+  // a run that needs the person keeps its idle agent
+  const h2 = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm, on_fail: human}\n", "hibernate: 0s\n", "hn") });
+  const n = await startFlowd(h2);
+  n.agterm.addSession("S1");
+  await n.f.submit(start("hn", { pm: "S1" }));
+  await settle(n.f);
+  conversationOn(h2, "hn");
+  await n.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await n.f.submit({ type: "entry.report", data: { session: "S1", outcome: "failed", note: "stuck" }, source: "cli" });
+  await n.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  n.clock.t += 3_600_000;
+  await n.f.tickNow();
+  await settle(n.f);
+  assert.deepEqual([n.f.store.getRun("hn#1")!.status, n.f.store.getRun("hn#1")!.roles.pm], ["needs-human", "S1"]);
+  await n.f.close();
+
+  // a switch's pause sleeps idle agents at once, but not one waiting for the person
+  const h3 = makeHome({ ...STEP_FILES, ...proc("  - {step: b, role: pm}\n", "pause_on: {on: test.ping, where: {allowed: false}}\n", "hp") });
+  const q = await startFlowd(h3, { pauseKeyDelayMs: 0 });
+  q.agterm.addSession("S1");
+  await q.f.submit(start("hp", { pm: "S1" }));
+  await settle(q.f);
+  conversationOn(h3, "hp");
+  await q.f.submit({ type: "agterm.status", data: { session: "S1", status: "active" }, source: "agterm" });
+  await q.f.submit({ type: "entry.wait", data: { session: "S1", note: "a question", human: true }, source: "cli" });
+  await q.f.submit({ type: "agterm.status", data: { session: "S1", status: "completed" }, source: "agterm" });
+  ctxOf(subs().filter((w) => w.type === "test.ping").at(-1)).emit({ type: "test.ping", data: { allowed: false } });
+  await settle(q.f);
+  await q.f.tickNow();
+  await settle(q.f);
+  assert.deepEqual([q.f.store.getRun("hp#1")!.status, q.f.store.getRun("hp#1")!.roles.pm], ["paused", "S1"]);
+  await q.f.close();
+  resetSubs();
+});

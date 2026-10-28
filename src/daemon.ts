@@ -672,7 +672,7 @@ export class Flowd {
         const r = this.store.getRun(run);
         const role = String(d.role ?? ""), session = String(d.session ?? "");
         const status = this.store.sessionStatus(session);
-        if (!r || !this.parked(r) || (status !== "completed" && status !== "idle") || this.store.pendingOutbox().some((x) => x.run_id === run && x.role === role)) {
+        if (!r || !this.parked(r) || this.waitsForPerson(r, role) || (status !== "completed" && status !== "idle") || this.store.pendingOutbox().some((x) => x.run_id === run && x.role === role)) {
           return { error: `${run} ${role} is busy again` };
         }
         const agent = d.agent === "codex" ? "codex" : "claude";
@@ -1780,12 +1780,23 @@ export class Flowd {
       for (const [role, session] of Object.entries(run.roles)) {
         const agent = session && p.roles[role] ? agentOf(p.roles[role].spawn) : "other";
         if (!session || agent === "other" || !["completed", "idle"].includes(this.store.sessionStatus(session) ?? "")) continue;
+        if (this.waitsForPerson(run, role)) continue;
         const key = `${run.id}\u0000${role}\u0000${session}`;
         if (this.sleeping.has(key)) continue; // under way, or no conversation was found for this session
         this.sleeping.add(key);
         this.background(this.sleepRole(run, role, session, agent, key));
       }
     }
+  }
+
+  /**
+   * The run waits for the person through this role: its step is in `flow wait --human`, or the run needs
+   * the person. That terminal is the conversation the person is in, so it is never put to sleep.
+   */
+  private waitsForPerson(run: RunState, role: string): boolean {
+    if (run.status === "needs-human") return true;
+    const cur = this.currentEntry(run);
+    return cur?.role === role && run.entries[cur.id]?.wait?.human === true;
   }
 
   private async sleepRole(run: RunState, role: string, session: string, agent: "claude" | "codex", key: string): Promise<void> {
