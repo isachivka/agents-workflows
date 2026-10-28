@@ -345,6 +345,9 @@ An event type is known when a loaded plugin declares it (`gh.checks`), when it i
 - An edit with an error (a typo, a save halfway) is not taken: open runs go on with the last good
   version of the process or step, new starts are refused with the errors until it is fixed.
 - A role added by an edit can be used by open runs.
+- A definition may be a symlink into another directory (a repo shared by several machines): flowd
+  watches that directory too, so a `git pull` there is an edit, and the UI saves into the file the link
+  points to, keeping the link. Plugins are loaded at start: a changed plugin needs a flowd restart.
 - The UI's process form re-serialises the YAML and loses comments. Its YAML tab saves the text
   as written. A save based on an older copy of the file is refused (`the file changed on disk`).
 

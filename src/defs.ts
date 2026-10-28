@@ -1,5 +1,5 @@
 import { agentOf } from "./skills.ts";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { parse } from "yaml";
@@ -403,6 +403,24 @@ export function readDef(home: string, kind: DefKind, name: string): { text: stri
 
 const CHANGED = "the file changed on disk; reload it";
 
+/** The directories outside `home` that its definitions and plugins.yaml link to: watched for edits as `home` is. */
+export function linkedDirs(home: string): string[] {
+  const root = existsSync(home) ? realpathSync(home) : home;
+  const files = ["steps", "processes", "plugins"].flatMap((d) => {
+    const dir = join(home, d);
+    return existsSync(dir) ? readdirSync(dir).map((f) => join(dir, f)) : [];
+  });
+  const dirs = new Set<string>();
+  for (const f of [...files, join(home, "plugins.yaml")]) {
+    try {
+      if (!lstatSync(f).isSymbolicLink()) continue;
+      const dir = dirname(realpathSync(f));
+      if (dir !== root && !dir.startsWith(root + "/")) dirs.add(dir);
+    } catch { /* a dangling link: nothing to watch */ }
+  }
+  return [...dirs].sort();
+}
+
 export function writeDef(home: string, kind: DefKind, name: string, text: string, baseMtime: number | null, ctx: DefCtx):
   { ok: true; mtime: number } | { ok: false; status: 409 | 422; errors: string[] } {
   if ((readDef(home, kind, name)?.mtime ?? null) !== baseMtime) return { ok: false, status: 409, errors: [CHANGED] };
@@ -412,7 +430,9 @@ export function writeDef(home: string, kind: DefKind, name: string, text: string
   } catch (e) {
     return { ok: false, status: 422, errors: errorsOf(e) };
   }
-  const path = defPath(home, kind, name);
+  // a definition linked in from elsewhere (a repo shared between machines) is written there, the link kept
+  const linked = defPath(home, kind, name);
+  const path = existsSync(linked) && lstatSync(linked).isSymbolicLink() ? realpathSync(linked) : linked;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(`${path}.tmp`, text);
   renameSync(`${path}.tmp`, path);

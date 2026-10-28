@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseStep, parseProcess, parseDuration, loadDefs, writeDef, readDef, deleteDef, splitStep, DefError, type DefCtx } from "../src/defs.ts";
+import { parseStep, parseProcess, parseDuration, linkedDirs, loadDefs, writeDef, readDef, deleteDef, splitStep, DefError, type DefCtx } from "../src/defs.ts";
 
 const step = (id: string) => parseStep(id, `---\nsummary: ${id} summary\n---\nDo ${id}.\n`);
 const ctx: DefCtx = {
@@ -291,4 +291,20 @@ test("notify parses on a step, an entry and a process; wrong keys, types and pla
     "steps[1]: notify must be a mapping",
     "notify.waits belongs to a step's or an entry's notify, not the process's",
   ]);
+});
+
+test("writeDef writes a linked definition where its link points, keeping the link; linkedDirs lists those places", () => {
+  const home = mkdtempSync(join(tmpdir(), "flows-link-"));
+  const repo = mkdtempSync(join(tmpdir(), "flows-repo-"));
+  mkdirSync(join(home, "steps"));
+  mkdirSync(join(home, "processes"));
+  writeFileSync(join(repo, "pick.md"), "---\nsummary: s\n---\nOld.\n");
+  symlinkSync(join(repo, "pick.md"), join(home, "steps", "pick.md"));
+  writeFileSync(join(home, "processes", "own.yaml"), "x");
+  symlinkSync(join(repo, "gone.yaml"), join(home, "processes", "gone.yaml")); // dangling: skipped
+  const r = writeDef(home, "step", "pick", "---\nsummary: s\n---\nNew.\n", readDef(home, "step", "pick")!.mtime, ctx);
+  assert.equal(r.ok, true);
+  assert.ok(lstatSync(join(home, "steps", "pick.md")).isSymbolicLink());
+  assert.match(readFileSync(join(repo, "pick.md"), "utf8"), /New\./);
+  assert.deepEqual(linkedDirs(home), [realpathSync(repo)]);
 });

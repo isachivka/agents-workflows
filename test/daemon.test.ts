@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeAgterm, STEP_FILES, makeHome, proc, settle, startFlowd, watches, resetWatches, previouses, subs, pluginCtx, ctxOf, resetSubs } from "./daemon-helpers.ts";
 
@@ -1713,5 +1714,21 @@ test("reopen is refused for an open run and an unknown entry; goto on an ended r
   assert.match((await f.submit({ type: "run.reopen", run: "rr#1", data: { entry: "nope" }, source: "test" })).error ?? "", /no entry nope/);
   assert.equal((await f.submit({ type: "run.reopen", run: "rr#1", data: { entry: "review" }, source: "test" })).error, undefined);
   assert.match((await f.submit({ type: "run.reopen", run: "rr#1", data: { entry: "review" }, source: "test" })).error ?? "", /not ended: move it with goto/);
+  await f.close();
+});
+
+test("a definition linked in from another directory is reloaded when it changes there (a git pull)", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "flows-repo-"));
+  const home = makeHome({ ...STEP_FILES });
+  mkdirSync(join(home, "processes"), { recursive: true });
+  writeFileSync(join(repo, "lp.yaml"), "description: one\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: b, role: pm}\n");
+  symlinkSync(join(repo, "lp.yaml"), join(home, "processes", "lp.yaml"));
+  const { f } = await startFlowd(home, { watchDefs: true });
+  const desc = (): string | undefined => f.defs.processes.lp?.description;
+  assert.equal(desc(), "one");
+  writeFileSync(join(repo, "lp.yaml.tmp"), "description: two\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: b, role: pm}\n");
+  renameSync(join(repo, "lp.yaml.tmp"), join(repo, "lp.yaml"));
+  for (let i = 0; i < 50 && desc() !== "two"; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(desc(), "two");
   await f.close();
 });

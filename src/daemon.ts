@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, ty
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Cron } from "croner";
-import { loadDefs, type DefCtx } from "./defs.ts";
+import { linkedDirs, loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, missingProcess, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
@@ -165,6 +165,8 @@ export class Flowd {
   private timers: ReturnType<typeof setInterval>[] = [];
   private crons: Cron[] = [];
   private watcher: FSWatcher | undefined;
+  /** directories outside the home its definitions link to, by path: a pull there is an edit too */
+  private linkWatchers = new Map<string, FSWatcher>();
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
   private loaded = false;
   private queueing = false;
@@ -244,7 +246,25 @@ export class Flowd {
       this.timers.push(setInterval(() => { void this.refreshTitles(); }, titleMs));
       this.background(this.refreshTitles()); // runs that got their PR while flowd was down
     }
-    if (this.o.watchDefs !== false) this.watcher = fsWatch(this.home, { recursive: true }, () => this.scheduleReload());
+    if (this.o.watchDefs !== false) {
+      this.watcher = fsWatch(this.home, { recursive: true }, () => this.scheduleReload());
+      this.watchLinked();
+    }
+  }
+
+  /** Watches what the home's links point to; called on every reload, as links come and go. */
+  private watchLinked(): void {
+    if (!this.watcher) return;
+    const dirs = new Set(linkedDirs(this.home));
+    for (const [dir, w] of this.linkWatchers) if (!dirs.has(dir)) { w.close(); this.linkWatchers.delete(dir); }
+    for (const dir of dirs) {
+      if (this.linkWatchers.has(dir)) continue;
+      try {
+        this.linkWatchers.set(dir, fsWatch(dir, () => this.scheduleReload()));
+      } catch (e) {
+        this.log(`watching ${dir}, which definitions link to: ${msg(e)}`);
+      }
+    }
   }
 
   async close(): Promise<void> {
@@ -256,6 +276,8 @@ export class Flowd {
     for (const c of this.crons) c.stop();
     clearTimeout(this.reloadTimer);
     this.watcher?.close();
+    for (const w of this.linkWatchers.values()) w.close();
+    this.linkWatchers.clear();
     await this.plugins.stopAll();
     await this.flushRun;
     await this.idle();
@@ -302,6 +324,7 @@ export class Flowd {
   reloadDefs(): void {
     const before = this.defs;
     this.defs = loadDefs(this.home, this.plugins.eventTypes(), this.plugins.actionNames());
+    this.watchLinked();
     // an edit that does not parse or validate is not taken (a typo, a save halfway): open runs go on with
     // the last good version; new starts are refused with the edit's errors
     for (const [name, p] of Object.entries(before.processes)) if (!this.defs.processes[name] && this.defs.invalid[`process:${name}`]) this.defs.processes[name] = p;
