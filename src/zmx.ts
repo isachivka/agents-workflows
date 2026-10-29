@@ -17,7 +17,7 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
     const nl = out.indexOf("\n");
     return { header: (nl < 0 ? out : out.slice(0, nl)).trim().split(/\s+/), text: nl < 0 ? "" : out.slice(nl + 1) };
   };
-  return {
+  const t: Terminal = {
     async spawn(s) {
       const name = zmxName(s.name);
       mkdirSync(o.dir, { recursive: true });
@@ -34,9 +34,17 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
     },
     async type(session, text) {
       // as with agterm: the text, a pause, then Return alone, or Claude takes the Return as pasted text
-      await zmx(["type", nameOf(session)], text.replace(/\n$/, ""));
+      const body = text.replace(/\n$/, "");
+      await zmx(["type", nameOf(session)], body);
       await new Promise((r) => setTimeout(r, o.submitDelayMs ?? 500));
       await zmx(["type", nameOf(session)], "\r");
+      // several lines arrive as a paste, whose first Return Claude swallows: Return again while it is still there
+      if (!body.includes("\n")) return;
+      for (let i = 0; i < 3; i++) {
+        await new Promise((r) => setTimeout(r, o.submitDelayMs ?? 500));
+        if (!(await t.userInput(session))) return;
+        await zmx(["type", nameOf(session)], "\r");
+      }
     },
     async press(session, keys) {
       await zmx(["send", nameOf(session), keys]);
@@ -79,4 +87,5 @@ export function zmxTerminal(o: { bin: string; dir: string; agtermctl?: string; o
       }
     },
   };
+  return t;
 }

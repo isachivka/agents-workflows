@@ -173,9 +173,18 @@ export function realAgterm(
       // ponytail: fixed pause, no read-back; read the screen back with `session text` and retry if it still misses.
       const { id, pane } = paneOf(session);
       const typeArgs = ["session", "type", "--stdin", "--target", id, ...pane];
-      await run(bin, typeArgs, text.replace(/\n$/, ""));
+      const body = text.replace(/\n$/, "");
+      await run(bin, typeArgs, body);
       await new Promise((r) => setTimeout(r, submitDelayMs));
       await run(bin, typeArgs, "\n");
+      // several lines arrive as a paste, and Claude swallows the first Enter after a paste: while the
+      // composer still holds the text, Enter again (an empty composer, a turn under way, takes none)
+      if (!body.includes("\n")) return;
+      for (let i = 0; i < 3; i++) {
+        await new Promise((r) => setTimeout(r, submitDelayMs));
+        if (!(await a.userInput(session))) return;
+        await run(bin, typeArgs, "\n");
+      }
     },
     async reloadHooks() {
       await run(bin, ["hooks", "reload"]);

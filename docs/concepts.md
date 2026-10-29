@@ -65,7 +65,9 @@ named inside `flow show`'s output is not. The rules (`src/daemon.ts`, `src/agter
 - Each role has an outbox. A line goes out only when the session's agterm status is neither
   `active` nor `blocked` (at a permission prompt), so nothing lands mid-turn or answers a dialog.
 - The text and the Enter are two `agtermctl session type --stdin` calls with a 500 ms pause
-  between them. Claude's composer treats a newline typed together with the text as text.
+  between them. Claude's composer treats a newline typed together with the text as text. A line of
+  several lines (an answer, the person's message) arrives as a paste, and Claude swallows the first
+  Enter after a paste: while the composer still holds text, flowd presses Enter again, up to three times.
 - Lines to one session are at least 2 s apart. Nothing is typed into a freshly spawned session
   for 15 s.
 - flowd never types over the user. A line waits while the session has an overlay open (agterm's

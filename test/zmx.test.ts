@@ -57,6 +57,19 @@ test("type sends the text, then a CR alone, through zmx type; press goes through
   assert.equal(z.calls(), `${p}[type][flows-a]</clear>\n${p}[type][flows-a]<\r>\n${p}[send][flows-a][\x1b[B]\n`);
 });
 
+test("type sends a CR again while a line of several lines is still in the composer; it stops once the composer is empty", async () => {
+  const z = fakeZmx();
+  z.set("screen", "44 120 24 9 10 0\n❯ [Pasted text +1 lines]\n"); // the caret past the prompt: text is there
+  const t = zmxTerminal({ bin: z.bin, dir: z.sockets, submitDelayMs: 0 });
+  await t.type("zmx:flows-a", "one\ntwo");
+  const p = `${z.sockets}|${process.cwd()}|`;
+  assert.equal(z.calls().split(`${p}[type][flows-a]<\r>`).length - 1, 4, z.calls());
+  const e = fakeZmx(); // the caret at the empty prompt: the first CR went through
+  const u = zmxTerminal({ bin: e.bin, dir: e.sockets, submitDelayMs: 0 });
+  await u.type("zmx:flows-a", "one\ntwo");
+  assert.equal(e.calls().split(`${e.sockets}|${process.cwd()}|[type][flows-a]<\r>`).length - 1, 1, e.calls());
+});
+
 test("text drops the screen header; userInput reads the caret column from it", async () => {
   const z = fakeZmx();
   const t = zmxTerminal({ bin: z.bin, dir: z.sockets });

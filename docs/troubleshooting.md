@@ -30,7 +30,8 @@ Symptom, what to check, what to do. flowd's log is `~/.local/state/flows/flowd.l
 ## A line was typed but not submitted
 
 The line sits in the agent's input box and nothing happens. flowd sends the text and the Enter
-separately with a 500 ms pause; a slow terminal can still miss the Enter. Two minutes later the
+separately with a 500 ms pause (and, for a line of several lines, again while the composer still holds
+it); a slow terminal can still miss the Enter. Two minutes later the
 start watchdog stops the run with "the agent has not started" (next section).
 
 - Fix: press Enter in that session, or `printf '\n' | agtermctl session type --stdin --target <session>`.

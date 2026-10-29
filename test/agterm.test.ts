@@ -51,6 +51,21 @@ test("type sends the text, then Enter on its own, both on stdin; focus selects a
   assert.equal(f.calls(), `${T}<it's \`x\` $HOME>\n${T}<\n>\n${T}</clear>\n${T}<\n>\n[session][select][--target][S1]\n[-a][agterm]\n`);
 });
 
+// Live on 2026-10-29: a line of several lines (an answer, a person's message) sat in Claude's composer:
+// it came as a paste, and Claude swallows the first Enter after one.
+test("type presses Enter again while a line of several lines is still in the composer, up to three times; one line never", async () => {
+  const f = fakeAgtermctl(); // its cursor sits at column 7: the composer is never empty
+  const a = realAgterm(f.bin, 0);
+  await a.type("S1", "one\ntwo");
+  const T = "[session][type][--stdin][--target][S1]";
+  assert.equal(f.calls().split(`${T}<\n>`).length - 1, 4, f.calls());
+  assert.ok(f.calls().startsWith(`${T}<one\ntwo>\n${T}<\n>\n`), f.calls());
+  assert.equal(f.calls().match(/\[surface\]\[cursor\]/g)?.length, 3);
+  const g = fakeAgtermctl();
+  await realAgterm(g.bin, 0).type("S1", "one line");
+  assert.equal(g.calls(), `${T}<one line>\n${T}<\n>\n`);
+});
+
 test("a spawn with a window goes into the open window of that name, else a new minimized one (a closed one is deleted)", async () => {
   const f = fakeAgtermctl();
   const list = (ws: unknown[]) => JSON.stringify({ ok: true, result: { windows: ws } });
