@@ -14,8 +14,9 @@ import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
 import { Reports } from "./reports.ts";
+import { askPage, parseAnswer } from "./ask.ts";
 import { TERMINAL } from "./types.ts";
-import type { Asleep, Defs, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
+import type { Asleep, Defs, Question, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
 
 export interface FlowdOptions {
   home: string;
@@ -183,6 +184,7 @@ export class Flowd {
       timeoutMs: o.translateTimeoutMs ?? 120_000, max: 2,
     });
     this.reports = o.reports ? new Reports(o.reports) : undefined;
+    if (this.reports) this.reports.questions = { state: (t) => this.questionState(t), post: (t, kind, body) => this.enqueue(() => this.questionPost(t, kind, body)) };
     this.home = o.home;
     this.agterm = o.agterm;
     this.zmx = o.zmx;
@@ -963,6 +965,61 @@ export class Flowd {
   publish(file: string): { url: string } | { error: string } {
     if (!this.reports) return { error: "reports are not served: set FLOWS_REPORTS_URL (docs/cli.md#flow-publish)" };
     return this.reports.publish(file);
+  }
+
+  /**
+   * `flow ask`: the agent's question fragment as a page the person answers from anywhere (the link is the
+   * key). The step waits for the person; the answer is typed into the asking role (questionPost).
+   */
+  async ask(q: { session?: string; run?: string; entry?: string; file: string; note: string }): Promise<{ url: string; chat?: string } | { error: string }> {
+    if (!this.reports) return { error: "question pages need the reports listener: set FLOWS_REPORTS_URL (docs/reports.md), or ask in the agterm overlay" };
+    if (!existsSync(q.file)) return { error: `no file ${q.file}` };
+    const fragment = readFileSync(q.file, "utf8");
+    if (/<(html|head|body)[\s>]/i.test(fragment)) return { error: `${q.file} is a whole page: write a fragment (no <html>, <head> or <body>); flowd wraps it with the form and the Send button` };
+    const t = this.resolveTarget({ session: q.session, run: q.run, entry: q.entry });
+    if ("error" in t) return t;
+    const run = this.store.getRun(t.run)!;
+    const role = this.currentEntry(run)?.role;
+    if (!role || role === "human" || !run.roles[role]) return { error: `${t.run} is at ${t.entry}, which is not an agent's step: only an agent asks` };
+    const page = this.reports.publishText("ask.html", askPage(fragment, q.note));
+    this.store.addQuestion({ token: page.token, run: run.id, entry: t.entry, iteration: run.iteration, role, url: page.url, created: this.now() });
+    const r = await this.submit({ type: "entry.wait", data: { session: q.session, run: run.id, entry: t.entry, note: `${q.note} · ${page.url}`, human: true }, source: "cli" });
+    if (r.error) return { error: r.error };
+    this.log(`${run.id} ${role}: asked at ${t.entry}: ${page.url}`);
+    const said = await this.say({ run: run.id, text: `${q.note}\n${page.url}` });
+    return { url: page.url, ...(said.error ? { chat: said.error } : {}) };
+  }
+
+  /** Whether a question still takes answers: the run stands on the entry that asked, in that iteration. */
+  private questionOpen(q: Question): boolean {
+    const run = this.store.getRun(q.run);
+    return Boolean(run && !TERMINAL.includes(run.status) && run.current === q.entry && run.iteration === q.iteration);
+  }
+
+  private questionState(token: string): Record<string, unknown> | null {
+    const q = this.store.question(token);
+    if (!q) return null;
+    return { open: this.questionOpen(q), answer: q.answer ?? null, draft: q.draft ?? null };
+  }
+
+  /** A draft is kept for the page; an answer is kept and typed into the role that asked. */
+  private async questionPost(token: string, kind: "answer" | "draft", body: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+    const q = this.store.question(token);
+    if (!q) return { status: 404, body: { error: "no such question" } };
+    const answer = parseAnswer(body);
+    if ("error" in answer) return { status: 400, body: answer };
+    if (!this.questionOpen(q)) return { status: 410, body: { error: "this question is closed: the run has moved on" } };
+    if (kind === "draft") { this.store.setDraft(token, answer); return { status: 200, body: { ok: true } }; }
+    this.store.setAnswer(token, answer, this.now());
+    const a = this.plugins.chat();
+    const chat = a && !("error" in a) && !this.defs.processes[this.rootOf(this.store.getRun(q.run)!).process]?.notify?.off ? a.name : undefined;
+    this.store.enqueue(q.run, q.role,
+      `▶ flow: the person ${q.answer ? "changed their answer to" : "answered"} your question (${q.url}):\n${JSON.stringify(answer)}` +
+      (chat ? `\n↳ They answered on the page and read ${chat}, not this terminal: if you need to tell them something, use \`flow say "…"\`.` : ""),
+      null, this.now());
+    this.log(`${q.run} ${q.role}: ${q.answer ? "a changed answer" : "an answer"} to ${q.url}`);
+    void this.flush();
+    return { status: 200, body: { ok: true } };
   }
 
   /** `flow say`: the agent writes to its run's conversation. */

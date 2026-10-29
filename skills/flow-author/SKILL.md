@@ -41,6 +41,8 @@ From the installed copy of this skill, the repo is
 | wait for CI, a merge, a signal | `{wait_for: gh.checks}` alone — the event's outcome closes it |
 | an agent reacts to an event | `{step: <id>, role: <role>, wait_for: gh.checks}`; the prompt reads `{{event.outcome}}`, `{{event.data.<key>}}` |
 | bring back a run that ended (the person changed their mind) | `flow reopen <run> --at <entry>` (an `sh` step can call it): vars kept, its agents resume their own conversations at the run's next line to them |
+| send the person a report (a page, a PDF) | the step's prompt says `flow say "…" --file /abs/report.html` (a link with reports served, see docs/reports.md), or `flow publish FILE` for a link to put elsewhere |
+| the person picks from options away from the Mac (tick topics, choose a variant) | the step's prompt has the agent write a fragment with `name="choice"` checkboxes/radios and run `flow ask FILE --note "…"`; the answer comes back as JSON into its terminal (docs/reports.md#question-pages). Needs `FLOWS_REPORTS_URL` |
 | retry, or loop back on failure | `on_fail: retry` or `on_fail: {goto: <id>}`; `retries` caps failures per iteration (default 3) |
 | stop quietly when there is nothing to do | `on_fail: end` — the run is done (or the next iteration starts), nobody is asked |
 | skip work a run already did (a PR reviewed once) | in an `sh` step: `flow ls --all --process "$FLOW_PROCESS" --where pr="$u" >/dev/null && continue` — exit 1 means no such run; see the review-queue recipe in docs/processes.md |

@@ -308,6 +308,14 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
       if ("error" in r) throw new HttpError(409, r);
       return r;
     }],
+    ["POST", /^\/api\/ask$/, async (_p, b) => {
+      if (typeof b.file !== "string" || !b.file) throw new HttpError(400, { error: "file is required" });
+      if (typeof b.note !== "string" || !b.note.trim()) throw new HttpError(400, { error: "note is required: the question, in a line" });
+      const s = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+      const r = await f.ask({ session: s(b.session), run: s(b.run), entry: s(b.entry), file: b.file, note: b.note });
+      if ("error" in r) throw new HttpError(409, r);
+      return r;
+    }],
     ["POST", /^\/api\/say$/, async (_p, b) => {
       if (typeof b.text !== "string" || !b.text.trim()) throw new HttpError(400, { error: "text is required" });
       if (b.file !== undefined && typeof b.file !== "string") throw new HttpError(400, { error: "file must be a path" });

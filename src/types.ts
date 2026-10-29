@@ -169,6 +169,11 @@ export interface RunState {
   asleep?: Record<string, Asleep>;
 }
 
+/** A question page's answer, as the agterm question overlay returns it: `choice` a list, other names a string or a list. */
+export type Answer = { choice: string[] } & Record<string, string | string[]>;
+/** `flow ask`: a page the person answers, asked by a role at an entry of one iteration. */
+export interface Question { token: string; run: string; entry: string; iteration: number; role: string; url: string; created: number; answer?: Answer; answered?: number; draft?: Answer }
+
 export interface Asleep { agent: "claude" | "codex"; conversation: string; cwd: string; since: number }
 
 export type SessionStatus = "active" | "completed" | "idle" | "blocked" | "closed";

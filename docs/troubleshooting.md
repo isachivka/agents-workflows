@@ -174,6 +174,8 @@ The run is `needs-human` with `entry X no longer exists`. Use **goto** on the ru
 
 ## A report link does not open
 
+(Setting the listener up: [reports](reports.md).)
+
 - `flow publish` says `reports are not served`: `FLOWS_REPORTS_URL` is not in flowd's environment
   (the launchd plist), or flowd was not restarted after it was added.
 - The link answers 404: the report is older than 30 days, or the link was cut (it is

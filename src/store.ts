@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { TERMINAL } from "./types.ts";
-import type { FlowEvent, RunState } from "./types.ts";
+import type { Answer, FlowEvent, Question, RunState } from "./types.ts";
 
 export interface StoredEvent extends FlowEvent { id: number; ts: number; processed: boolean }
 export interface OutboxRow { id: number; run_id: string; role: string; text: string; entry_id: string | null; created: number; attempts: number }
@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS logins (
   token_hash TEXT PRIMARY KEY, user TEXT NOT NULL, name TEXT NOT NULL, expires REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS chats (
   run_id TEXT PRIMARY KEY, adapter TEXT NOT NULL, address TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS questions (
+  token TEXT PRIMARY KEY, run_id TEXT NOT NULL, entry_id TEXT NOT NULL, iteration INTEGER NOT NULL,
+  role TEXT NOT NULL, url TEXT NOT NULL, created REAL NOT NULL, answer TEXT, answered REAL, draft TEXT);
 `;
 
 // node:sqlite rows are untyped records
@@ -202,6 +205,27 @@ export class Store {
   }
 
   /** Where a run's conversation is, as the chat adapter that opened it returned it. */
+  addQuestion(q: Question): void {
+    this.db.prepare("INSERT INTO questions (token, run_id, entry_id, iteration, role, url, created) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(q.token, q.run, q.entry, q.iteration, q.role, q.url, q.created);
+  }
+
+  question(token: string): Question | null {
+    const r = this.db.prepare("SELECT * FROM questions WHERE token = ?").get(token) as Row | undefined;
+    if (!r) return null;
+    return { token: r.token, run: r.run_id, entry: r.entry_id, iteration: Number(r.iteration), role: r.role, url: r.url, created: Number(r.created),
+      ...(r.answer ? { answer: JSON.parse(r.answer), answered: Number(r.answered) } : {}), ...(r.draft ? { draft: JSON.parse(r.draft) } : {}) };
+  }
+
+  /** The person sent the page (the draft goes: what was sent is the state now), or saved a draft. */
+  setAnswer(token: string, answer: Answer, now: number): void {
+    this.db.prepare("UPDATE questions SET answer = ?, answered = ?, draft = NULL WHERE token = ?").run(JSON.stringify(answer), now, token);
+  }
+
+  setDraft(token: string, draft: Answer): void {
+    this.db.prepare("UPDATE questions SET draft = ? WHERE token = ?").run(JSON.stringify(draft), token);
+  }
+
   chatOf(runId: string): { adapter: string; address: string } | null {
     const row = this.db.prepare("SELECT adapter, address FROM chats WHERE run_id = ?").get(runId) as Row | undefined;
     return row ? { adapter: row.adapter, address: row.address } : null;

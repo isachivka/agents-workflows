@@ -22,6 +22,8 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
   flow say TEXT [--file PATH]            write to the run's conversation in the messenger (with a file)
   flow publish FILE                      serve a copy of a report under an unguessable link; prints it
+  flow ask FILE --note T                 ask the person on a page (FILE: a form fragment); posts its link,
+                                         waits for them; their answer is typed in here as JSON
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
@@ -193,6 +195,13 @@ export async function main(argv: string[]): Promise<number> {
         if (a._.length !== 1 || !a._[0].trim()) throw new CliError('usage: flow say "text" [--file PATH] [--run ID]');
         await call("POST", "/api/say", { session: a.run ? undefined : session, run: a.run, text: a._[0], file: a.file ? resolve(a.file) : undefined });
         out("sent");
+        return 0;
+      }
+      case "ask": {
+        if (a._.length !== 1 || !a.note) throw new CliError('usage: flow ask FILE --note "the question, in a line"');
+        const r = await call("POST", "/api/ask", { session: a.run ? undefined : session, run: a.run, entry: a.step, file: resolve(a._[0]), note: a.note });
+        if (r.chat) process.stderr.write(`flow: the link was not posted to the messenger: ${r.chat}\n`);
+        out(r.url);
         return 0;
       }
       case "publish": {

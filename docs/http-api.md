@@ -82,6 +82,7 @@ on an `inner` entry with nothing nested and nothing chosen by `--inner`.
 | POST | `/api/vars` | `{session? \| run?, vars}` | `{run}` |
 | POST | `/api/wait` | `{session? \| run+entry, note, human?}` | `{run}`. The agent ends its turn on purpose (`flow wait`); refused like `/api/report` for anything but the caller's active, delivered agent step, or without a `note`. |
 | POST | `/api/publish` | `{file}` | `{url}`. A copy of the file under an unguessable link on the reports listener (`flow publish`). 400 without `file`; 409 when reports are not served, the file is missing, not a file, or too big. |
+| POST | `/api/ask` | `{session? \| run? + entry?, file, note}` | `{url, chat?}`; `flow ask`: publishes the fragment as a question page, posts it, sets the step's human wait; `chat` says why the link was not posted. 409 without the reports listener, for a whole page, outside an agent's step |
 | POST | `/api/say` | `{session? \| run?, text, file?}` | `{}`. Writes to the run's conversation in the messenger (`flow say`); an `.html` file goes as a link when reports are served; the root run's conversation for a nested run, opened if needed. 400 without `text`; 409 with no messenger set up, no such run, a missing file, or the messenger's error. |
 | POST | `/api/events` | `{type, run?, entry?, outcome?, data?}` | `{}` or `{run}`. Without `run` the event is a broadcast. |
 

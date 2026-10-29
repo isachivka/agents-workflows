@@ -56,6 +56,14 @@ then `flow wait --human --note "…"` and end your turn. Some processes keep out
 look for another way; put what the user needs in your report note. With reports served, an HTML file arrives as
 a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
 
+When the user has to choose (tick items, pick an option) and may be away from the Mac, ask on a page:
+write an HTML fragment (no `<html>`/`<head>`/`<body>`) with `<input type="checkbox|radio" name="choice"
+value="…">` per option (other named inputs come back too; a comment box is added), run
+`flow ask /abs/q.html --note "the question, in a line"` and end your turn — it posts the link and waits
+for them. Their answer arrives here as `▶ flow: the person answered your question (<link>):` and JSON
+`{"choice": [...], "note": "…"}` (read the note, it can change the choice); `… changed their answer to …`
+replaces an earlier one. It is refused when reports are not served: then ask in the agterm overlay.
+
 Their message arrives in this session as `<name> wrote in the run's telegram conversation (<run>):`,
 the text, and a reminder of where to answer — any time they write in the topic, not only after you
 asked. When you answer, answer with `flow say`, never only in the terminal: nobody reads it. A

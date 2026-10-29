@@ -401,3 +401,57 @@ test("a reopened run's closed conversation is reopened", async () => {
   assert.equal(chatLog().at(-1), "reopen T1");
   await f.close();
 });
+
+test("flow ask publishes a question page, posts its link and waits for the person; the answer is typed into the agent", async () => {
+  resetChat();
+  const home = makeHome({ ...STEP_FILES, ...TWO, ...CHAT_ON });
+  const t = await startFlowd(home, { reports: { dir: join(home, "reports"), url: "https://reports.example.net" } });
+  t.agterm.addSession("S1");
+  await t.f.submit(start("p", { pm: "S1" }));
+  await settle(t.f);
+  writeFileSync(join(home, "q.html"), '<input type="checkbox" name="choice" value="a"><input type="checkbox" name="choice" value="b">');
+  writeFileSync(join(home, "whole.html"), "<html><body>x</body></html>");
+  assert.match((await t.f.ask({ session: "S1", file: join(home, "whole.html"), note: "x" }) as { error: string }).error, /is a whole page: write a fragment/);
+  await t.f.submit(status("S1", "active"));
+  const r = await t.f.ask({ session: "S1", file: join(home, "q.html"), note: "Which to make?" });
+  assert.ok("url" in r, JSON.stringify(r));
+  const token = /\/r\/([0-9a-f]{32})\/ask\.html$/.exec(r.url)![1];
+  assert.equal(chatLog().at(-1), `post T1 Which to make?\n${r.url}`);
+  const run = t.f.store.getRun("p#1")!;
+  assert.deepEqual([run.entries.b.wait?.human, run.entries.b.wait?.note], [true, `Which to make? · ${r.url}`]);
+  const q = t.f.reports!.questions!;
+  assert.deepEqual(q.state(token), { open: true, answer: null, draft: null });
+  // a draft is kept for the page and says nothing to the agent
+  assert.deepEqual(await q.post(token, "draft", { choice: ["a"] }), { status: 200, body: { ok: true } });
+  assert.deepEqual(q.state(token), { open: true, answer: null, draft: { choice: ["a"] } });
+  await t.f.submit(status("S1", "completed"));
+  t.clock.t += 60_000;
+  await settle(t.f);
+  assert.ok(!t.agterm.calls.some((c) => c.includes("answered your question")));
+  assert.equal((await q.post(token, "answer", { choice: "x", n: 1 })).status, 400);
+  assert.deepEqual(await q.post(token, "answer", { choice: ["a", "b"], note: "both" }), { status: 200, body: { ok: true } });
+  t.clock.t += 60_000;
+  await settle(t.f);
+  const typed = t.agterm.calls.filter((c) => c.startsWith("type S1") && c.includes("your question"));
+  assert.equal(typed.length, 1, t.agterm.calls.join("\n"));
+  assert.ok(typed[0].includes(`the person answered your question (${r.url}):\n{"choice":["a","b"],"note":"both"}`), typed[0]);
+  assert.ok(typed[0].includes("`flow say"), typed[0]);
+  assert.deepEqual(q.state(token), { open: true, answer: { choice: ["a", "b"], note: "both" }, draft: null });
+  // sent again while the step is current: a change; once the run moves on: closed
+  await t.f.submit(status("S1", "completed"));
+  await q.post(token, "answer", { choice: ["b"] });
+  t.clock.t += 60_000;
+  await settle(t.f);
+  assert.ok(t.agterm.calls.some((c) => c.startsWith("type S1") && c.includes("changed their answer to")));
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(done("S1"));
+  await settle(t.f);
+  assert.equal((await q.post(token, "answer", { choice: ["a"] })).status, 410);
+  assert.equal((await q.post(token, "draft", { choice: ["a"] })).status, 410);
+  assert.equal((q.state(token) as { open: boolean }).open, false);
+  await t.f.close();
+
+  const off = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
+  assert.match((await off.f.ask({ run: "p#1", entry: "b", file: join(home, "q.html"), note: "x" }) as { error: string }).error, /need the reports listener: set FLOWS_REPORTS_URL/);
+  await off.f.close();
+});

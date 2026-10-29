@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer as httpServer } from "node:http";
 import { createServer, type AddressInfo, type Socket } from "node:net";
@@ -288,5 +288,22 @@ test("flow reopen puts an ended run back at an entry through the API; a refusal 
   const again = await flow(["reopen", "p#1", "--at", "c"], env);
   assert.equal(again.code, 1);
   assert.match(again.stderr, /p#1 is running, not ended: move it with goto/);
+  await s.close();
+});
+
+test("flow ask prints the question page's link and says when the messenger could not take it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "flows-ask-"));
+  const s = await serve({ ...STEP_FILES, ...TWO }, { reports: { dir: join(dir, "reports"), url: "https://reports.example.net" } });
+  await s.call("POST", "/api/runs", { process: "p" });
+  await settle(s.f);
+  writeFileSync(join(dir, "q.html"), '<input type="radio" name="choice" value="a">');
+  const env = { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1" };
+  const usage = await flow(["ask", join(dir, "q.html")], env);
+  assert.deepEqual([usage.code, usage.stderr], [1, 'flow: usage: flow ask FILE --note "the question, in a line"\n']);
+  const r = await flow(["ask", join(dir, "q.html"), "--note", "Pick one"], env);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^https:\/\/reports\.example\.net\/r\/[0-9a-f]{32}\/ask\.html\n$/);
+  assert.match(r.stderr, /the link was not posted to the messenger: no chat is set up/);
+  assert.equal(s.f.store.getRun("p#1")!.entries.b.wait?.human, true);
   await s.close();
 });

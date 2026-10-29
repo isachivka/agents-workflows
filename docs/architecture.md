@@ -27,7 +27,8 @@ stripping); state is in `node:sqlite`. The only runtime dependencies are `yaml`,
 | `src/defs.ts` | Parse and validate steps and processes, load `$FLOWS_HOME`, read/write/delete definition files with an mtime check. |
 | `src/engine.ts` | The pure state machine: `step(run, input, ctx) → {run, actions, error?}`. No I/O. |
 | `src/store.ts` | SQLite: runs, events, outbox, session statuses, each run's conversation address. |
-| `src/reports.ts` | Agents' reports: a copy under an unguessable link, the read-only handler of the reports listener, expiry after 30 days. |
+| `src/reports.ts` | Agents' reports: a copy under an unguessable link, the handler of the reports listener (files read-only, a question page's answer and draft), expiry after 30 days. |
+| `src/ask.ts` | `flow ask`: the question page around an agent's fragment, and the answer's shape. |
 | `src/translate.ts` | Translating a step's prompt for the person reading it (on request, and ahead of time while idle, driven by `src/daemon.ts`): a local command (Codex by default), cached under the state directory's `translations/`, two at a time, process groups killed on timeout and close. |
 | `src/agterm.ts` | The `Terminal` interface (spawn, type, press, text, tree, userInput, focus) and agterm behind it: the only caller of `agtermctl`; shell quoting. |
 | `src/zmx.ts` | The zmx terminal: headless sessions through the `zmx` CLI in flows' own socket directory. The daemon picks a session's terminal by its id (`zmx:` or not). |
@@ -120,7 +121,10 @@ in the outbox are delivered by the next flush.
   which forces a CORS preflight that flowd never answers. The UI renders evidence as a link only
   for `http(s)` URLs.
 - The reports listener (`FLOWS_REPORTS_URL`) is the one meant to be reachable from outside. It
-  serves `GET`/`HEAD /r/<128-bit token>/<name>` from the reports folder and nothing else; paths are
+  serves `GET`/`HEAD /r/<128-bit token>/<name>` from the reports folder, and for a question page's token
+  only its state (`GET /r/<token>/answer`) and a JSON answer or draft of at most 64 KB
+  (`POST /r/<token>/answer|draft`); nothing else. An answer is typed into the agent that asked, like a
+  message from the person ([reports](reports.md#security)). Paths are
   matched by pattern, never joined from raw input. A report is protected only by its link (no
   login), so the headers keep the link from spreading (`referrer-policy: no-referrer`,
   `x-robots-tag: noindex`), the Telegram adapter sends no link previews, and copies expire after 30

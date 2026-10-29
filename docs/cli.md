@@ -129,7 +129,23 @@ then — so it goes where the person reads (`flow say` does this for `.html` fil
 `flow set report=<url>`), not into public places.
 
 Refused when reports are not served (`reports are not served: set FLOWS_REPORTS_URL`), for a
-missing file, a directory, or a file over the limit.
+missing file, a directory, or a file over the limit. Setting the listener up: [reports](reports.md).
+
+### `flow ask`
+
+```
+flow ask FILE --note T [--run ID --step ID]
+```
+
+Asks the person on a page they can answer from anywhere. `FILE` is an HTML fragment with named inputs
+(`choice` radios or checkboxes, an optional `note` textarea), as for the agterm question overlay.
+flowd wraps it into a page with a Send button and a saved draft, publishes it like a report, posts `T` and
+the link in the run's conversation, puts the current step into `flow wait --human` with the link in its
+note, and prints the link. End your turn after it. The answer arrives in the session as
+`▶ flow: the person answered your question (<link>):` and its JSON, `{"choice": [...], "note": "…"}`;
+sent again while the step is current, as `… changed their answer to …`. When the link could not be
+posted (no messenger, `notify: false`) stderr says so; the page works anyway. Refused without the reports
+listener, for a whole page, or outside an agent's current step. See [reports](reports.md#question-pages).
 
 **Serving reports.** flowd serves them on a listener of their own, which answers nothing but
 `GET`/`HEAD /r/<token>/<name>` (404 for anything else): the UI and the API stay on their own port.

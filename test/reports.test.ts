@@ -79,3 +79,43 @@ test("prune deletes reports older than the limit and keeps newer ones", () => {
   assert.equal(existsSync(join(r.dir, fresh)), true);
   assert.equal(existsSync(join(r.dir, "stray")), true);
 });
+
+test("a question page's routes: its state by GET, a JSON answer or draft by POST; nothing else is written", async () => {
+  const r = new Reports({ dir: join(tmp(), "reports"), url: "https://x" });
+  const page = r.publishText("ask.html", "<form></form>");
+  assert.match(page.url, new RegExp(`^https://x/r/${page.token}/ask\\.html$`));
+  const posted: string[] = [];
+  r.questions = {
+    state: (t) => (t === page.token ? { open: true, answer: null, draft: null } : null),
+    post: async (t, kind, body) => { posted.push(`${t} ${kind} ${JSON.stringify(body)}`); return { status: 200, body: { ok: true } }; },
+  };
+  const server = createServer((req, res) => r.handler(req, res));
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  after(() => server.close());
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/r/${page.token}`;
+  const json = { "content-type": "application/json" };
+
+  const state = await fetch(`${base}/answer`);
+  assert.deepEqual([state.status, state.headers.get("cache-control"), await state.json()], [200, "no-store", { open: true, answer: null, draft: null }]);
+  assert.equal((await fetch(`${base}/ask.html`)).status, 200);
+  const sent = await fetch(`${base}/answer`, { method: "POST", headers: json, body: JSON.stringify({ choice: ["a"] }) });
+  assert.deepEqual([sent.status, await sent.json()], [200, { ok: true }]);
+  assert.equal((await fetch(`${base}/draft`, { method: "POST", headers: json, body: "{}" })).status, 200);
+  assert.deepEqual(posted, [`${page.token} answer {"choice":["a"]}`, `${page.token} draft {}`]);
+
+  const other = "0".repeat(32);
+  for (const [p, init, status] of [
+    [`${base}/answer`, { method: "POST", headers: { "content-type": "text/plain" }, body: "{}" }, 415],
+    [`${base}/answer`, { method: "POST", headers: json, body: "not json" }, 400],
+    [`${base}/answer`, { method: "POST", headers: json, body: JSON.stringify({ note: "x".repeat(70_000) }) }, 413],
+    [`${base}/draft`, { method: "GET" }, 404],
+    [`${base}/answer`, { method: "PUT", headers: json, body: "{}" }, 404],
+    [`${base.replace(page.token, other)}/answer`, { method: "POST", headers: json, body: "{}" }, 404],
+    [`${base.replace(page.token, other)}/answer`, { method: "GET" }, 404],
+  ] as const) {
+    const res = await fetch(p, init as RequestInit).catch(() => ({ status: 413, text: async () => "" }));
+    assert.equal(res.status, status, `${init.method} ${p}`);
+    await res.text();
+  }
+  assert.equal(posted.length, 2);
+});
