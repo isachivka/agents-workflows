@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -9,14 +10,14 @@ import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from
 import { zmxName } from "./zmx.ts";
 import { findClaudeSession, findCodexSession } from "./transcripts.ts";
 import { agentOf, agentSpawn, lineSkills, resumeSpawn } from "./skills.ts";
-import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, type ChatMessage, type Watch } from "./plugins.ts";
+import { PluginHost, msg, readPluginConfig, subscriptionKey, type ActiveChat, type ChatMessage, type PageAnswer, type Watch } from "./plugins.ts";
 import { Store, type OutboxRow, type StoredEvent } from "./store.ts";
 import { renderTemplate } from "./template.ts";
 import { killGroup, Translator } from "./translate.ts";
 import { Reports } from "./reports.ts";
 import { askPage, parseAnswer } from "./ask.ts";
 import { TERMINAL } from "./types.ts";
-import type { Asleep, Defs, Question, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
+import type { Answer, Asleep, Defs, Question, Dict, Entry, FlowEvent, Input, Notify, OnFail, Process, RunState, SessionStatus, StepResult } from "./types.ts";
 
 export interface FlowdOptions {
   home: string;
@@ -173,6 +174,7 @@ export class Flowd {
   private queueing = false;
   private translator: Translator;
   reports: Reports | undefined;
+  private closingQuestions = false;
   private notices: Promise<unknown> = Promise.resolve();
   private opening = new Map<string, Promise<string>>(); // a root run's conversation being opened
   private subscribing = false; // set by init once stored events replayed: a trigger may start runs from then on
@@ -196,6 +198,7 @@ export class Flowd {
       config: readPluginConfig(o.home, this.log),
       sink: (e) => { void this.submit(e); },
       onMessage: (adapter, m) => { void this.enqueue(() => this.incoming(adapter, m)); },
+      onAnswer: (adapter, a) => { void this.enqueue(async () => this.answerFrom(adapter, a)); },
       log: this.log,
       retryBaseMs: o.retryBaseMs,
     });
@@ -963,7 +966,11 @@ export class Flowd {
 
   /** `flow publish`: a copy of the file under an unguessable link. */
   publish(file: string): { url: string } | { error: string } {
-    if (!this.reports) return { error: "reports are not served: set FLOWS_REPORTS_URL (docs/cli.md#flow-publish)" };
+    if (!this.reports) {
+      const pa = this.plugins.pagesAdapter();
+      if (pa && !("error" in pa)) return { error: `reports are not served here: publish ${basename(file)} where ${pa.name} keeps pages and post its link with flow say --link` };
+      return { error: "reports are not served: set FLOWS_REPORTS_URL (docs/cli.md#flow-publish)" };
+    }
     return this.reports.publish(file);
   }
 
@@ -972,7 +979,9 @@ export class Flowd {
    * key). The step waits for the person; the answer is typed into the asking role (questionPost).
    */
   async ask(q: { session?: string; run?: string; entry?: string; file: string; note: string }): Promise<{ url: string; chat?: string } | { error: string }> {
-    if (!this.reports) return { error: "question pages need the reports listener: set FLOWS_REPORTS_URL (docs/reports.md), or ask in the agterm overlay" };
+    const p = this.plugins.pagesAdapter();
+    if (p && "error" in p) return p;
+    if (!p && !this.reports) return { error: "question pages need a pages adapter (a plugin with `pages`) or the reports listener: set FLOWS_REPORTS_URL (docs/reports.md), or ask in the agterm overlay" };
     if (!existsSync(q.file)) return { error: `no file ${q.file}` };
     const fragment = readFileSync(q.file, "utf8");
     if (/<(html|head|body)[\s>]/i.test(fragment)) return { error: `${q.file} is a whole page: write a fragment (no <html>, <head> or <body>); flowd wraps it with the form and the Send button` };
@@ -981,8 +990,20 @@ export class Flowd {
     const run = this.store.getRun(t.run)!;
     const role = this.currentEntry(run)?.role;
     if (!role || role === "human" || !run.roles[role]) return { error: `${t.run} is at ${t.entry}, which is not an agent's step: only an agent asks` };
-    const page = this.reports.publishText("ask.html", askPage(fragment, q.note));
-    this.store.addQuestion({ token: page.token, run: run.id, entry: t.entry, iteration: run.iteration, role, url: page.url, created: this.now() });
+    let page: { token: string; url: string };
+    if (p) {
+      // the plugin keeps the page; flowd keeps only the question, under an id of its own
+      const id = randomBytes(16).toString("hex");
+      try {
+        const made = await p.pages.ask({ id, run: run.id, process: run.process, entry: t.entry, title: q.note, fragment }, p.ctx);
+        if (typeof made?.url !== "string" || !/^https?:\/\//.test(made.url)) throw new Error("it gave no http(s) link for the page");
+        page = { token: id, url: made.url };
+      } catch (e) {
+        this.plugins.fault(p.name, e);
+        return { error: `${p.name}: ${msg(e)}` };
+      }
+    } else page = this.reports!.publishText("ask.html", askPage(fragment, q.note));
+    this.store.addQuestion({ token: page.token, run: run.id, entry: t.entry, iteration: run.iteration, role, url: page.url, created: this.now(), ...(p ? { adapter: p.name } : {}) });
     const r = await this.submit({ type: "entry.wait", data: { session: q.session, run: run.id, entry: t.entry, note: `${q.note} · ${page.url}`, human: true }, source: "cli" });
     if (r.error) return { error: r.error };
     this.log(`${run.id} ${role}: asked at ${t.entry}: ${page.url}`);
@@ -1010,7 +1031,24 @@ export class Flowd {
     if ("error" in answer) return { status: 400, body: answer };
     if (!this.questionOpen(q)) return { status: 410, body: { error: "this question is closed: the run has moved on" } };
     if (kind === "draft") { this.store.setDraft(token, answer); return { status: 200, body: { ok: true } }; }
-    this.store.setAnswer(token, answer, this.now());
+    this.deliverAnswer(q, answer);
+    return { status: 200, body: { ok: true } };
+  }
+
+  /** A pages adapter's answer: the same as one POSTed to the listener, but nobody waits for a status. */
+  private answerFrom(adapter: string, a: PageAnswer): void {
+    const id = typeof a?.id === "string" ? a.id : "";
+    const q = id ? this.store.question(id) : null;
+    if (!q || q.adapter !== adapter) return this.log(`${adapter}: an answer to ${id || "no id"}, a question it was not asked: dropped`);
+    const answer = parseAnswer(a.answer);
+    if ("error" in answer) return this.log(`${adapter}: the answer to ${q.url} is not one (${answer.error}): dropped`);
+    if (q.closed || !this.questionOpen(q)) return this.log(`${adapter}: an answer to ${q.url} after the run moved on: dropped`);
+    this.deliverAnswer(q, answer);
+  }
+
+  /** Keeps the answer and types it into the role that asked. */
+  private deliverAnswer(q: Question, answer: Answer): void {
+    this.store.setAnswer(q.token, answer, this.now());
     const a = this.plugins.chat();
     const chat = a && !("error" in a) && !this.defs.processes[this.rootOf(this.store.getRun(q.run)!).process]?.notify?.off ? a.name : undefined;
     this.store.enqueue(q.run, q.role,
@@ -1019,11 +1057,32 @@ export class Flowd {
       null, this.now());
     this.log(`${q.run} ${q.role}: ${q.answer ? "a changed answer" : "an answer"} to ${q.url}`);
     void this.flush();
-    return { status: 200, body: { ok: true } };
+  }
+
+  /** A plugin's question whose run has left the entry that asked is closed there, once; a failure is tried at the next tick. */
+  private async closeQuestions(): Promise<void> {
+    if (this.closingQuestions) return;
+    this.closingQuestions = true;
+    try {
+      const done = this.store.openAdapterQuestions().filter((q) => !this.questionOpen(q));
+      const p = done.length ? this.plugins.pagesAdapter() : null;
+      if (!p || "error" in p) return;
+      for (const q of done) {
+        if (q.adapter !== p.name) continue; // the adapter that made it is gone: there is nobody to tell
+        try {
+          await p.pages.close(q.token, p.ctx);
+          this.store.closeQuestion(q.token, this.now());
+        } catch (e) {
+          this.plugins.fault(p.name, e);
+        }
+      }
+    } finally {
+      this.closingQuestions = false;
+    }
   }
 
   /** `flow say`: the agent writes to its run's conversation. */
-  async say(q: { session?: string; run?: string; text: string; file?: string }): Promise<{ error?: string }> {
+  async say(q: { session?: string; run?: string; text: string; file?: string; links?: string[] }): Promise<{ error?: string }> {
     const a = this.plugins.chat();
     if (!a) return { error: "no chat is set up: add a telegram section to $FLOWS_HOME/plugins.yaml (docs/plugins.md)" };
     if ("error" in a) return a;
@@ -1034,13 +1093,27 @@ export class Flowd {
       return { error: `${this.rootOf(run).process} keeps out of ${a.name} (notify: false): nothing was sent. Put what the person needs in your step's report note instead` };
     }
     if (q.file && !existsSync(q.file)) return { error: `no file ${q.file}` };
+    const links = q.links ?? [];
+    for (const l of links) if (!/^https?:\/\/\S+$/.test(l)) return { error: `${l}: a link starts with https:// or http://` };
+    const pa = this.plugins.pagesAdapter();
+    const pages = pa && !("error" in pa) ? pa : null;
+    if (pages?.pages.check) {
+      for (const l of links) {
+        try { await pages.pages.check(l, pages.ctx); } catch (e) { return { error: `${pages.name} refused ${l}: ${msg(e)}` }; }
+      }
+    }
+    const page = Boolean(q.file && /\.html?$/i.test(q.file));
+    if (page && !this.reports && pages) {
+      return { error: `pages are not served here: publish the page where ${pages.name} keeps them and pass its link with --link` };
+    }
     let m: { text: string; file?: string } = { text: q.text, ...(q.file ? { file: q.file } : {}) };
-    if (q.file && this.reports && /\.html?$/i.test(q.file)) {
+    if (page && this.reports) {
       // a page reads better as a link than as a download
-      const p = this.reports.publish(q.file);
+      const p = this.reports.publish(q.file!);
       if ("error" in p) return p;
       m = { text: `${q.text}\n${p.url}` };
     }
+    if (links.length) m = { ...m, text: [m.text, ...links].join("\n") };
     try {
       await a.chat.post(await this.chatFor(this.rootOf(run), a), m, a.ctx);
       return {};
@@ -1270,6 +1343,7 @@ export class Flowd {
 
   async tickNow(): Promise<void> {
     await this.checkUnannounced();
+    await this.closeQuestions();
     this.hibernate();
     return this.enqueue(async () => {
       for (const run of this.store.openRuns()) {

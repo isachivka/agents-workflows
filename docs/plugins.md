@@ -17,6 +17,7 @@ export default {
   title({ vars, cwd }, ctx) {},                // optional: what a run is about, from its vars
   chat: { open, post, close },                 // optional: a messenger for runs' conversations
   login: { page, verify },                     // optional: a login for the UI from outside
+  pages: { ask, close, check },                // optional: question pages served elsewhere
   stop(ctx) {},                                // optional: when flowd stops
 };
 ```
@@ -30,6 +31,7 @@ export default {
 | `actions` | Functions called by `{do: <name>.<action>, with: {...}}` entries. Resolving marks the entry done; throwing fails it with the error as the note. |
 | `chat` | A messenger: see [Chat adapters](#chat-adapters). |
 | `login` | A login for the UI from outside: see [Logins](#logins). |
+| `pages` | Question pages (and the links agents post) served somewhere else than flowd's listener: see [Pages from a plugin](reports.md#pages-from-a-plugin). |
 | `stop(ctx)` | When flowd stops: end what `start` began (a long poll, a socket). May return a promise. |
 | `title({vars, cwd}, ctx)` | What a run is about, in words, from its vars: `gh` returns the title of `vars.pr`. flowd asks when a run's `pr` changes and every 10 minutes for each open run with a `pr`, and stores a new answer in `vars.title`. Return `undefined` when it does not know; a throw is shown in the plugin's status and the old title stays. The first plugin with an answer wins. |
 
@@ -57,6 +59,7 @@ trigger's `where`) and wakes no waiting entry.
 |---|---|
 | `emit({type, data?, outcome?, run?, entry?})` | Sends an event. The plugin name is prefixed if missing (`checks` → `gh.checks`); `source` is set to the plugin name. With `run` and `entry` it goes to that entry only. Without them, from a trigger subscription's `ctx` it starts only that subscription's processes; from `start` it is a broadcast that wakes every matching wait and trigger. `outcome: "failed"` fails a pure wait or a human step; an agent step sees it as `{{event.outcome}}`. |
 | `message({address, text, from})` | A chat adapter: the person wrote `text` in the conversation at `address`; `from` is their display name. The adapter decides who may write; flowd trusts what it is given. |
+| `answer({id, answer})` | A pages adapter: the person answered the question flowd asked under `id`; `answer` is the page's JSON. Send each answer once. |
 | `log(msg)` | A line in flowd's log, prefixed with the plugin name. |
 | `error(err, w?)` | Reports a problem: shown in Settings → Plugins (and on the watch, with `w`). The waiting entry is not failed. `error(null, w)` clears the watch's error once it works again. |
 | `config` | This plugin's section of `$FLOWS_HOME/plugins.yaml`, or `{}`. |

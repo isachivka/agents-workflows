@@ -319,7 +319,8 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
     ["POST", /^\/api\/say$/, async (_p, b) => {
       if (typeof b.text !== "string" || !b.text.trim()) throw new HttpError(400, { error: "text is required" });
       if (b.file !== undefined && typeof b.file !== "string") throw new HttpError(400, { error: "file must be a path" });
-      const r = await f.say({ session: typeof b.session === "string" ? b.session : undefined, run: typeof b.run === "string" && b.run ? b.run : undefined, text: b.text, file: b.file || undefined });
+      if (b.links !== undefined && !(Array.isArray(b.links) && b.links.every((l: unknown) => typeof l === "string"))) throw new HttpError(400, { error: "links must be a list of URLs" });
+      const r = await f.say({ session: typeof b.session === "string" ? b.session : undefined, run: typeof b.run === "string" && b.run ? b.run : undefined, text: b.text, file: b.file || undefined, links: b.links });
       if (r.error) throw new HttpError(409, r);
       return {};
     }],

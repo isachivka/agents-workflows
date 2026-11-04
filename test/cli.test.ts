@@ -246,6 +246,10 @@ test("flow say sends the text and the file's absolute path for this session's ru
   const r = await flow(["say", "plan ready", "--file", "test/cli.test.ts"], env);
   assert.deepEqual([r.code, r.stdout], [0, "sent\n"]);
   assert.deepEqual(chatLog(), ["open p#1 ", `post T1 plan ready +${join(process.cwd(), "test/cli.test.ts")}`]);
+  const linked = await flow(["say", "the plan", "--link", "https://a.example/1", "--link", "https://a.example/2"], env);
+  assert.deepEqual([linked.code, chatLog().at(-1)], [0, "post T1 the plan\nhttps://a.example/1\nhttps://a.example/2"]);
+  const notLink = await flow(["say", "x", "--link", "a.example/1"], env);
+  assert.deepEqual([notLink.code, notLink.stderr], [1, "flow: a.example/1: a link starts with https:// or http://\n"]);
   const bad = await flow(["say"], env);
   assert.equal(bad.code, 1);
   await s.close();

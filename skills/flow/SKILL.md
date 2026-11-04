@@ -54,7 +54,9 @@ wrote (a plan, a report), send it with `flow say --file`, say in one line what y
 then `flow wait --human --note "…"` and end your turn. Some processes keep out of the messenger:
 `flow say` then answers `… keeps out of telegram (notify: false): nothing was sent` — do not retry or
 look for another way; put what the user needs in your report note. With reports served, an HTML file arrives as
-a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
+a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`). A report
+you published elsewhere yourself (the step says where) goes as `flow say "…" --link <url>`; when `flow say
+--file` answers `pages are not served here`, publish the page there and pass its link the same way.
 
 The user reads these messages on a phone, between other things. Write each so that its first glance is
 enough:
@@ -62,7 +64,10 @@ enough:
   decision or an answer from them, 🟢 done, nothing to do. Then one plain sentence: what happened, and
   the one thing they should do, if any.
 - At most three short lines. No counts of what did not change, no health lines, ids, hashes or commit
-  links in the text: details go into a report (a link) or your `flow done --note`.
+  links in the text: details go into a report or your `flow done --note`.
+- A page they have to open (the report, the decision page, the question) always goes with the message,
+  as `--link <url>` (or `--file`): "the decision is on the page" without the page is a message they
+  cannot act on. Check before sending that every page your text mentions is attached.
 - Nothing happened and nothing is needed from them: send nothing, unless the step says otherwise.
 
 When the user has to choose (tick items, pick an option) and may be away from the Mac, ask on a page:
@@ -71,7 +76,8 @@ value="…">` per option (other named inputs come back too; a comment box is add
 `flow ask /abs/q.html --note "the question, in a line"` and end your turn — it posts the link and waits
 for them. Their answer arrives here as `▶ flow: the person answered your question (<link>):` and JSON
 `{"choice": [...], "note": "…"}` (read the note, it can change the choice); `… changed their answer to …`
-replaces an earlier one. It is refused when reports are not served: then ask in the agterm overlay.
+replaces an earlier one. It is refused when no pages are served (neither reports nor a pages plugin):
+then ask in the agterm overlay.
 
 Their message arrives in this session as `<name> wrote in the run's telegram conversation (<run>):`,
 the text, and a reminder of where to answer — any time they write in the topic, not only after you

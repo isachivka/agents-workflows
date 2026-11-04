@@ -58,7 +58,7 @@ const logs: string[] = [];
 const ctx: PluginCtx = {
   config: { token: "123:abc", chat: -100, users: [5], client_secret: "s3cret",
     api_root: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, oauth_root: `http://127.0.0.1:${(server.address() as AddressInfo).port}` },
-  emit: () => {}, message: (m) => got.push(m), log: (m) => logs.push(m), error: (e) => logs.push(String(e)),
+  emit: () => {}, message: (m) => got.push(m), answer: () => {}, log: (m) => logs.push(m), error: (e) => logs.push(String(e)),
 };
 const chat = telegram.chat;
 const json = (i: number) => JSON.parse(calls[i].body);

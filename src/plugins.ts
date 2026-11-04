@@ -41,10 +41,26 @@ export interface LoginProvider {
     Promise<{ user: string; name: string } | { error: string }> | { user: string; name: string } | { error: string };
 }
 export interface ActiveLogin { name: string; login: LoginProvider; ctx: PluginCtx }
+/**
+ * Pages served somewhere else than flowd's own listener (docs/reports.md). The adapter hands the person's
+ * answers back through `ctx.answer`, each once; drafts are its own business.
+ */
+export interface PagesAdapter {
+  /** the question page; `fragment` is the agent's file as written, `id` flowd's own (32 hex) */
+  ask(q: { id: string; run: string; process: string; entry: string; title: string; fragment: string }, ctx: PluginCtx): Promise<{ url: string }> | { url: string };
+  /** the question takes no more answers: the run left the entry that asked, or ended */
+  close(id: string, ctx: PluginCtx): Promise<unknown> | unknown;
+  /** throws when `flow say --link` should not post the link (a page that does not exist) */
+  check?(url: string, ctx: PluginCtx): Promise<unknown> | unknown;
+}
+export interface ActivePages { name: string; pages: PagesAdapter; ctx: PluginCtx }
+export interface PageAnswer { id: string; answer: unknown }
 export interface PluginCtx {
   emit(e: PluginEvent): void;
   /** a chat adapter: a message in a run's conversation, from someone the adapter lets write */
   message(m: ChatMessage): void;
+  /** a pages adapter: the person answered the question flowd asked under `id` */
+  answer(a: PageAnswer): void;
   log(msg: string): void;
   error(err: unknown, w?: Watch): void;
   config: Dict;
@@ -63,6 +79,8 @@ export interface Plugin {
   chat?: ChatAdapter;
   /** a login for the UI from outside (FLOWD_PUBLIC_URL); active like chat */
   login?: LoginProvider;
+  /** question pages (and the links agents post) served elsewhere; active like chat */
+  pages?: PagesAdapter;
 }
 export interface PluginStatus {
   name: string;
@@ -92,15 +110,17 @@ export class PluginHost {
   config: Record<string, Dict>;
   sink: (e: FlowEvent) => void;
   onMessage: (adapter: string, m: ChatMessage) => void;
+  onAnswer: (adapter: string, a: PageAnswer) => void;
   log: (m: string) => void;
   retryBaseMs: number;
 
   constructor(o: { dirs: string[]; config: Record<string, Dict>; sink: (e: FlowEvent) => void; log?: (m: string) => void; retryBaseMs?: number;
-    onMessage?: (adapter: string, m: ChatMessage) => void }) {
+    onMessage?: (adapter: string, m: ChatMessage) => void; onAnswer?: (adapter: string, a: PageAnswer) => void }) {
     this.dirs = o.dirs;
     this.config = o.config;
     this.sink = o.sink;
     this.onMessage = o.onMessage ?? (() => {});
+    this.onAnswer = o.onAnswer ?? (() => {});
     this.log = o.log ?? ((m) => console.error(m));
     this.retryBaseMs = o.retryBaseMs ?? 5_000;
   }
@@ -125,7 +145,7 @@ export class PluginHost {
         }
       }
     }
-    for (const kind of ["chat", "login"] as const) {
+    for (const kind of ["chat", "login", "pages"] as const) {
       const a = this.activeOf(kind);
       if (a && "error" in a) this.loadErrors[kind] = a.error;
       else delete this.loadErrors[kind];
@@ -133,9 +153,9 @@ export class PluginHost {
   }
 
   /** The plugin providing `kind` whose name has a section in plugins.yaml; two are an error. */
-  private activeOf(kind: "chat" | "login"): Loaded | { error: string } | null {
+  private activeOf(kind: "chat" | "login" | "pages"): Loaded | { error: string } | null {
     const on = [...this.loaded.values()].filter((l) => l.plugin[kind] && l.plugin.name in this.config);
-    const what = kind === "chat" ? "chat adapters" : "logins";
+    const what = { chat: "chat adapters", login: "logins", pages: "pages adapters" }[kind];
     if (on.length > 1) return { error: `two ${what} are set up (${on.map((l) => l.plugin.name).join(", ")}): keep one section in plugins.yaml` };
     return on[0] ?? null;
   }
@@ -144,6 +164,12 @@ export class PluginHost {
   chat(): ActiveChat | { error: string } | null {
     const a = this.activeOf("chat");
     return a && "plugin" in a ? { name: a.plugin.name, chat: a.plugin.chat!, ctx: a.ctx } : a;
+  }
+
+  /** The active pages adapter: a plugin with `pages` whose name has a section in plugins.yaml. */
+  pagesAdapter(): ActivePages | { error: string } | null {
+    const a = this.activeOf("pages");
+    return a && "plugin" in a ? { name: a.plugin.name, pages: a.plugin.pages!, ctx: a.ctx } : a;
   }
 
   /** The active login for the UI from outside. */
@@ -177,6 +203,7 @@ export class PluginHost {
       },
       emit: (e) => this.emitFrom(name, e),
       message: (m) => this.onMessage(name, m),
+      answer: (a) => this.onAnswer(name, a),
     };
     this.loaded.set(name, { plugin, ctx, source });
   }

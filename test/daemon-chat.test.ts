@@ -452,6 +452,6 @@ test("flow ask publishes a question page, posts its link and waits for the perso
   await t.f.close();
 
   const off = await startFlowd(makeHome({ ...STEP_FILES, ...TWO }));
-  assert.match((await off.f.ask({ run: "p#1", entry: "b", file: join(home, "q.html"), note: "x" }) as { error: string }).error, /need the reports listener: set FLOWS_REPORTS_URL/);
+  assert.match((await off.f.ask({ run: "p#1", entry: "b", file: join(home, "q.html"), note: "x" }) as { error: string }).error, /or the reports listener: set FLOWS_REPORTS_URL/);
   await off.f.close();
 });

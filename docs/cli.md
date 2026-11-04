@@ -91,7 +91,7 @@ waiting: review running in the background; the user picks findings next
 ### `flow say`
 
 ```
-flow say TEXT [--file PATH] [--run ID]
+flow say TEXT [--file PATH] [--link URL …] [--run ID]
 ```
 
 Writes to the run's conversation in the messenger set up in `plugins.yaml` (a Telegram topic, see
@@ -108,8 +108,14 @@ When flowd serves reports (`FLOWS_REPORTS_URL`, see [`flow publish`](#flow-publi
 file is published and the message carries its link instead of the file: it opens in the phone's
 browser. Other files go as files.
 
-Refused when no messenger is set up (`no chat is set up: …`), when the file does not exist, or with
-the messenger's own error (`telegram: …`).
+`--link URL` (repeatable) puts each link on a line of its own after the text: a page you published
+somewhere yourself. With a [pages adapter](reports.md#pages-from-a-plugin) that checks links, one it
+does not know is not sent. With such an adapter and no reports listener, an `.html` `--file` is
+refused: publish the page where the adapter keeps them and pass its link.
+
+Refused when no messenger is set up (`no chat is set up: …`), when the file does not exist, for a link
+that is not `http(s)` (`…: a link starts with https:// or http://`), a link the adapter refuses
+(`<adapter> refused <url>: …`), or with the messenger's own error (`telegram: …`).
 
 ```
 $ flow say "The plan is ready: your OK or your objections" --file /tmp/plan.html
@@ -128,7 +134,8 @@ are deleted after 30 days. The link is the only key — anyone who has it can op
 then — so it goes where the person reads (`flow say` does this for `.html` files by itself, or
 `flow set report=<url>`), not into public places.
 
-Refused when reports are not served (`reports are not served: set FLOWS_REPORTS_URL`), for a
+Refused when reports are not served (`reports are not served: set FLOWS_REPORTS_URL`; with a
+[pages adapter](reports.md#pages-from-a-plugin), a pointer to publish there and pass the link), for a
 missing file, a directory, or a file over the limit. Setting the listener up: [reports](reports.md).
 
 ### `flow ask`
@@ -144,8 +151,10 @@ the link in the run's conversation, puts the current step into `flow wait --huma
 note, and prints the link. End your turn after it. The answer arrives in the session as
 `▶ flow: the person answered your question (<link>):` and its JSON, `{"choice": [...], "note": "…"}`;
 sent again while the step is current, as `… changed their answer to …`. When the link could not be
-posted (no messenger, `notify: false`) stderr says so; the page works anyway. Refused without the reports
-listener, for a whole page, or outside an agent's current step. See [reports](reports.md#question-pages).
+posted (no messenger, `notify: false`) stderr says so; the page works anyway. With a
+[pages adapter](reports.md#pages-from-a-plugin) the plugin makes the page and gives the link, and its own
+error refuses the command. Refused with neither an adapter nor the reports listener, for a whole page, or
+outside an agent's current step. See [reports](reports.md#question-pages).
 
 **Serving reports.** flowd serves them on a listener of their own, which answers nothing but
 `GET`/`HEAD /r/<token>/<name>` (404 for anything else): the UI and the API stay on their own port.

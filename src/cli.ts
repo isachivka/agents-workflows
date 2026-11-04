@@ -20,7 +20,9 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow failed --note T                   close it as failed
   flow set key=value …                   run variables (URLs show as links in the UI)
   flow wait --note T [--human]           end your turn on purpose (no reminder until your next turn)
-  flow say TEXT [--file PATH]            write to the run's conversation in the messenger (with a file)
+  flow say TEXT [--file PATH] [--link URL …]
+                                         write to the run's conversation in the messenger (with a file,
+                                         links to pages published elsewhere)
   flow publish FILE                      serve a copy of a report under an unguessable link; prints it
   flow ask FILE --note T                 ask the person on a page (FILE: a form fragment); posts its link,
                                          waits for them; their answer is typed in here as JSON
@@ -58,11 +60,12 @@ interface Args {
   vars: string[];
   inner: string[];
   file?: string;
+  links: string[];
   at?: string;
 }
 
 export function parseArgs(argv: string[]): Args {
-  const a: Args = { _: [], bind: [], human: false, all: false, where: [], vars: [], inner: [] };
+  const a: Args = { _: [], bind: [], human: false, all: false, where: [], vars: [], inner: [], links: [] };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     const value = () => {
@@ -73,6 +76,7 @@ export function parseArgs(argv: string[]): Args {
     if (x === "--note") a.note = value();
     else if (x === "--evidence") a.evidence = value();
     else if (x === "--file") a.file = value();
+    else if (x === "--link") a.links.push(value());
     else if (x === "--at") a.at = value();
     else if (x === "--run") a.run = value();
     else if (x === "--step") a.step = value();
@@ -192,8 +196,8 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "say": {
-        if (a._.length !== 1 || !a._[0].trim()) throw new CliError('usage: flow say "text" [--file PATH] [--run ID]');
-        await call("POST", "/api/say", { session: a.run ? undefined : session, run: a.run, text: a._[0], file: a.file ? resolve(a.file) : undefined });
+        if (a._.length !== 1 || !a._[0].trim()) throw new CliError('usage: flow say "text" [--file PATH] [--link URL]... [--run ID]');
+        await call("POST", "/api/say", { session: a.run ? undefined : session, run: a.run, text: a._[0], file: a.file ? resolve(a.file) : undefined, ...(a.links.length ? { links: a.links } : {}) });
         out("sent");
         return 0;
       }

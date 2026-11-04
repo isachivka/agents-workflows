@@ -49,6 +49,12 @@ function toEvent(row: Row): StoredEvent {
   };
 }
 
+function toQuestion(r: Row): Question {
+  return { token: r.token, run: r.run_id, entry: r.entry_id, iteration: Number(r.iteration), role: r.role, url: r.url, created: Number(r.created),
+    ...(r.answer ? { answer: JSON.parse(r.answer), answered: Number(r.answered) } : {}), ...(r.draft ? { draft: JSON.parse(r.draft) } : {}),
+    ...(r.adapter ? { adapter: r.adapter } : {}), ...(r.closed ? { closed: Number(r.closed) } : {}) };
+}
+
 export class Store {
   db: DatabaseSync;
   private depth = 0;
@@ -63,6 +69,9 @@ export class Store {
     if (!cols.some((c) => c.name === "subscription")) this.db.exec("ALTER TABLE events ADD COLUMN subscription TEXT");
     const sessionCols = this.db.prepare("PRAGMA table_info(sessions)").all() as Row[];
     if (!sessionCols.some((c) => c.name === "claude")) this.db.exec("ALTER TABLE sessions ADD COLUMN claude TEXT");
+    const questionCols = this.db.prepare("PRAGMA table_info(questions)").all() as Row[];
+    if (!questionCols.some((c) => c.name === "adapter")) this.db.exec("ALTER TABLE questions ADD COLUMN adapter TEXT");
+    if (!questionCols.some((c) => c.name === "closed")) this.db.exec("ALTER TABLE questions ADD COLUMN closed REAL");
   }
 
   close(): void { this.db.close(); }
@@ -206,15 +215,22 @@ export class Store {
 
   /** Where a run's conversation is, as the chat adapter that opened it returned it. */
   addQuestion(q: Question): void {
-    this.db.prepare("INSERT INTO questions (token, run_id, entry_id, iteration, role, url, created) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(q.token, q.run, q.entry, q.iteration, q.role, q.url, q.created);
+    this.db.prepare("INSERT INTO questions (token, run_id, entry_id, iteration, role, url, created, adapter) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(q.token, q.run, q.entry, q.iteration, q.role, q.url, q.created, q.adapter ?? null);
   }
 
   question(token: string): Question | null {
     const r = this.db.prepare("SELECT * FROM questions WHERE token = ?").get(token) as Row | undefined;
-    if (!r) return null;
-    return { token: r.token, run: r.run_id, entry: r.entry_id, iteration: Number(r.iteration), role: r.role, url: r.url, created: Number(r.created),
-      ...(r.answer ? { answer: JSON.parse(r.answer), answered: Number(r.answered) } : {}), ...(r.draft ? { draft: JSON.parse(r.draft) } : {}) };
+    return r ? toQuestion(r) : null;
+  }
+
+  /** Questions a plugin's pages took and flowd has not told it to close yet. */
+  openAdapterQuestions(): Question[] {
+    return (this.db.prepare("SELECT * FROM questions WHERE adapter IS NOT NULL AND closed IS NULL").all() as Row[]).map(toQuestion);
+  }
+
+  closeQuestion(token: string, now: number): void {
+    this.db.prepare("UPDATE questions SET closed = ? WHERE token = ?").run(now, token);
   }
 
   /** The person sent the page (the draft goes: what was sent is the state now), or saved a draft. */

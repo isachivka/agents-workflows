@@ -172,7 +172,8 @@ export interface RunState {
 /** A question page's answer, as the agterm question overlay returns it: `choice` a list, other names a string or a list. */
 export type Answer = { choice: string[] } & Record<string, string | string[]>;
 /** `flow ask`: a page the person answers, asked by a role at an entry of one iteration. */
-export interface Question { token: string; run: string; entry: string; iteration: number; role: string; url: string; created: number; answer?: Answer; answered?: number; draft?: Answer }
+/** `token` is the listener's link key, or flowd's id for a plugin's page; `adapter` names that plugin. */
+export interface Question { token: string; run: string; entry: string; iteration: number; role: string; url: string; created: number; answer?: Answer; answered?: number; draft?: Answer; adapter?: string; closed?: number }
 
 export interface Asleep { agent: "claude" | "codex"; conversation: string; cwd: string; since: number }
 

@@ -7,7 +7,9 @@ reached from outside (a phone, through a reverse proxy). Two kinds of page go th
 - **question pages**, which the person answers: `flow ask FILE --note "…"`. Their answer comes back to
   the agent that asked.
 
-Both are part of flowd (`src/reports.ts`, `src/ask.ts`); nothing else has to be installed.
+Both are part of flowd (`src/reports.ts`, `src/ask.ts`); nothing else has to be installed. A setup that
+already keeps documents somewhere else, behind that place's sign-in, can serve the question pages there
+instead and have its agents publish their reports there themselves: see [Pages from a plugin](#pages-from-a-plugin).
 
 ## Turning it on
 
@@ -78,3 +80,39 @@ the link is not posted (the command says so on stderr) but is printed and shown 
 - An answer is data typed into the agent's terminal, the same as a message from the person in the
   messenger: whoever has the link can tell that agent something. Do not put question links where others
   read.
+
+## Pages from a plugin
+
+A plugin with a `pages` field takes the question pages over from the listener: its section in
+`plugins.yaml` makes it the active adapter (two are refused), and it wins over `FLOWS_REPORTS_URL`.
+flowd then serves no question page and keeps no copy; the listener, if it is still on, serves only
+`flow publish` and `flow say --file`.
+
+```ts
+pages: {
+  ask(q: { id, run, process, entry, title, fragment }, ctx): Promise<{ url }>, // the page; its link
+  close(id, ctx): Promise<void>,                                               // no more answers
+  check?(url, ctx): Promise<void>,                                             // optional: throw to refuse a link
+}
+```
+
+- **`flow ask`** checks the fragment and the step as always, then calls `ask` with the fragment as the
+  agent wrote it, the note as `title` and an `id` of flowd's own (32 hex). The adapter makes the page
+  (the wrapping, the Send button and the drafts are its own) and returns its `http(s)` link; flowd sets
+  the wait, posts the note and the link, and prints it. A throw refuses the command with
+  `<plugin>: <error>`, and no wait is set.
+- **Answers.** The adapter calls `ctx.answer({id, answer})` once per answer it receives, `answer` in the
+  page's JSON (`choice`, a `note`, other names). flowd takes it as it takes one sent to the listener:
+  typed into the agent that asked, a sleeping one woken, a second one marked as a change. An answer for an
+  id it did not give this adapter, one that is not an answer, or one after the question closed is dropped
+  with a line in the log. An adapter that cannot be reached from outside polls its store for them: poll
+  only while it has a question open.
+- **Closing.** Once the run has left the entry that asked, or ended, the next tick (every 5 s) calls
+  `close` for that question, once. The page should then say the question is closed and take nothing
+  more. A throw is shown under the plugin and tried again at the next tick.
+- **Links.** An agent that published a report in that place itself posts it with `flow say "…" --link URL`.
+  With `check`, flowd asks the adapter first and does not send a link it refuses. With an adapter and no
+  listener, `flow say --file page.html` is refused and says to publish the page and pass its link.
+- **Security** is the adapter's: behind a sign-in, an answer comes from someone that place let open the
+  page, rather than from whoever has a link. It is still typed into the agent's terminal as the person's
+  word, so the page should open only to the people who may tell that agent what to do.
