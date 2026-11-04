@@ -1724,13 +1724,18 @@ test("a definition linked in from another directory is reloaded when it changes 
   writeFileSync(join(repo, "lp.yaml"), "description: one\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: b, role: pm}\n");
   symlinkSync(join(repo, "lp.yaml"), join(home, "processes", "lp.yaml"));
   const { f } = await startFlowd(home, { watchDefs: true });
-  const desc = (): string | undefined => f.defs.processes.lp?.description;
-  assert.equal(desc(), "one");
-  writeFileSync(join(repo, "lp.yaml.tmp"), "description: two\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: b, role: pm}\n");
-  renameSync(join(repo, "lp.yaml.tmp"), join(repo, "lp.yaml"));
-  for (let i = 0; i < 50 && desc() !== "two"; i++) await new Promise((r) => setTimeout(r, 100));
-  assert.equal(desc(), "two");
-  await f.close();
+  // its watchers keep the process alive: a failed assertion must still close it, or the whole file hangs
+  try {
+    const desc = (): string | undefined => f.defs.processes.lp?.description;
+    assert.equal(desc(), "one");
+    writeFileSync(join(repo, "lp.yaml.tmp"), "description: two\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: b, role: pm}\n");
+    renameSync(join(repo, "lp.yaml.tmp"), join(repo, "lp.yaml"));
+    // file events come late on a busy machine
+    for (let i = 0; i < 150 && desc() !== "two"; i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(desc(), "two");
+  } finally {
+    await f.close();
+  }
 });
 
 function conversationOn(home: string, name: string) {
