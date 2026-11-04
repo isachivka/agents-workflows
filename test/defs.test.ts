@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseStep, parseProcess, parseDuration, linkedDirs, loadDefs, writeDef, readDef, deleteDef, splitStep, DefError, type DefCtx } from "../src/defs.ts";
+import { parseStep, parseProcess, parseDuration, linkedDirs, linkedState, loadDefs, writeDef, readDef, deleteDef, splitStep, DefError, type DefCtx } from "../src/defs.ts";
 
 const step = (id: string) => parseStep(id, `---\nsummary: ${id} summary\n---\nDo ${id}.\n`);
 const ctx: DefCtx = {
@@ -307,4 +307,19 @@ test("writeDef writes a linked definition where its link points, keeping the lin
   assert.ok(lstatSync(join(home, "steps", "pick.md")).isSymbolicLink());
   assert.match(readFileSync(join(repo, "pick.md"), "utf8"), /New\./);
   assert.deepEqual(linkedDirs(home), [realpathSync(repo)]);
+});
+
+test("linkedState changes when a linked definition's target changes, and not for files inside the home", () => {
+  const repo = mkdtempSync(join(tmpdir(), "flows-repo-"));
+  const home = mkdtempSync(join(tmpdir(), "flows-home-"));
+  mkdirSync(join(home, "processes"));
+  writeFileSync(join(repo, "lp.yaml"), "one");
+  symlinkSync(join(repo, "lp.yaml"), join(home, "processes", "lp.yaml"));
+  writeFileSync(join(home, "processes", "own.yaml"), "own");
+  const before = linkedState(home);
+  writeFileSync(join(home, "processes", "own.yaml"), "own, changed");
+  assert.equal(linkedState(home), before);
+  writeFileSync(join(repo, "lp.yaml"), "two, longer");
+  utimesSync(join(repo, "lp.yaml"), new Date(), new Date(Date.now() + 5_000));
+  assert.notEqual(linkedState(home), before);
 });

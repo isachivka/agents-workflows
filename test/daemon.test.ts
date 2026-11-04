@@ -1730,8 +1730,9 @@ test("a definition linked in from another directory is reloaded when it changes 
     assert.equal(desc(), "one");
     writeFileSync(join(repo, "lp.yaml.tmp"), "description: two\ncwd: /tmp\nroles: {pm: {spawn: claude}}\nsteps:\n  - {step: b, role: pm}\n");
     renameSync(join(repo, "lp.yaml.tmp"), join(repo, "lp.yaml"));
-    // file events come late on a busy machine
-    for (let i = 0; i < 150 && desc() !== "two"; i++) await new Promise((r) => setTimeout(r, 100));
+    // the file event may come late or never on a busy machine: the tick's comparison does not depend on it
+    await f.tickNow();
+    for (let i = 0; i < 30 && desc() !== "two"; i++) await new Promise((r) => setTimeout(r, 100));
     assert.equal(desc(), "two");
   } finally {
     await f.close();

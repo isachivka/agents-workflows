@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, watch as fsWatch, ty
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Cron } from "croner";
-import { linkedDirs, loadDefs, type DefCtx } from "./defs.ts";
+import { linkedDirs, linkedState, loadDefs, type DefCtx } from "./defs.ts";
 import { formatDuration, matches, missingProcess, newRun, ordinal, renderData, renderPrompt, renderWith, step } from "./engine.ts";
 import { expandHome, shq, type SessionInfo, type SpawnOpts, type Terminal } from "./agterm.ts";
 import { zmxName } from "./zmx.ts";
@@ -170,6 +170,8 @@ export class Flowd {
   /** directories outside the home its definitions link to, by path: a pull there is an edit too */
   private linkWatchers = new Map<string, FSWatcher>();
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  /** what linked definitions looked like at the last tick: a change the file events missed reloads */
+  private linkedSeen = "";
   private loaded = false;
   private queueing = false;
   private translator: Translator;
@@ -254,6 +256,7 @@ export class Flowd {
     if (this.o.watchDefs !== false) {
       this.watcher = fsWatch(this.home, { recursive: true }, () => this.scheduleReload());
       this.watchLinked();
+      this.linkedSeen = linkedState(this.home);
     }
   }
 
@@ -330,6 +333,7 @@ export class Flowd {
     const before = this.defs;
     this.defs = loadDefs(this.home, this.plugins.eventTypes(), this.plugins.actionNames());
     this.watchLinked();
+    if (this.watcher) this.linkedSeen = linkedState(this.home);
     // an edit that does not parse or validate is not taken (a typo, a save halfway): open runs go on with
     // the last good version; new starts are refused with the edit's errors
     for (const [name, p] of Object.entries(before.processes)) if (!this.defs.processes[name] && this.defs.invalid[`process:${name}`]) this.defs.processes[name] = p;
@@ -392,6 +396,18 @@ export class Flowd {
     return this.plugins.status().flatMap((p) => p.watches)
       .filter((w) => w.run === null && w.error && w.processes?.includes(process))
       .map((w) => `${w.type}: ${w.error}`);
+  }
+
+  /**
+   * A file event for a directory outside the home can come late or not at all (a busy machine, a
+   * `git pull` replacing files): each tick compares what the links point to, and reloads on a change.
+   */
+  private checkLinked(): void {
+    if (!this.watcher) return;
+    const now = linkedState(this.home);
+    if (now === this.linkedSeen) return;
+    this.linkedSeen = now;
+    this.scheduleReload();
   }
 
   private scheduleReload(): void {
@@ -1351,6 +1367,7 @@ export class Flowd {
   }
 
   async tickNow(): Promise<void> {
+    this.checkLinked();
     await this.checkUnannounced();
     await this.closeQuestions();
     this.hibernate();

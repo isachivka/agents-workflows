@@ -421,6 +421,26 @@ export function linkedDirs(home: string): string[] {
   return [...dirs].sort();
 }
 
+/** What the home's links point to outside it, with each target's mtime: it changes when one of them does. */
+export function linkedState(home: string): string {
+  const root = existsSync(home) ? realpathSync(home) : home;
+  const files = ["steps", "processes", "plugins"].flatMap((d) => {
+    const dir = join(home, d);
+    return existsSync(dir) ? readdirSync(dir).map((f) => join(dir, f)) : [];
+  });
+  const out: string[] = [];
+  for (const f of [...files, join(home, "plugins.yaml")]) {
+    try {
+      if (!lstatSync(f).isSymbolicLink()) continue;
+      const target = realpathSync(f);
+      if (target.startsWith(root + "/")) continue;
+      const st = statSync(target);
+      out.push(`${f}>${target}@${st.mtimeMs}:${st.size}`);
+    } catch { /* a dangling link: nothing to compare */ }
+  }
+  return out.sort().join("\n");
+}
+
 export function writeDef(home: string, kind: DefKind, name: string, text: string, baseMtime: number | null, ctx: DefCtx):
   { ok: true; mtime: number } | { ok: false; status: 409 | 422; errors: string[] } {
   if ((readDef(home, kind, name)?.mtime ?? null) !== baseMtime) return { ok: false, status: 409, errors: [CHANGED] };

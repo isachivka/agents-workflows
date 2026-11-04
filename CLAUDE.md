@@ -72,6 +72,11 @@ Specs and plans are records: never rewrite an old one to match new code — writ
   `~/.local/state/flows`, `~/.claude` or launchd.
 - Tests that run the CLI set `AGTERM_SESSION_ID` explicitly; the runner may itself be inside an
   agterm session.
+- `npm test` runs the files in parallel and takes about ten seconds; `--test-force-exit` ends a file whose
+  failed test left a watcher or a timer open, instead of hanging the run. A test that takes seconds is
+  waiting on a real timer: pass the daemon's `*Ms` option a small value (`startFlowd` already sets the
+  usual ones), never wait for the default.
+- Never depend on a file event arriving in time: drive the code path yourself (`tickNow`, a direct call).
 
 ## Shipping: main, restart, push — no confirmation
 

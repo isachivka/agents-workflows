@@ -159,6 +159,9 @@ export async function startFlowd(home: string, opts: Partial<FlowdOptions> = {})
   const f = new Flowd({
     home, statePath: join(home, "state.db"), agterm, pluginDirs: [join(home, "plugins")], now: () => clock.t,
     tickMs: 0, flushMs: 0, titleMs: 0, gapMs: 2_000, spawnGraceMs: 15_000, watchDefs: false, retryBaseMs: 10, log: () => {},
+    // the folder-trust screen is polled in real time, 30 times: a second apart, a test spawning into an
+    // untrusted folder would wait 30 s for it at close
+    trustPollMs: 1,
     claudeConfig: join(home, "no-claude.json"), // never the real ~/.claude.json
     claudeDir: join(home, "claude"), // nor ~/.claude
     codexDir: join(home, "codex"), // nor ~/.codex
