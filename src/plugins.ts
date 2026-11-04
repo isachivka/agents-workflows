@@ -46,8 +46,11 @@ export interface ActiveLogin { name: string; login: LoginProvider; ctx: PluginCt
  * answers back through `ctx.answer`, each once; drafts are its own business.
  */
 export interface PagesAdapter {
-  /** the question page; `fragment` is the agent's file as written, `id` flowd's own (32 hex) */
-  ask(q: { id: string; run: string; process: string; entry: string; title: string; fragment: string }, ctx: PluginCtx): Promise<{ url: string }> | { url: string };
+  /**
+   * the question page: `fragment` is the agent's file as written, or `link` a page the agent made itself, whose
+   * answers the adapter must be able to read (refuse it otherwise); `id` is flowd's own (32 hex)
+   */
+  ask(q: { id: string; run: string; process: string; entry: string; title: string; fragment?: string; link?: string }, ctx: PluginCtx): Promise<{ url: string }> | { url: string };
   /** the question takes no more answers: the run left the entry that asked, or ended */
   close(id: string, ctx: PluginCtx): Promise<unknown> | unknown;
   /** throws when `flow say --link` should not post the link (a page that does not exist) */

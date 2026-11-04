@@ -978,32 +978,41 @@ export class Flowd {
    * `flow ask`: the agent's question fragment as a page the person answers from anywhere (the link is the
    * key). The step waits for the person; the answer is typed into the asking role (questionPost).
    */
-  async ask(q: { session?: string; run?: string; entry?: string; file: string; note: string }): Promise<{ url: string; chat?: string } | { error: string }> {
+  async ask(q: { session?: string; run?: string; entry?: string; file?: string; link?: string; note: string }): Promise<{ url: string; chat?: string } | { error: string }> {
+    if (q.file && q.link) return { error: "give the question as a FILE or as --link, not both" };
+    if (!q.file && !q.link) return { error: "give the question as a FILE (a fragment) or as --link (a page you made)" };
     const p = this.plugins.pagesAdapter();
     if (p && "error" in p) return p;
-    if (!p && !this.reports) return { error: "question pages need a pages adapter (a plugin with `pages`) or the reports listener: set FLOWS_REPORTS_URL (docs/reports.md), or ask in the agterm overlay" };
-    if (!existsSync(q.file)) return { error: `no file ${q.file}` };
-    const fragment = readFileSync(q.file, "utf8");
-    if (/<(html|head|body)[\s>]/i.test(fragment)) return { error: `${q.file} is a whole page: write a fragment (no <html>, <head> or <body>); flowd wraps it with the form and the Send button` };
+    // a fragment goes to the listener while it is on; a page of the agent's own only an adapter can read answers from
+    const adapter = q.link || !this.reports ? p : null;
+    if (q.link && !adapter) return { error: "a page of your own needs a pages adapter that reads its answers (docs/reports.md#pages-from-a-plugin): ask with a fragment FILE instead" };
+    if (!adapter && !this.reports) return { error: "question pages need a pages adapter (a plugin with `pages`) or the reports listener: set FLOWS_REPORTS_URL (docs/reports.md), or ask in the agterm overlay" };
+    if (q.link && !/^https?:\/\/\S+$/.test(q.link)) return { error: `${q.link}: a link starts with https:// or http://` };
+    let fragment: string | undefined;
+    if (q.file) {
+      if (!existsSync(q.file)) return { error: `no file ${q.file}` };
+      fragment = readFileSync(q.file, "utf8");
+      if (/<(html|head|body)[\s>]/i.test(fragment)) return { error: `${q.file} is a whole page: write a fragment (no <html>, <head> or <body>); flowd wraps it with the form and the Send button` };
+    }
     const t = this.resolveTarget({ session: q.session, run: q.run, entry: q.entry });
     if ("error" in t) return t;
     const run = this.store.getRun(t.run)!;
     const role = this.currentEntry(run)?.role;
     if (!role || role === "human" || !run.roles[role]) return { error: `${t.run} is at ${t.entry}, which is not an agent's step: only an agent asks` };
     let page: { token: string; url: string };
-    if (p) {
+    if (adapter) {
       // the plugin keeps the page; flowd keeps only the question, under an id of its own
       const id = randomBytes(16).toString("hex");
       try {
-        const made = await p.pages.ask({ id, run: run.id, process: run.process, entry: t.entry, title: q.note, fragment }, p.ctx);
+        const made = await adapter.pages.ask({ id, run: run.id, process: run.process, entry: t.entry, title: q.note, ...(q.link ? { link: q.link } : { fragment }) }, adapter.ctx);
         if (typeof made?.url !== "string" || !/^https?:\/\//.test(made.url)) throw new Error("it gave no http(s) link for the page");
         page = { token: id, url: made.url };
       } catch (e) {
-        this.plugins.fault(p.name, e);
-        return { error: `${p.name}: ${msg(e)}` };
+        this.plugins.fault(adapter.name, e);
+        return { error: `${adapter.name}: ${msg(e)}` };
       }
-    } else page = this.reports!.publishText("ask.html", askPage(fragment, q.note));
-    this.store.addQuestion({ token: page.token, run: run.id, entry: t.entry, iteration: run.iteration, role, url: page.url, created: this.now(), ...(p ? { adapter: p.name } : {}) });
+    } else page = this.reports!.publishText("ask.html", askPage(fragment!, q.note));
+    this.store.addQuestion({ token: page.token, run: run.id, entry: t.entry, iteration: run.iteration, role, url: page.url, created: this.now(), ...(adapter ? { adapter: adapter.name } : {}) });
     const r = await this.submit({ type: "entry.wait", data: { session: q.session, run: run.id, entry: t.entry, note: `${q.note} · ${page.url}`, human: true }, source: "cli" });
     if (r.error) return { error: r.error };
     this.log(`${run.id} ${role}: asked at ${t.entry}: ${page.url}`);

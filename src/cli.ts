@@ -26,6 +26,7 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow publish FILE                      serve a copy of a report under an unguessable link; prints it
   flow ask FILE --note T                 ask the person on a page (FILE: a form fragment); posts its link,
                                          waits for them; their answer is typed in here as JSON
+  flow ask --link URL --note T           the same on a page you made yourself (needs a pages plugin)
   flow signal <type> [key=value …] [--run ID] [--outcome done|failed]
                                          emit an event; a type without a dot becomes signal.<type>
   flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
@@ -202,8 +203,11 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "ask": {
-        if (a._.length !== 1 || !a.note) throw new CliError('usage: flow ask FILE --note "the question, in a line"');
-        const r = await call("POST", "/api/ask", { session: a.run ? undefined : session, run: a.run, entry: a.step, file: resolve(a._[0]), note: a.note });
+        const link = a.links.length === 1 ? a.links[0] : undefined;
+        if (!a.note || a.links.length > 1 || (a._.length === 1) === Boolean(link) || a._.length > 1) {
+          throw new CliError('usage: flow ask FILE --note "the question, in a line"   (or: flow ask --link URL --note "…" for a page you made)');
+        }
+        const r = await call("POST", "/api/ask", { session: a.run ? undefined : session, run: a.run, entry: a.step, ...(link ? { link } : { file: resolve(a._[0]) }), note: a.note });
         if (r.chat) process.stderr.write(`flow: the link was not posted to the messenger: ${r.chat}\n`);
         out(r.url);
         return 0;

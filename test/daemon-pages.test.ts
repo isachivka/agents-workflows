@@ -14,6 +14,12 @@ export default {
     async ask(q: any, ctx: any) {
       g.__pagesCtx = ctx;
       if (g.__pagesFail) throw new Error("the store is down");
+      if (q.link) {
+        if (q.fragment !== undefined) throw new Error("a link and a fragment");
+        if (!q.link.startsWith("https://pages.example.net/")) throw new Error("not one of my pages");
+        (g.__pages ??= []).push("ask " + q.run + " " + q.title + " link " + q.link);
+        return { url: q.link };
+      }
       (g.__pages ??= []).push("ask " + q.run + " " + q.process + " " + q.entry + " " + q.title + " " + q.fragment);
       return { url: "https://pages.example.net/q/" + q.id };
     },
@@ -149,4 +155,41 @@ test("flow say --link posts each link on its own line; a link that is not http(s
   assert.deepEqual(t.f.publish(join(t.home, "plan.html")),
     { error: "reports are not served here: publish plan.html where fakepages keeps pages and post its link with flow say --link" });
   await t.f.close();
+});
+
+test("flow ask --link: a page the agent made itself; the adapter checks it, flowd waits, posts it and types the answers", async () => {
+  const t = await running();
+  await t.f.submit(status("S1", "active"));
+  const link = "https://pages.example.net/app/42";
+  const r = await t.f.ask({ session: "S1", link, note: "Approve v2?" });
+  assert.deepEqual(r, { url: link });
+  assert.deepEqual(pagesLog(), [`ask p#1 Approve v2? link ${link}`]);
+  assert.equal(chatLog().at(-1), `post T1 Approve v2?\n${link}`);
+  assert.equal(t.f.store.getRun("p#1")!.entries.b.wait?.note, `Approve v2? · ${link}`);
+  const id = [...t.f.store.openAdapterQuestions()].find((q) => q.url === link)!.token;
+  await t.f.submit(status("S1", "completed"));
+  answer(id, { decision: "approve", comment: "ok" });
+  t.clock.t += 60_000;
+  await settle(t.f);
+  const typed = yourQuestion(t.agterm.calls);
+  assert.ok(typed[0]?.includes(`answered your question (${link}):\n{"decision":"approve","comment":"ok","choice":[]}`), t.agterm.calls.join("\n"));
+  // the adapter's refusal, a link that is not http(s), a file and a link at once
+  assert.deepEqual(await t.f.ask({ session: "S1", link: "https://elsewhere.example/1", note: "x" }), { error: "fakepages: not one of my pages" });
+  assert.deepEqual(await t.f.ask({ session: "S1", link: "pages.example.net/1", note: "x" }), { error: "pages.example.net/1: a link starts with https:// or http://" });
+  assert.deepEqual(await t.f.ask({ session: "S1", link, file: join(t.home, "q.html"), note: "x" }), { error: "give the question as a FILE or as --link, not both" });
+  await t.f.close();
+});
+
+test("a fragment goes to the reports listener when it is on, even with an adapter; --link needs an adapter", async () => {
+  const both = await running(PAGES_ON, { reports: { dir: join(makeHome({}), "reports"), url: "https://reports.example.net" } });
+  const r = await both.f.ask({ session: "S1", file: join(both.home, "q.html"), note: "x" });
+  assert.match((r as { url: string }).url, /^https:\/\/reports\.example\.net\/r\/[0-9a-f]{32}\/ask\.html$/);
+  assert.deepEqual(pagesLog(), []);
+  await both.f.close();
+
+  const listener = await running({ "plugins/fakechat.ts": CHAT_PLUGIN, "plugins.yaml": "fakechat: {}\n" },
+    { reports: { dir: join(makeHome({}), "reports"), url: "https://reports.example.net" } });
+  assert.match((await listener.f.ask({ session: "S1", link: "https://pages.example.net/app/1", note: "x" }) as { error: string }).error,
+    /a page of your own needs a pages adapter/);
+  await listener.f.close();
 });

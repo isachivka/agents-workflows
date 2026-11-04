@@ -64,7 +64,7 @@ For a choice the person makes away from the Mac: tick the topics to write up, pi
    agent gets `the person changed their answer to …`. Once the run has moved on or ended, the page says
    the question is closed and takes nothing more.
 
-`flow ask` is refused without the listener (ask in the agterm overlay instead), for a whole page instead
+`flow ask` is refused with neither the listener nor a [pages adapter](#pages-from-a-plugin) (ask in the agterm overlay instead), for a whole page instead
 of a fragment, and outside an agent's current step. Without a messenger, or in a `notify: false` process,
 the link is not posted (the command says so on stderr) but is printed and shown in the run's waiting note.
 
@@ -83,23 +83,30 @@ the link is not posted (the command says so on stderr) but is printed and shown 
 
 ## Pages from a plugin
 
-A plugin with a `pages` field takes the question pages over from the listener: its section in
-`plugins.yaml` makes it the active adapter (two are refused), and it wins over `FLOWS_REPORTS_URL`.
-flowd then serves no question page and keeps no copy; the listener, if it is still on, serves only
-`flow publish` and `flow say --file`.
+A plugin with a `pages` field serves question pages somewhere else: its section in `plugins.yaml` makes
+it the active adapter (two are refused). It takes two kinds of question:
+
+- **a page the agent made itself**, `flow ask --link URL --note "…"`: in a place whose pages can keep
+  data (an app with its own store and handlers), the agent builds the page that fits the question (an
+  approve/decline on a report, a pick of A/B/C, a form) and hands its link to flowd. Only an adapter can
+  take these: it is the one that reads their answers. What such a page must be (where its answers go, who
+  may give them) is the adapter's to say, in the docs and skills of the setup that has it.
+- **a fragment**, `flow ask FILE`, when the listener is off: the adapter wraps it into a page, or refuses
+  it and says what to do instead. While the listener is on, fragments go to the listener.
 
 ```ts
 pages: {
-  ask(q: { id, run, process, entry, title, fragment }, ctx): Promise<{ url }>, // the page; its link
+  ask(q: { id, run, process, entry, title, fragment? | link? }, ctx): Promise<{ url }>, // the page; its link
   close(id, ctx): Promise<void>,                                               // no more answers
   check?(url, ctx): Promise<void>,                                             // optional: throw to refuse a link
 }
 ```
 
-- **`flow ask`** checks the fragment and the step as always, then calls `ask` with the fragment as the
-  agent wrote it, the note as `title` and an `id` of flowd's own (32 hex). The adapter makes the page
-  (the wrapping, the Send button and the drafts are its own) and returns its `http(s)` link; flowd sets
-  the wait, posts the note and the link, and prints it. A throw refuses the command with
+- **`flow ask`** checks the step (and a fragment) as always, then calls `ask` with the note as `title`, an
+  `id` of flowd's own (32 hex), and either `link` (the agent's page) or `fragment` (the file as written).
+  For a link the adapter checks that it can read that page's answers; for a fragment it makes the page
+  (the wrapping, the Send button and the drafts are its own). It returns the `http(s)` link to post; flowd
+  sets the wait, posts the note and the link, and prints it. A throw refuses the command with
   `<plugin>: <error>`, and no wait is set.
 - **Answers.** The adapter calls `ctx.answer({id, answer})` once per answer it receives, `answer` in the
   page's JSON (`choice`, a `note`, other names). flowd takes it as it takes one sent to the listener:

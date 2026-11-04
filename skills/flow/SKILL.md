@@ -79,6 +79,11 @@ for them. Their answer arrives here as `▶ flow: the person answered your quest
 replaces an earlier one. It is refused when no pages are served (neither reports nor a pages plugin):
 then ask in the agterm overlay.
 
+Where the setup has a pages plugin, you may instead build the page yourself, in the shape the decision
+needs (approve / decline on your report, a pick of A/B/C or decline, a form), as that setup's skills
+describe, and run `flow ask --link <its url> --note "…"`. The answer comes back the same way, as the JSON
+your page recorded. The person decides on the page; never ask them to type the decision into this session.
+
 Their message arrives in this session as `<name> wrote in the run's telegram conversation (<run>):`,
 the text, and a reminder of where to answer — any time they write in the topic, not only after you
 asked. When you answer, answer with `flow say`, never only in the terminal: nobody reads it. A

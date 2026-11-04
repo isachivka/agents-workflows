@@ -303,7 +303,14 @@ test("flow ask prints the question page's link and says when the messenger could
   writeFileSync(join(dir, "q.html"), '<input type="radio" name="choice" value="a">');
   const env = { FLOWD_URL: s.base, AGTERM_SESSION_ID: "S1" };
   const usage = await flow(["ask", join(dir, "q.html")], env);
-  assert.deepEqual([usage.code, usage.stderr], [1, 'flow: usage: flow ask FILE --note "the question, in a line"\n']);
+  const USAGE = 'flow: usage: flow ask FILE --note "the question, in a line"   (or: flow ask --link URL --note "…" for a page you made)\n';
+  assert.deepEqual([usage.code, usage.stderr], [1, USAGE]);
+  const both = await flow(["ask", join(dir, "q.html"), "--link", "https://a.example/1", "--note", "x"], env);
+  assert.deepEqual([both.code, both.stderr], [1, USAGE]);
+  // the listener serves only its own pages: a link needs a pages plugin
+  const linked = await flow(["ask", "--link", "https://a.example/1", "--note", "x"], env);
+  assert.equal(linked.code, 1);
+  assert.match(linked.stderr, /a page of your own needs a pages adapter/);
   const r = await flow(["ask", join(dir, "q.html"), "--note", "Pick one"], env);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /^https:\/\/reports\.example\.net\/r\/[0-9a-f]{32}\/ask\.html\n$/);

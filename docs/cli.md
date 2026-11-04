@@ -142,6 +142,7 @@ missing file, a directory, or a file over the limit. Setting the listener up: [r
 
 ```
 flow ask FILE --note T [--run ID --step ID]
+flow ask --link URL --note T [--run ID --step ID]
 ```
 
 Asks the person on a page they can answer from anywhere. `FILE` is an HTML fragment with named inputs
@@ -152,9 +153,14 @@ note, and prints the link. End your turn after it. The answer arrives in the ses
 `▶ flow: the person answered your question (<link>):` and its JSON, `{"choice": [...], "note": "…"}`;
 sent again while the step is current, as `… changed their answer to …`. When the link could not be
 posted (no messenger, `notify: false`) stderr says so; the page works anyway. With a
-[pages adapter](reports.md#pages-from-a-plugin) the plugin makes the page and gives the link, and its own
-error refuses the command. Refused with neither an adapter nor the reports listener, for a whole page, or
-outside an agent's current step. See [reports](reports.md#question-pages).
+[pages adapter](reports.md#pages-from-a-plugin) and no listener, the plugin makes the page and gives the
+link, and its own error refuses the command.
+
+`--link URL` instead of `FILE`: a page you made yourself, in the place the pages adapter reads (an app
+that keeps the person's answer); flowd waits on it as above and the adapter hands the answer back. Needs
+an active adapter, which may refuse a page it cannot read answers from. Refused with neither an adapter
+nor the reports listener, with both `FILE` and `--link`, for a whole page, or outside an agent's current
+step. See [reports](reports.md#question-pages).
 
 **Serving reports.** flowd serves them on a listener of their own, which answers nothing but
 `GET`/`HEAD /r/<token>/<name>` (404 for anything else): the UI and the API stay on their own port.

@@ -150,7 +150,9 @@ topics), each run can have a conversation with the person, opened by its first m
   something it wrote, it sends it this way and then `flow wait --human`. When flowd serves reports,
   an HTML file arrives as a link that opens in the browser ([`flow publish`](cli.md#flow-publish)). Only what it sends goes
   there, never its terminal output. For a choice it asks with `flow ask`: a page the person ticks
-  and sends, whose answer comes back into its terminal ([question pages](reports.md#question-pages)).
+  and sends, whose answer comes back into its terminal ([question pages](reports.md#question-pages));
+  with a pages plugin, also on a page it made itself, such as an approve/decline under its report
+  ([pages from a plugin](reports.md#pages-from-a-plugin)). A page or a link it posts goes as `flow say --link`.
 - **flowd writes** when the run comes to need the person (a human step, a `flow wait --human`, a
   run stopped for the person: `<run> waits for you: <what>`, and the PR link on the next line when the run has one), opening the conversation if needed;
   when a run that has one ends (`<run> is done`, `<run> was stopped: <reason>`), then closes it; and,
