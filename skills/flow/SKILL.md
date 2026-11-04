@@ -56,6 +56,15 @@ then `flow wait --human --note "…"` and end your turn. Some processes keep out
 look for another way; put what the user needs in your report note. With reports served, an HTML file arrives as
 a link; `flow publish FILE` gives you such a link for anything else (`flow set report=<url>`).
 
+The user reads these messages on a phone, between other things. Write each so that its first glance is
+enough:
+- Open with one emoji that says what it asks of them: 🔴 something is broken or needs them now, 🟡 a
+  decision or an answer from them, 🟢 done, nothing to do. Then one plain sentence: what happened, and
+  the one thing they should do, if any.
+- At most three short lines. No counts of what did not change, no health lines, ids, hashes or commit
+  links in the text: details go into a report (a link) or your `flow done --note`.
+- Nothing happened and nothing is needed from them: send nothing, unless the step says otherwise.
+
 When the user has to choose (tick items, pick an option) and may be away from the Mac, ask on a page:
 write an HTML fragment (no `<html>`/`<head>`/`<body>`) with `<input type="checkbox|radio" name="choice"
 value="…">` per option (other named inputs come back too; a comment box is added), run
