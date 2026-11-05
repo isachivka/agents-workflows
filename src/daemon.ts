@@ -161,6 +161,8 @@ export class Flowd {
   private endedSessions = new Map<string, string>();
   /** sessions told to stop by a switch: the turn the stop line starts is theirs to finish, not stopped again */
   private stoppedSessions = new Set<string>();
+  /** when flows was switched off (nothing new starts, runs pause, events wait), or null while it is on */
+  private off: number | null = null;
   /** hibernate: `<run>\0<role>\0<session>` being put to sleep, or with no conversation to resume */
   private sleeping = new Set<string>();
   private flushRun: Promise<void> | undefined;
@@ -210,6 +212,8 @@ export class Flowd {
     mkdirSync(this.home, { recursive: true });
     await this.plugins.load();
     this.reloadDefs();
+    const off = this.store.setting("off");
+    this.off = off === null ? null : Number(off);
     // a switch that was off stays off until its plugin says otherwise: no queued run slips out meanwhile
     // (anything submitted from here on, the sessions' reconcile first, may start queued runs)
     for (const run of this.store.openRuns()) if (run.pausedBy === "pause_on") this.pausedProcesses.add(run.process);
@@ -440,7 +444,10 @@ export class Flowd {
       await this.apply(r.id, { kind: "session", session, status });
       // an agent starting a turn in a run its switch paused (it was spawned just before, or reached by a
       // line typed meanwhile) is stopped like the others
-      if (status === "active" && r.status === "paused" && r.pausedBy === "pause_on" && !this.stoppedSessions.has(session)) this.background(this.stopAgent(r.id, r.process, session));
+      if (status === "active" && r.status === "paused" && !this.stoppedSessions.has(session)) {
+        if (r.pausedBy === "pause_on") this.background(this.stopAgent(r.id, session, this.switchLine(r.id, r.process)));
+        else if (r.pausedBy === "off") this.background(this.stopAgent(r.id, session, this.offLine(r.id)));
+      }
     }
     if (status !== "active") void this.flush();
     return {};
@@ -532,6 +539,8 @@ export class Flowd {
   private async process(id: number): Promise<Result> {
     const e = this.store.event(id);
     if (!e || e.processed) return {};
+    // kept as it is, unprocessed, and acted on when flows is on again
+    if (this.off !== null && this.keptWhileOff(e)) return {};
     let result: Result;
     try {
       result = await this.handle(e);
@@ -542,6 +551,80 @@ export class Flowd {
     this.store.markProcessed(id);
     this.changed("runs");
     return result;
+  }
+
+  /**
+   * While off nothing moves on its own: plugin events, signals, flowd's own `flow.*` events, a report or a wait
+   * from an agent or a command, a nested run's end. What the person does from the UI or `--human` goes through,
+   * and so does the bookkeeping (session statuses, bindings), and a start, which `startRun` queues or skips.
+   */
+  private keptWhileOff(e: StoredEvent): boolean {
+    if (e.type === "entry.report") return (e.data as Dict).by !== "human";
+    if (e.type === "entry.wait" || e.type === "run.nested-end") return true;
+    return !/^(run|entry|role|agterm|claude)\./.test(e.type);
+  }
+
+  /** When flows was switched off, or null while it is on. */
+  offSince(): number | null {
+    return this.off;
+  }
+
+  /**
+   * Switches flows off: every running run pauses as the switch's (`pausedBy: "off"`), an agent mid-turn gets Esc
+   * and a line to stop; from now on nothing new starts and events wait (see keptWhileOff).
+   */
+  turnOff(): Promise<Result> {
+    return this.enqueue(async () => {
+      if (this.off === null) {
+        this.off = this.now();
+        this.store.setSetting("off", String(this.off));
+        this.log("flows is off: nothing new starts, running runs pause");
+      }
+      // runs it paused before (a repeated off) are gone over too: one of their agents may still work
+      for (const run of this.store.openRuns().filter((r) => r.status === "running" || r.pausedBy === "off")) {
+        if (run.status === "running" && (await this.apply(run.id, { kind: "pause", by: "off" })).error) continue;
+        for (const session of new Set(Object.values(run.roles).filter((s): s is string => Boolean(s)))) {
+          const status = this.store.sessionStatus(session);
+          if (status === "active" || status === "blocked") await this.stopAgent(run.id, session, this.offLine(run.id));
+        }
+      }
+      this.changed("runs");
+      return {};
+    });
+  }
+
+  private offLine(run: string): string {
+    return `▶ flow: ${run} is paused: flows is off. Stop now: put back anything you changed in the person's setup, then end your turn. flowd tells you when to go on.`;
+  }
+
+  /**
+   * Switches flows on: the runs the switch paused go on, the events kept meanwhile are acted on in order, an
+   * agent whose step is still open is told to carry on, the queue moves. A schedule missed meanwhile stays missed.
+   */
+  turnOn(): Promise<Result> {
+    return this.enqueue(async () => {
+      if (this.off === null) return {};
+      this.off = null;
+      this.store.setSetting("off", null);
+      this.log("flows is on");
+      const resumed: string[] = [];
+      for (const run of this.store.openRuns().filter((r) => r.status === "paused" && r.pausedBy === "off")) {
+        for (const s of Object.values(run.roles)) if (s) this.stoppedSessions.delete(s);
+        if (!(await this.apply(run.id, { kind: "resume" })).error) resumed.push(run.id);
+      }
+      for (const e of this.store.unprocessed()) await this.process(e.id);
+      for (const id of resumed) {
+        const run = this.store.getRun(id);
+        const cur = run ? this.currentEntry(run) : undefined;
+        if (run?.status === "running" && cur?.kind === "agent" && cur.role && run.roles[cur.role] && run.entries[cur.id]?.status === "active") {
+          this.store.enqueue(id, cur.role, `▶ flow: ${id} goes on: flows is on again. Carry on with step ${cur.id} from where you stopped (\`flow show\` has the instructions).`, null, this.now());
+        }
+      }
+      await this.startQueued();
+      this.changed("runs");
+      void this.flush();
+      return {};
+    });
   }
 
   private async handle(e: StoredEvent): Promise<Result> {
@@ -819,12 +902,13 @@ export class Flowd {
     const runs = this.store.openRuns().filter((r) => r.process === name);
     const cap = this.capacity(p, runs);
     const { open, max } = cap;
-    // a process its pause_on switch paused takes starts into its queue
-    const full = cap.full || this.pausedProcesses.has(name);
+    // a process its pause_on switch paused, or flows switched off, takes starts into its queue
+    const full = cap.full || this.pausedProcesses.has(name) || this.off !== null;
     // a schedule fires again; a start by hand or by an event is work that must not be lost. A start
     // that flow.trigger.skipped itself caused is refused without another one: that would feed itself
     if (full && (trigger === "cron" || trigger === "flow.trigger.skipped")) {
       if (trigger === "cron") void this.submit({ type: "flow.trigger.skipped", data: { process: name, trigger }, source: "flow" });
+      if (this.off !== null) return { error: `flows is off: ${name} does not start (a schedule missed now is not run later)` };
       return { error: `${name} already has ${open} ${p.maxWorking === undefined ? "open" : "working"} run(s) (${p.maxWorking === undefined ? "max_runs" : "max_working"} ${max})` };
     }
     const n = this.store.nextRunNumber(name);
@@ -1191,7 +1275,7 @@ export class Flowd {
    * the rest their new place. Every apply ends here, so it runs inside itself: the flag stops that.
    */
   private async startQueued(): Promise<void> {
-    if (this.queueing) return;
+    if (this.queueing || this.off !== null) return;
     this.queueing = true;
     try {
       const open = this.store.openRuns();
@@ -1875,22 +1959,26 @@ export class Flowd {
       if (run.status === "running" && (await this.apply(run.id, { kind: "pause", by: "pause_on" })).error) continue;
       for (const session of new Set(Object.values(run.roles).filter((s): s is string => Boolean(s)))) {
         const status = this.store.sessionStatus(session);
-        if (status === "active" || status === "blocked") await this.stopAgent(run.id, name, session);
+        if (status === "active" || status === "blocked") await this.stopAgent(run.id, session, this.switchLine(run.id, name));
       }
     }
   }
 
+  private switchLine(run: string, process: string): string {
+    return `▶ flow: ${run} is paused: ${process}'s switch is off. Stop now: put back anything you changed in the person's setup, then end your turn. flowd tells you when to go on.`;
+  }
+
   /** Esc ends the agent's turn and what it runs; then the line telling it to tidy up and end its turn. */
-  private async stopAgent(run: string, process: string, session: string): Promise<void> {
+  private async stopAgent(run: string, session: string, line: string): Promise<void> {
     if (this.stoppedSessions.has(session)) return;
     this.stoppedSessions.add(session);
     try {
       const term = this.termOf(session);
       await term.press(session, "\x1b");
       await new Promise((r) => setTimeout(r, this.o.pauseKeyDelayMs ?? 1_000));
-      await term.type(session, `▶ flow: ${run} is paused: ${process}'s switch is off. Stop now: put back anything you changed in the person's setup, then end your turn. flowd tells you when to go on.`);
+      await term.type(session, line);
       this.lastTyped.set(session, this.now());
-      this.log(`${run}: stopped its agent in ${session} (switch off)`);
+      this.log(`${run}: stopped its agent in ${session} (${this.off !== null ? "flows is off" : "switch off"})`);
     } catch (e) {
       this.log(`${run}: could not stop the agent in ${session}: ${msg(e)}`);
     }
@@ -1926,6 +2014,7 @@ export class Flowd {
    * a zmx process or one with split-pane roles.
    */
   private hibernate(): void {
+    if (this.off !== null) return; // an emergency stop leaves every window where it is
     const now = this.now();
     for (const [session, run] of this.endedSessions) {
       const status = this.store.sessionStatus(session);

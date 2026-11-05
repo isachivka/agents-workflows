@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS chats (
 CREATE TABLE IF NOT EXISTS questions (
   token TEXT PRIMARY KEY, run_id TEXT NOT NULL, entry_id TEXT NOT NULL, iteration INTEGER NOT NULL,
   role TEXT NOT NULL, url TEXT NOT NULL, created REAL NOT NULL, answer TEXT, answered REAL, draft TEXT);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `;
 
 // node:sqlite rows are untyped records
@@ -173,6 +174,17 @@ export class Store {
   /** Open nested runs working for this run. */
   childrenOf(runId: string): RunState[] {
     return this.openRuns().filter((r) => r.parent?.run === runId);
+  }
+
+  /** flowd's own state that outlives a restart (`off`: when flows was switched off) */
+  setting(key: string): string | null {
+    const r = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as Row | undefined;
+    return r ? String(r.value) : null;
+  }
+
+  setSetting(key: string, value: string | null): void {
+    if (value === null) this.db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+    else this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
   }
 
   enqueue(runId: string, role: string, text: string, entry: string | null = null, now = Date.now(), person = false): number {
