@@ -32,6 +32,8 @@ const HELP = `flow — drive flows from an agent session or a terminal
   flow start <process> [--bind role=SESSION …] [--var key=value …] [--inner <process|none> …]
                                          start a run; --var seeds its vars before the first step;
                                          --inner: the process for its inner step, then for that one's
+  flow off | flow on                     switch flows off (running runs pause, agents mid-turn are stopped,
+                                         nothing new starts, events wait) and back on (they all go on)
   flow skip [RUN] --note T               skip the current step of RUN, or of this session's run
   flow reopen RUN --at ENTRY [--note T]  put an ended run back to work at ENTRY; its agents resume their
                                          conversations when the run next needs them
@@ -215,6 +217,12 @@ export async function main(argv: string[]): Promise<number> {
       case "publish": {
         if (a._.length !== 1) throw new CliError("usage: flow publish FILE");
         out((await call("POST", "/api/publish", { file: resolve(a._[0]) })).url);
+        return 0;
+      }
+      case "off":
+      case "on": {
+        const r = await call("POST", "/api/switch", { on: cmd === "on" });
+        out(r.off === null ? "flows is on: the runs it paused go on" : "flows is off: nothing new starts, running runs are paused (flow on to go on)");
         return 0;
       }
       case "skip": {

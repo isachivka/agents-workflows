@@ -6,6 +6,10 @@ export const LANGS = ["en", "ru"];
 
 const EN = {
   "nav.now": "Now", "nav.processes": "Processes", "nav.settings": "Settings", "nav.label": "Sections", "lang.label": "Language",
+  "sw.label": "Flows on or off", "sw.on": "ON", "sw.off": "OFF",
+  "sw.confirm": "Switch flows off?\n\nEvery running run pauses, agents in the middle of a step are stopped, nothing new starts. Switching it on lets them all go on.",
+  "sw.bar": "Flows is off since {when}: nothing new starts, runs are paused, events wait.", "sw.turnOn": "Turn on",
+  "run.pausedOff": "flows is off",
   "title.waiting": "({n}) Waiting for you · flows", "title.page": "{page} · flows", "loading": "Loading…",
   "st.queued": "Queued", "tag.queued": "In line", "run.queued": "{n} in line: {open} of {max} runs are working", "st.running": "Running", "st.paused": "Paused", "st.needs-human": "Waiting for you", "st.done": "Finished", "st.stopped": "Stopped",
   "tag.yourStep": "Your step", "tag.stopped": "Stopped", "tag.agentAsks": "Agent asks", "tag.working": "Agent working",
@@ -106,6 +110,10 @@ const EN = {
 
 const RU = {
   "nav.now": "Сейчас", "nav.processes": "Процессы", "nav.settings": "Настройки", "nav.label": "Разделы", "lang.label": "Язык",
+  "sw.label": "Flows включён или выключен", "sw.on": "ВКЛ", "sw.off": "ВЫКЛ",
+  "sw.confirm": "Выключить flows?\n\nВсе работающие прогоны встанут на паузу, агенты посреди шага будут остановлены, новое не запустится. Включишь — всё продолжится.",
+  "sw.bar": "Flows выключен с {when}: новое не запускается, прогоны на паузе, события ждут.", "sw.turnOn": "Включить",
+  "run.pausedOff": "flows выключен",
   "title.waiting": "({n}) Ждут тебя · flows", "title.page": "{page} · flows", "loading": "Загрузка…",
   "st.queued": "В очереди", "tag.queued": "В очереди", "run.queued": "В очереди №{n}: работают {open} из {max}", "st.running": "Работает", "st.paused": "На паузе", "st.needs-human": "Ждёт тебя", "st.done": "Готово", "st.stopped": "Остановлен",
   "tag.yourStep": "Твой шаг", "tag.stopped": "Остановился", "tag.agentAsks": "Агент просит", "tag.working": "Агент работает",
@@ -376,7 +384,7 @@ export function describeRun(r) {
   }
   if (r.status === "done") return { tone: "calm", tag: t("st.done"), title: t("run.finished"), detail: null };
   if (r.status === "stopped") return { tone: "calm", tag: t("st.stopped"), title: t("run.stopped"), detail: null };
-  if (r.status === "paused") return { tone: "calm", tag: t("st.paused"), title: what, detail: null };
+  if (r.status === "paused") return { tone: "calm", tag: t("st.paused"), title: what, detail: r.pausedBy === "off" ? t("run.pausedOff") : null };
   if (r.status === "queued" && r.queue) {
     const n = lang === "ru" ? r.queue.position : ordinalEn(r.queue.position);
     return { tone: "wait", tag: t("tag.queued"), title: t("run.queued", { n, open: r.queue.open, max: r.queue.max }), detail: null };

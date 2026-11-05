@@ -244,6 +244,18 @@ demo#1  it.1  needs-human  demo-hello (active)  role agent session closed
 pr-loop#4  it.1  running  deploy (waiting)  waits hold desk-1 (pr-loop#3)
 ```
 
+### `flow off`, `flow on`
+
+```
+flow off
+flow on
+```
+
+The one switch for everything, the same as the switch in the UI's header ([Flows off](concepts.md#flows-off)).
+`off`: every running run pauses, an agent mid-turn gets Esc and a line to stop, nothing new starts, events
+wait. `on`: those runs go on, an agent whose step is still open is told to carry on, the waiting events are
+acted on, the queue starts. Prints `flows is off: …` or `flows is on: …`. It holds across a flowd restart.
+
 ### `flow skip`
 
 ```

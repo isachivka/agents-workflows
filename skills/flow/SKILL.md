@@ -112,6 +112,14 @@ event will wake the step for you; only what the step waits for does.
 Only if the user wants the whole step redone from its instructions do they press "Try again" in
 the flows UI; a new `▶ flow:` line arrives then.
 
+## When flows is switched off
+
+`▶ flow: <run> is paused: flows is off. Stop now: …` (often right after your turn was cut with Esc): the
+person stopped everything at once. Stop: put back what you changed in their setup (a browser you opened, a
+server you started), do not report the step, and end your turn. When they switch flows on,
+`▶ flow: <run> goes on: flows is on again. Carry on with step <id> …` arrives: pick the step up from where you
+stopped.
+
 ## Starting a run, and waiting in line
 
 `flow start <process> --bind <role>=$AGTERM_SESSION_ID` (in agterm's split pane:

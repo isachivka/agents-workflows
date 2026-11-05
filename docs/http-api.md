@@ -58,7 +58,7 @@ A saved file is validated with the same loader as `flow check`; an invalid one i
 | POST | `/api/runs/:id/roles/:role/respawn` | | `{run}`; a new agent takes the role's step, and the agterm session it replaces is closed |
 | POST | `/api/runs/:id/roles/:role/restore` | | `{session}`; reopens the role's conversation in a new agterm session and focuses it: Claude with `<spawn> --resume <id>` (found in `~/.claude/projects`), Codex with `<spawn> resume <id>` (found in `~/.codex/sessions`), by the step lines flowd typed into it; an open session is just focused. The run does not change, except that a role asleep (`hibernate`) is bound to the new session: awake again. 409 when the role is not Claude or Codex in agterm, or no conversation is found |
 
-`RunSummary`: `{id, name, label, process, asleep, iteration, status, reason, current, currentStatus, currentKind,
+`RunSummary`: `{id, name, label, process, asleep, iteration, status, pausedBy, reason, current, currentStatus, currentKind,
 waitingOn, roles, vars, needsYou, agentWait, waitUntil, parent, child, heldBy, queue, resumable, created, updated, plan}`, where `created` and
 `updated` are ms, when the run was created and last saved, `name` what a person calls the run
 (`<title> · <label>`, else `<label> · DD.MM HH:MM`), `label` its process's `label` (else its name), `asleep` the roles `hibernate` put to sleep, `plan` lists every entry as
@@ -92,6 +92,8 @@ on an `inner` entry with nothing nested and nothing chosen by `--inner`.
 |---|---|---|---|
 | GET | `/api/sessions` | | `[{id, name, cwd, workspace, status?, title?}]` from `agtermctl tree --json` |
 | POST | `/api/sessions/:id/focus` | | `{}`; selects that session in agterm and brings agterm to the front in macOS (`open -a agterm`) |
+| GET | `/api/switch` | | `{off}`: when flows was switched off (ms), or `null` while it is on ([Flows off](concepts.md#flows-off)) |
+| POST | `/api/switch` | `{on: true\|false}` | `{off}` after the switch; anything but a boolean is 400 |
 | GET | `/api/plugins` | | `{core: [core event types], plugins: [{name, source, events, actions, lastError, watches}]}`; each watch is `{run, entry, type, processes, error}`, with `run` and `entry` null and `processes` set for a trigger subscription |
 | POST | `/api/restart` | | `{}`, then flowd exits; launchd starts it again |
 | GET | `/api/stream` | | Server-sent events: `data: runs` when any run changed, `data: defs` when definitions were reloaded |

@@ -119,6 +119,17 @@ test("sessions, focus, plugins, events", async () => {
   await s.close();
 });
 
+test("the switch: read it, turn it off and on, refuse anything but a boolean", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  assert.deepEqual((await s.call("GET", "/api/switch")).body, { off: null });
+  assert.equal((await s.call("POST", "/api/switch", { on: "no" })).status, 400);
+  const off = (await s.call("POST", "/api/switch", { on: false })).body.off;
+  assert.equal(typeof off, "number");
+  assert.deepEqual((await s.call("GET", "/api/switch")).body, { off });
+  assert.deepEqual((await s.call("POST", "/api/switch", { on: true })).body, { off: null });
+  await s.close();
+});
+
 test("static files, unknown routes, bad JSON", async () => {
   const s = await serve({ ...STEP_FILES, ...TWO });
   const index = await s.call("GET", "/");

@@ -762,6 +762,19 @@ function Settings({ lang, onLang }) {
     <section><h2>${t("set.service")}</h2><${Err} msg=${err} /><div class="acts"><button class="btn" onClick=${restart}>${t("set.restart")}</button></div></section>`;
 }
 
+/** The one switch for everything: off pauses every running run and stops agents mid-step; asked first. */
+function FlowsSwitch({ off, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const flip = async () => {
+    if (off === undefined || busy) return;
+    if (off === null && !confirm(t("sw.confirm"))) return;
+    setBusy(true);
+    try { onChange((await api("POST", "/api/switch", { on: off !== null })).off); } catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  return html`<button class=${`switch ${off === null ? "is-on" : "is-off"}`} role="switch" aria-checked=${off === null} aria-label=${t("sw.label")}
+    disabled=${off === undefined || busy} onClick=${flip}><span class="knob"></span>${off === null ? t("sw.on") : t("sw.off")}</button>`;
+}
+
 const MARK = html`<svg class="mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
   <rect width="32" height="32" rx="7" fill="currentColor" />
   <path d="M8.5 22.5C8.5 13 23.5 19 23.5 9.5" fill="none" stroke="var(--bg)" stroke-width="2.6" stroke-linecap="round" />
@@ -785,6 +798,11 @@ function App() {
   const [lang, setLangState] = useState(getLang());
   const [hidden, setHidden] = useState(savedHidden);
   const { data: openRuns } = useData("/api/runs");
+  const { data: sw } = useData("/api/switch");
+  const [offNow, setOffNow] = useState(undefined);
+  // what the button just did wins until the stream brings the switch back
+  const off = offNow !== undefined ? offNow : sw ? sw.off : undefined;
+  useEffect(() => { setOffNow(undefined); }, [sw && sw.off]);
   // the tab's count and the favicon follow the home screen: a hidden process's runs are not counted
   const waiting = (openRuns || []).filter((r) => r.needsYou && !hidden.has(r.process)).length;
   const onHidden = (set) => {
@@ -810,8 +828,11 @@ function App() {
       <a class="logo" href="#/runs">${MARK}<span>flows</span></a>
       <nav class="nav" aria-label=${t("nav.label")}>${NAV.map(([k, href]) => html`<a href=${href} class=${tab === k ? "on" : ""}
         aria-current=${tab === k ? "page" : undefined}>${t(`nav.${k}`)}${k === "now" && waiting > 0 ? html`<span class="count">${waiting}</span>` : ""}</a>`)}</nav>
+      <${FlowsSwitch} off=${off} onChange=${setOffNow} />
       <${LangSwitch} lang=${lang} onLang=${onLang} />
     </div></header>
+    ${off ? html`<div class="offbar" role="status"><div class="wrap offin"><span>${t("sw.bar", { when: moment(off, Date.now()) })}</span>
+      <button class="btn" onClick=${() => api("POST", "/api/switch", { on: true }).then((r) => setOffNow(r.off), (e) => alert(e.message))}>${t("sw.turnOn")}</button></div></div>` : ""}
     <main class="wrap page"><${Page} arg=${arg} sub=${sub} rest=${rest} lang=${lang} onLang=${onLang} hidden=${hidden} onHidden=${onHidden} key=${`${page}/${arg || ""}/${sub === "step" ? "" : sub || ""}`} /></main>`;
 }
 

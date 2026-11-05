@@ -219,6 +219,23 @@ topics), each run can have a conversation with the person, opened by its first m
   agent declared a wait. `compact` fails
   after 10 minutes without a report. Timeouts do not run while the run is paused.
 
+## Flows off
+
+One switch for everything, in the UI's header and as `flow off` / `flow on`, for when everything must stop at
+once. It holds across a flowd restart, and each flowd has its own.
+
+- **Off.** Every running run pauses, marked as the switch's; an agent mid-turn gets Esc (it ends the turn and
+  what the turn runs) and the line `▶ flow: <run> is paused: flows is off. Stop now: …`. Idle agents are left
+  as they are, and none is put to sleep. A command an `sh` entry already runs finishes; its result waits.
+- **While off nothing new starts and nothing moves.** A schedule that comes due is skipped for good (said as
+  `flow.trigger.skipped`); a start by hand or from the UI queues. Events wait unprocessed: a plugin's (CI
+  green, an approval, a merge, a PR that would start a run), a signal, flowd's own `flow.*`, a report or a
+  wait from an agent. What the person does still goes through: messages to agents, answers, Done, Skip,
+  Retry, Stop and Resume on a run (a run resumed by hand runs, switch or not).
+- **On.** The runs the switch paused go on; the waiting events are acted on in the order they came; an agent
+  whose step is still open gets `▶ flow: <run> goes on: flows is on again. Carry on with step <id> …`; the
+  queue starts. Runs paused by the person or by a process's `pause_on` stay paused.
+
 ## clear and compact
 
 - `{do: clear}` types `/clear` and is done at once. The next line waits for the session to be idle.

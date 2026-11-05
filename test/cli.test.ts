@@ -72,6 +72,18 @@ test("from a plain terminal: start, ls, signal, human done", async () => {
   await s.close();
 });
 
+test("flow off and flow on flip the switch; a start meanwhile queues", async () => {
+  const s = await serve({ ...STEP_FILES, ...TWO });
+  const env = { FLOWD_URL: s.base };
+  assert.equal((await flow(["off"], env)).stdout, "flows is off: nothing new starts, running runs are paused (flow on to go on)\n");
+  assert.ok(s.f.offSince() !== null);
+  assert.match((await flow(["start", "p"], env)).stdout, /^p#1 queued/);
+  assert.equal((await flow(["on"], env)).stdout, "flows is on: the runs it paused go on\n");
+  await s.f.idle();
+  assert.equal(s.f.store.getRun("p#1")!.status, "running");
+  await s.close();
+});
+
 test("usage errors and help", async () => {
   const env = { FLOWD_URL: "http://127.0.0.1:9" };
   assert.equal((await flow(["help"], env)).code, 0);

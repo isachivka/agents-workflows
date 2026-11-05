@@ -81,6 +81,8 @@ export interface RunSummary {
   id: string; name: string; label: string; process: string;
   /** roles put to sleep by hibernate: the next line to one resumes its conversation */
   asleep: string[]; iteration: number; status: string; reason: string | null;
+  /** who paused it: "off" (flows is off), "pause_on" (its process's switch), null (the person) */
+  pausedBy: string | null;
   current: string | null; currentStatus: string | null; currentKind: string | null; waitingOn: string | null;
   roles: Record<string, string | null>; vars: Record<string, string>; needsYou: boolean;
   agentWait: { note: string; human: boolean; since: number } | null;
@@ -1908,7 +1910,7 @@ export class Flowd {
     const s = cur ? run.entries[cur.id] : undefined;
     const times = this.store.runTimes(run.id);
     return {
-      id: run.id, name: this.nameOf(run), label: p?.label ?? run.process, process: run.process, asleep: Object.keys(run.asleep ?? {}), iteration: run.iteration, status: run.status, reason: run.reason ?? null,
+      id: run.id, name: this.nameOf(run), label: p?.label ?? run.process, process: run.process, asleep: Object.keys(run.asleep ?? {}), iteration: run.iteration, status: run.status, pausedBy: run.pausedBy ?? null, reason: run.reason ?? null,
       current: run.current, currentStatus: s?.status ?? null, currentKind: cur?.kind ?? null,
       waitingOn: s?.status === "waiting" && !s.queued ? cur?.waitFor?.on ?? null : null,
       roles: run.roles, vars: run.vars,

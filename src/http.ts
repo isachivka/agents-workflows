@@ -334,6 +334,12 @@ export function makeServer(f: Flowd, uiDir: string, opts: { lan?: boolean; publi
       return {};
     }],
     ["GET", /^\/api\/plugins$/, () => ({ core: CORE_EVENTS, plugins: f.plugins.status() })],
+    ["GET", /^\/api\/switch$/, () => ({ off: f.offSince() })],
+    ["POST", /^\/api\/switch$/, async (_p, b) => {
+      if (typeof b.on !== "boolean") throw new HttpError(400, { error: "send {on: true} or {on: false}" });
+      await (b.on ? f.turnOn() : f.turnOff());
+      return { off: f.offSince() };
+    }],
     ["POST", /^\/api\/restart$/, (_p, _b, _q, res) => {
       res.on("finish", () => setTimeout(() => process.exit(0), 50));
       return {};
