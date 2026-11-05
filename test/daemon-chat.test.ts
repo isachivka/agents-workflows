@@ -198,6 +198,48 @@ test("at the person's step the agent that worked last gets the message, told not
   await t.f.close();
 });
 
+test("a run stopped for the person at an agent's failed step: their message reopens the step and reaches the agent first", async () => {
+  const t = await running();
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit({ type: "entry.report", data: { session: "S1", outcome: "failed", note: "the label is off" }, source: "cli" });
+  await t.f.submit(status("S1", "completed"));
+  t.clock.t += 17_000;
+  await settle(t.f);
+  assert.equal(t.f.store.getRun("p#1")?.status, "needs-human");
+  const before = t.agterm.typed().length;
+  await tell(t, "T1", "that is fine, a colleague shipped a hotfix");
+  const run = t.f.store.getRun("p#1")!;
+  assert.equal(run.status, "running");
+  assert.equal(run.entries.b.status, "active");
+  const typed = t.agterm.typed().slice(before);
+  assert.equal(typed.length, 1, typed.join("\n---\n")); // the step's own line waits for the turn the message starts
+  assert.ok(typed[0].startsWith("type S1 Ann wrote in the run's fakechat conversation (p#1):\nthat is fine, a colleague shipped a hotfix\n"), typed[0]);
+  assert.match(typed[0], /The run had stopped at b for Ann; this message opens the step again: carry on with it as they say, and close it with flow done or flow failed\.$/);
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(status("S1", "completed"));
+  t.clock.t += 17_000;
+  await settle(t.f);
+  assert.match(t.agterm.typed().at(-1)!, /^type S1 ▶ flow: step b · p#1/);
+  await t.f.close();
+});
+
+test("a paused run's agent still gets the person's message; the step's own lines stay held", async () => {
+  const t = await running();
+  await t.f.say({ session: "S1", text: "on it" });
+  await t.f.submit(status("S1", "active"));
+  await t.f.submit(status("S1", "completed"));
+  await t.f.submit({ type: "run.pause", run: "p#1", data: {}, source: "ui" });
+  t.clock.t += 17_000;
+  await settle(t.f);
+  const before = t.agterm.typed().length;
+  await tell(t, "T1", "why so slow?");
+  assert.equal(t.f.store.getRun("p#1")?.status, "paused");
+  const typed = t.agterm.typed().slice(before);
+  assert.equal(typed.length, 1);
+  assert.match(typed[0], /\nwhy so slow\?\n[\s\S]*The run is paused at b: answer, and do not run flow done or flow failed for it\.$/);
+  await t.f.close();
+});
+
 test("before any agent has worked, the run's agent gets the message; with none, or an ended run, it is answered", async () => {
   resetChat();
   const t = await startFlowd(makeHome({ ...STEP_FILES, ...proc("  - {step: c, role: human}\n  - {step: b, role: pm}\n", "", "h"), ...CHAT_ON }));

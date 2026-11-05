@@ -6,7 +6,8 @@ import { TERMINAL } from "./types.ts";
 import type { Answer, FlowEvent, Question, RunState } from "./types.ts";
 
 export interface StoredEvent extends FlowEvent { id: number; ts: number; processed: boolean }
-export interface OutboxRow { id: number; run_id: string; role: string; text: string; entry_id: string | null; created: number; attempts: number }
+/** `person`: a line a person wrote (a chat message, an answer), typed even while the run is held */
+export interface OutboxRow { id: number; run_id: string; role: string; text: string; entry_id: string | null; created: number; attempts: number; person: boolean }
 
 export function statePath(): string {
   return process.env.FLOWS_STATE || join(homedir(), ".local", "state", "flows", "flows.db");
@@ -72,6 +73,8 @@ export class Store {
     const questionCols = this.db.prepare("PRAGMA table_info(questions)").all() as Row[];
     if (!questionCols.some((c) => c.name === "adapter")) this.db.exec("ALTER TABLE questions ADD COLUMN adapter TEXT");
     if (!questionCols.some((c) => c.name === "closed")) this.db.exec("ALTER TABLE questions ADD COLUMN closed REAL");
+    const outboxCols = this.db.prepare("PRAGMA table_info(outbox)").all() as Row[];
+    if (!outboxCols.some((c) => c.name === "person")) this.db.exec("ALTER TABLE outbox ADD COLUMN person INTEGER NOT NULL DEFAULT 0");
   }
 
   close(): void { this.db.close(); }
@@ -172,16 +175,16 @@ export class Store {
     return this.openRuns().filter((r) => r.parent?.run === runId);
   }
 
-  enqueue(runId: string, role: string, text: string, entry: string | null = null, now = Date.now()): number {
-    const r = this.db.prepare("INSERT INTO outbox (run_id, role, text, entry_id, created) VALUES (?, ?, ?, ?, ?)").run(runId, role, text, entry, now);
+  enqueue(runId: string, role: string, text: string, entry: string | null = null, now = Date.now(), person = false): number {
+    const r = this.db.prepare("INSERT INTO outbox (run_id, role, text, entry_id, created, person) VALUES (?, ?, ?, ?, ?, ?)").run(runId, role, text, entry, now, person ? 1 : 0);
     return Number(r.lastInsertRowid);
   }
 
   pendingOutbox(): OutboxRow[] {
-    const rows = this.db.prepare("SELECT id, run_id, role, text, entry_id, created, attempts FROM outbox WHERE sent IS NULL ORDER BY id").all() as Row[];
+    const rows = this.db.prepare("SELECT id, run_id, role, text, entry_id, created, attempts, person FROM outbox WHERE sent IS NULL ORDER BY id").all() as Row[];
     return rows.map((r) => ({
       id: Number(r.id), run_id: r.run_id, role: r.role, text: r.text, entry_id: r.entry_id ?? null,
-      created: Number(r.created), attempts: Number(r.attempts),
+      created: Number(r.created), attempts: Number(r.attempts), person: Number(r.person) === 1,
     }));
   }
 

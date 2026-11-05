@@ -953,12 +953,21 @@ export class Flowd {
       const where = top.status !== "running" ? `it is ${top.status}` : `it is at ${cur?.id ?? "nothing"} (${cur?.kind ?? "no step"})`;
       return reply(`${top.id} has no agent yet: ${where}. Write again once one has started`);
     }
-    const off = onStep ? "" : `\n↳ The run is at ${cur?.id ?? "no step"}, not a step of yours: answer, and do not run flow done or flow failed for it.`;
+    // stopped for the person at an agent's step (it failed, it ran out of retries): what they write is their answer
+    // to that, so the step opens again and the agent reads the message before the step's own line
+    const reopens = top.status === "needs-human" && cur?.kind === "agent" && cur.role === role && Boolean(top.roles[role]) ? cur.id : undefined;
+    const off = onStep ? ""
+      : reopens ? `\n↳ The run had stopped at ${reopens} for ${m.from}; this message opens the step again: carry on with it as they say, and close it with flow done or flow failed.`
+      : `\n↳ The run is ${top.status === "running" ? "" : `${top.status} `}at ${cur?.id ?? "no step"}${top.status === "running" ? ", not a step of yours" : ""}: answer, and do not run flow done or flow failed for it.`;
     // the agent is told plainly where the person is, or it answers in a terminal nobody reads; not that it
     // must answer: a go-ahead needs none, and a forced "ok, going on" is noise
     this.store.enqueue(top.id, role,
       `${m.from} wrote in the run's ${adapter} conversation (${top.id}):\n${m.text}\n↳ ${m.from} reads ${adapter}, not this terminal: when you answer, answer with \`flow say "…"\`. A go-ahead needs no answer — just carry on.${off}`,
-      null, this.now());
+      null, this.now(), true);
+    if (reopens) {
+      const r = await this.apply(top.id, { kind: "retry", entry: reopens });
+      if (r.error) this.log(`${top.id}: a message did not reopen ${reopens}: ${r.error}`);
+    }
     void this.flush();
   }
 
@@ -1079,7 +1088,7 @@ export class Flowd {
     this.store.enqueue(q.run, q.role,
       `▶ flow: the person ${q.answer ? "changed their answer to" : "answered"} your question (${q.url}):\n${JSON.stringify(answer)}` +
       (chat ? `\n↳ They answered on the page and read ${chat}, not this terminal: if you need to tell them something, use \`flow say "…"\`.` : ""),
-      null, this.now());
+      null, this.now(), true);
     this.log(`${q.run} ${q.role}: ${q.answer ? "a changed answer" : "an answer"} to ${q.url}`);
     void this.flush();
   }
@@ -1402,8 +1411,9 @@ export class Flowd {
       // a /clear for an agent that is gone: a new one starts clean anyway, and spawned with "/clear" as its
       // prompt it would be restored (agterm replays the command line) as a fresh, cleared agent
       if (!run.roles[row.role] && !row.entry_id && row.text === "/clear") { this.store.markSent(row.id, this.now()); continue; }
-      if (run.status === "paused" || run.status === "needs-human") continue; // held, never spawned for
       const session = run.roles[row.role];
+      // held, never spawned for; what a person wrote still reaches a live agent
+      if ((run.status === "paused" || run.status === "needs-human") && !(row.person && session)) continue;
       if (!session) { await this.spawnFor(run, row); continue; }
       const busy = this.store.sessionStatus(session);
       if (busy === "active" || busy === "blocked") continue; // mid-turn, or at a permission prompt

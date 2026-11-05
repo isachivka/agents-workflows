@@ -102,7 +102,8 @@ HTML report); the path is made absolute here and read by flowd. Prints `sent`.
 What the person writes back in that conversation is typed into your session once your turn has
 ended: `<name> wrote in the run's <messenger> conversation (<run>):`, the text, and a line saying that
 an answer goes with `flow say` and that a go-ahead needs none. To wait for it, end your turn with
-`flow wait --human --note "…"`.
+`flow wait --human --note "…"`. When your step failed and the run waits for the person, their message
+opens the step again: the line after it says so, and you close the step yourself once it is settled.
 
 When flowd serves reports (`FLOWS_REPORTS_URL`, see [`flow publish`](#flow-publish)), an `.html`
 file is published and the message carries its link instead of the file: it opens in the phone's

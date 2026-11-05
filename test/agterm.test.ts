@@ -108,7 +108,10 @@ test("with several open windows, tree reads each one's", async () => {
   try {
     const sessions = await realAgterm(f.bin).tree();
     assert.equal(sessions.filter((s) => s.id === "S1").length, 2); // the fake answers the same tree for each
-    assert.deepEqual(f.calls().trim().split("\n"), ["[window][list][--json]", "[tree][--json][--window][W1]", "[tree][--json][--window][W2]"]);
+    const [list, ...trees] = f.calls().trim().split("\n");
+    assert.equal(list, "[window][list][--json]");
+    // the trees are read at once: their calls land in any order
+    assert.deepEqual(trees.sort(), ["[tree][--json][--window][W1]", "[tree][--json][--window][W2]"]);
   } finally {
     delete process.env.FAKE_WINDOWS;
   }

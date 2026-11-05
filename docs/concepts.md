@@ -167,7 +167,11 @@ topics), each run can have a conversation with the person, opened by its first m
   person may write at any time: when the current entry has no agent (an `sh`, a wait, a human
   step, a paused or stopped run), the message goes to the agent whose step started last, else to any
   agent the run has, with a line saying the run is not at its step, so it answers and does not close
-  anything; a human step is closed from the UI or `flow done --human`, not by a message. Only a run
+  anything; a human step is closed from the UI or `flow done --human`, not by a message. A run that
+  stopped for the person at an agent's step (it failed, ran out of retries) takes their message as the
+  answer to that: the step opens again, and its agent reads the message first, with a line saying to
+  carry on as they say and close the step. A paused run, or one stopped elsewhere, stays held, but
+  what the person writes (and a page's answer) still reaches a live agent. Only a run
   with no agent yet (queued, or nothing spawned) answers `<run> has no agent yet` and drops it. A message to an ended run is answered
   `<run> has ended`.
 - **Nested runs** use their root's conversation: a tracker run with a PR run inside is one piece

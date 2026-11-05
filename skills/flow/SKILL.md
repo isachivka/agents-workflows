@@ -88,7 +88,9 @@ Their message arrives in this session as `<name> wrote in the run's telegram con
 the text, and a reminder of where to answer — any time they write in the topic, not only after you
 asked. When you answer, answer with `flow say`, never only in the terminal: nobody reads it. A
 go-ahead ("approve", "go on") needs no answer — carry on with the step; do not send "ok" for its own sake. Answer back with `flow say` (they read Telegram, not this terminal),
-and go on with the step once they decided. flowd itself tells them when the run waits for them and
+and go on with the step once they decided. After you ran `flow failed` the run waits for them; a message
+from them then opens your step again ("this message opens the step again"): do what they say, and close
+the step with `flow done`, or `flow failed` if it still cannot be done. flowd itself tells them when the run waits for them and
 when it ends: do not repeat that. `flow say` fails with `no chat is set up` when there is no
 messenger: then ask in the terminal as usual.
 

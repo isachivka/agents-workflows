@@ -60,9 +60,10 @@ test("outbox rows are pending until sent; attempts count; drop clears unsent row
   const s = new Store(":memory:");
   const a = s.enqueue("p#1", "pm", "one", "b", 1);
   const b = s.enqueue("p#1", "pm", "two", null, 2);
-  s.enqueue("p#2", "ex", "three", null, 3);
+  s.enqueue("p#2", "ex", "three", null, 3, true);
   assert.deepEqual(s.pendingOutbox().map((r) => r.text), ["one", "two", "three"]);
   assert.equal(s.pendingOutbox()[0].entry_id, "b");
+  assert.deepEqual(s.pendingOutbox().map((r) => r.person), [false, false, true]);
   assert.equal(s.bumpOutbox(a), 1);
   assert.equal(s.bumpOutbox(a), 2);
   s.markSent(a);
